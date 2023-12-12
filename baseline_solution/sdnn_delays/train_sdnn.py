@@ -14,6 +14,8 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from lava.lib.dl import slayer
+import sys
+sys.path.append('../../')
 from audio_dataloader import DNSAudio
 from snr import si_snr
 
@@ -194,11 +196,11 @@ if __name__ == '__main__':
                         help='random seed of the experiment')
     parser.add_argument('-epoch',
                         type=int,
-                        default=50,
+                        default=10,
                         help='number of epochs to run')
     parser.add_argument('-path',
                         type=str,
-                        default='../../data/MicrosoftDNS_4_ICASSP/',
+                        default='../../',
                         help='dataset path')
 
     args = parser.parse_args()
@@ -226,7 +228,8 @@ if __name__ == '__main__':
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
-    if len(args.gpu) == 1:
+    if len(args.gpu) == 0:
+        print("Building CPU network")
         net = Network(args.threshold,
                       args.tau_grad,
                       args.scale_grad,
@@ -234,6 +237,7 @@ if __name__ == '__main__':
                       args.out_delay).to(device)
         module = net
     else:
+        print("Building GPU network")
         net = torch.nn.DataParallel(Network(args.threshold,
                                             args.tau_grad,
                                             args.scale_grad,
@@ -299,12 +303,12 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
             loss.backward()
-            net.validate_gradients()
+            module.validate_gradients()
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
 
             if i < 10:
-                net.grad_flow(path=trained_folder + '/')
+                module.grad_flow(path=trained_folder + '/')
 
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
@@ -365,8 +369,8 @@ if __name__ == '__main__':
             torch.save(module.state_dict(), trained_folder + '/network.pt')
         stats.save(trained_folder + '/')
 
-    net.load_state_dict(torch.load(trained_folder + '/network.pt'))
-    net.export_hdf5(trained_folder + '/network.net')
+    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
+    module.export_hdf5(trained_folder + '/network.net')
 
     params_dict = {}
     for key, val in args._get_kwargs():

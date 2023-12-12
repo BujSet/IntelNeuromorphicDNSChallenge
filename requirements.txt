@@ -1,11 +1,14 @@
-numpy
+numpy==1.23.3
 soundfile
-librosa
+librosa==0.9.2
 configparser
 pandas
 torch
 onnx
 onnxruntime-gpu
+h5py
+tensorboard
+https://github.com/lava-nc/lava-dl/releases/download/v0.3.2/lava_dl-0.3.2.tar.gz
 # nvidia-pyindex
 # nvidia-tensorrt
 # pycuda
