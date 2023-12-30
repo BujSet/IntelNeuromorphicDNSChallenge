@@ -196,7 +196,7 @@ if __name__ == '__main__':
                         help='random seed of the experiment')
     parser.add_argument('-epoch',
                         type=int,
-                        default=10,
+                        default=50,
                         help='number of epochs to run')
     parser.add_argument('-path',
                         type=str,
@@ -325,6 +325,8 @@ if __name__ == '__main__':
                            f'({100.0 * processed / total:.0f}%)]']
             stats.print(epoch, i, samples_sec, header=header_list)
 
+        if (epoch != args.epoch - 1):
+            continue
         t_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(validation_loader):
             net.eval()
