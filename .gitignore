@@ -1,0 +1,3 @@
+hrtfs/**/*.sofa
+hrtfs/__pycache__/
+__pycache__/
