@@ -15,8 +15,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from lava.lib.dl import slayer
 import sys
-sys.path.append('../../')
+sys.path.append('./')
 from audio_dataloader import DNSAudio
+from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
 
 
@@ -279,6 +280,13 @@ if __name__ == '__main__':
     stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
                                        accuracy_unit='dB')
 
+    # Spatially distribute the sound sources, (azimuth, elevation)
+    # index = 624 ==> (0,  90)
+    # index = 600 ==> (0, -45)
+    # We choose filters in the midsagittal plane, so either selecting
+    # which channels is read from 'should' be irrelevant
+    speechFilter  = CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)
+    noiseFilter   = CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(train_loader):
