@@ -2,7 +2,6 @@ import sofa, os
 
 class CIPIC_Subject():
     def __init__(self, subID, filePath):
-        print(filePath)
         self._id = subID
         self._sofa = sofa.Database.open(filePath)
 
