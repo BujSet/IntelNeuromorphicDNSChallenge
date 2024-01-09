@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # See: https://spdx.org/licenses/
 
-import os
+import os, sys
 import h5py
 import argparse
 import numpy as np
@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import soundfile as sf
 
 from lava.lib.dl import slayer
 import sys
@@ -19,6 +20,8 @@ sys.path.append('./')
 from audio_dataloader import DNSAudio
 from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
+import torchaudio
+from noisy_speech_synthesizer import segmental_snr_mixer
 
 
 def collate_fn(batch):
@@ -285,26 +288,71 @@ if __name__ == '__main__':
     # index = 600 ==> (0, -45)
     # We choose filters in the midsagittal plane, so either selecting
     # which channels is read from 'should' be irrelevant
-    speechFilter  = CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)
-    noiseFilter   = CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)
+    speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)).float()
+    noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float()
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(train_loader):
             net.train()
-            noisy = noisy.to(device)
-            clean = clean.to(device)
+#            noisy = noisy.to(device)
+#            clean = clean.to(device)
+            # Create copies for ssl versions
+            ssl_noise = noise.to(device)
+            ssl_noisy = noisy.to(device)
+            ssl_clean = clean.to(device)
+            for i in range(args.b):
+                ssl_noise[i, :] = torchaudio.functional.convolve(noise[i,:], noiseFilter, "same")
+                ssl_clean[i, :] = torchaudio.functional.convolve(clean[i,:], speechFilter, "same")
+                ssl_noisy[i, :] = (0.5*ssl_clean[i, :]) + (0.5*ssl_noise[i, :])
+#            noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(i)
+#            print(noisy_file)
+#            print(clean_file)
+#            print(noise_file)
+#            print(metadata)
+#            sf.write(file="test_clean.wav", 
+#                    data=clean[0, :], 
+#                    samplerate=16000)
+#            sf.write(file="test_noise.wav", 
+#                    data=noise[0, :], 
+#                    samplerate=16000)
+#            sf.write(file="test_noisy.wav", 
+#                    data=noisy[0, :], 
+#                    samplerate=16000)
+#            ssl_clean = torchaudio.functional.convolve(clean[0,:], speechFilter, "same")
+#            ssl_noise = torchaudio.functional.convolve(noise[0,:], noiseFilter, "same")
+            # TODO eventually, we should try and match the SNR levels 
+            # simulated in the real dataset via a call that looks 
+            # something like:
+            # cl, no, ny, nyrms = segmental_snr_mixer(
+            #     {'target_level_lower':-35,
+            #      'target_level_upper':25},
+            #       clean,)
+            #       ...
+            # but for now we will try simulate with an SNR of 1.0
+#            ssl_noisy = (0.5*ssl_clean) + (0.5*ssl_noise)
+#            sf.write(file="test_ssl_clean.wav", 
+#                    data=ssl_clean, 
+#                    samplerate=16000)
+#            sf.write(file="test_ssl_noise.wav", 
+#                    data=ssl_noise, 
+#                    samplerate=16000)
+#            sf.write(file="test_ssl_noisy.wav", 
+#                    data=ssl_noisy, 
+#                    samplerate=16000)
 
-            noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft)
-            clean_abs, clean_arg = stft_splitter(clean, args.n_fft)
+            # Use our spatially separated audio files for training
+
+            noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
+            clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
 
             denoised_abs = net(noisy_abs)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
-            clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
+            clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
 
             clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft)
 
-            score = si_snr(clean_rec, clean)
+            score = si_snr(clean_rec, ssl_clean)
             loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
 
             assert torch.isnan(loss) == False
