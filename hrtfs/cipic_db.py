@@ -20,11 +20,9 @@ class CIPIC_DB():
     def __init__(self):
         self.cwd = os.path.join(os.getcwd(), "hrtfs")
         self.cwd = os.path.join(self.cwd, "cipic")
-#print(self.cwd)
         self.subjects = dict()
         subID = "012"
         filePath = os.path.join(self.cwd, "subject_" + subID + ".sofa")
         self.subjects[int(subID)] = CIPIC_Subject(int(subID), filePath)
 
 CipicDatabase = CIPIC_DB();
-#print(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0))

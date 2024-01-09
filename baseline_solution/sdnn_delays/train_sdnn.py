@@ -21,7 +21,7 @@ from audio_dataloader import DNSAudio
 from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
 import torchaudio
-from noisy_speech_synthesizer import segmental_snr_mixer
+from noisyspeech_synthesizer import segmental_snr_mixer
 
 
 def collate_fn(batch):
