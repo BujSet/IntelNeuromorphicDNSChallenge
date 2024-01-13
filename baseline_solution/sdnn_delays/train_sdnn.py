@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # See: https://spdx.org/licenses/
 
-import os, sys
+import os, sys, math
 import h5py
 import argparse
 import numpy as np
@@ -249,6 +249,12 @@ if __name__ == '__main__':
                                             args.out_delay).to(device),
                                     device_ids=args.gpu)
         module = net.module
+        stft_transform =torchaudio.transforms.Spectrogram(
+                n_fft=args.n_fft,
+                onesided=True, 
+                power=None,
+                hop_length=math.floor(args.n_fft//4)).to(device)
+        conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
@@ -289,7 +295,9 @@ if __name__ == '__main__':
     # We choose filters in the midsagittal plane, so either selecting
     # which channels is read from 'should' be irrelevant
     speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)).float()
+    speechFilter  = speechFilter.unsqueeze(0).to(device) #view(1, 200)
     noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float()
+    noiseFilter   = noiseFilter.unsqueeze(0).to(device) #view(1, 200)
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(train_loader):
@@ -300,10 +308,14 @@ if __name__ == '__main__':
             ssl_noise = noise.to(device)
             ssl_noisy = noisy.to(device)
             ssl_clean = clean.to(device)
-            for i in range(args.b):
-                ssl_noise[i, :] = torchaudio.functional.convolve(noise[i,:], noiseFilter, "same")
-                ssl_clean[i, :] = torchaudio.functional.convolve(clean[i,:], speechFilter, "same")
-                ssl_noisy[i, :] = (0.5*ssl_clean[i, :]) + (0.5*ssl_noise[i, :])
+            ssl_noise = conv_transform(ssl_noise, noiseFilter) #torchaudio.functional.convolve(noise, noiseFilter, "same")
+            ssl_clean = conv_transform(ssl_clean, speechFilter) #, "same")
+            ssl_noisy = (0.5*ssl_clean) + (0.5*ssl_noise)
+
+#            for i in range(args.b):
+#                ssl_noise[i, :] = torchaudio.functional.convolve(noise[i,:], noiseFilter, "same")
+#                ssl_clean[i, :] = torchaudio.functional.convolve(clean[i,:], speechFilter, "same")
+#                ssl_noisy[i, :] = (0.5*ssl_clean[i, :]) + (0.5*ssl_noise[i, :])
 #            noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(i)
 #            print(noisy_file)
 #            print(clean_file)
@@ -342,7 +354,26 @@ if __name__ == '__main__':
 
             # Use our spatially separated audio files for training
 
+#            print("ssl_noisy on: " + str(ssl_noisy.get_device()))
+#            print(ssl_noisy.shape)
+#            print(ssl_noisy.dtype)
+#            spec = stft_transform(ssl_noisy) # this be so broke
+#            print(spec.shape)
+#            print("torchaudio Spectrogram dtype " + str(spec.dtype))
+#            print(spec.real.shape)
+#            print(spec.imag.shape)
+#            print("torchaudio Spectrogram real dtype " + str(spec.real.dtype))
+#            print("torchaudio Spectrogram imag dtype " + str(spec.imag.dtype))
             noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
+#            noisy_abs = spec.real
+#            noisy_arg = spec.imag
+#            print(noisy_abs.dtype)
+#            print(noisy_arg.dtype)
+#            print(noisy_abs.shape)
+#            print(noisy_arg.shape)
+#            sys.exit(0)
+#            print("noisy_abs on: " + str(noisy_abs.get_device()))
+#            print("noisy_arg on :" + str(noisy_arg.get_device()))
             clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
 
             denoised_abs = net(noisy_abs)
@@ -350,6 +381,8 @@ if __name__ == '__main__':
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
             clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
 
+#            print(denoised_abs.get_device())
+#            print(noisy_arg.get_device())
             clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft)
 
             score = si_snr(clean_rec, ssl_clean)
