@@ -1,3 +1,6 @@
 hrtfs/**/*.sofa
 hrtfs/__pycache__/
+hrtfs/*.pyc
+hrtfs/*.png
+*.png
 __pycache__/
