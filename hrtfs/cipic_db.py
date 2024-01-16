@@ -8,6 +8,16 @@ class CIPIC_Subject():
     def __hash__(self):
         return hash(self._id)
 
+    def printPositions(self):
+        cart_positions = self._sofa.Source.Position.get_values(system="cartesian")
+        sph_positions = self._sofa.Source.Position.get_values(system="spherical")
+        for i in range(len(cart_positions)):
+            pos = cart_positions[i]
+            print(str(i) + str(pos) + str(sph_positions[i]))
+
+    def getCartesianPositions(self):
+        return  self._sofa.Source.Position.get_values(system="cartesian")
+
     def getHRIRFromIndex(self, index, channel):
         vals = self._sofa.Data.IR.get_values()
         vals = vals[index]
