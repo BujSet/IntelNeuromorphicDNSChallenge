@@ -57,6 +57,8 @@ class Network(torch.nn.Module):
         self.stft_var = 1.5
         self.stft_max = 140
         self.out_delay = out_delay
+        self.speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)).float() # .unsqueeze(0)
+        self.noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float() # .unsqueeze(0)
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -83,6 +85,14 @@ class Network(torch.nn.Module):
 
         self.blocks[1].delay.max_delay = max_delay
         self.blocks[2].delay.max_delay = max_delay
+
+    def spatiallySeparateSpeech(self, clean, noise):
+        ssl_noise = torch.zeros(args.b, 480000)
+        ssl_clean = torch.zeros(args.b, 480000)
+        for batch_idx in range(args.b):
+            ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], self.noiseFilter)
+            ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], self.speechFilter)
+        return ssl_clean, ssl_noise
 
     def forward(self, noisy):
         x = noisy - self.stft_mean
@@ -295,29 +305,44 @@ if __name__ == '__main__':
     # We choose filters in the midsagittal plane, so either selecting
     # which channels is read from 'should' be irrelevant
     speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)).float() # .unsqueeze(0)
-#    speechFilter  = speechFilter.to(device) #view(1, 200)
+    speechFilter  = speechFilter.to(device) #view(1, 200)
     noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float() # .unsqueeze(0)
-#    noiseFilter   = noiseFilter..to(device) #view(1, 200)
+    noiseFilter   = noiseFilter.to(device) #view(1, 200)
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(train_loader):
             net.train()
-            ssl_noise = torch.zeros(args.b, 480000)
-            ssl_clean = torch.zeros(args.b, 480000)
+            noise = noise.to(device)
+            clean = clean.to(device)
+            ssl_noise = torch.zeros(args.b, 480000).to(device)
+            ssl_clean = torch.zeros(args.b, 480000).to(device)
+            for batch_idx in range(args.b):
+                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+#            ssl_clean, ssl_noise = module.spatiallySeparateSpeech(clean, noise)
+#            ssl_noise = torch.zeros(args.b, 480000)
+#            ssl_clean = torch.zeros(args.b, 480000)
             ssl_noisy = torch.zeros(args.b, 480000)
             noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(i)
+            ssl_noise = ssl_noise.cpu() #to(device)
+ #           ssl_noisy = ssl_noisy.to(device)
+            ssl_clean = ssl_clean.cpu() #to(device)
+            metadataT = torch.zeros(2)
+            metadataT[0] = metadata['target_level']
+            metadataT[1] = metadata['snr']
+#            metadataT = metadataT.to(device)
             for batch_idx in range(args.b):
 #                print(noise[batch_idx,:].shape)
 #                print(noiseFilter.shape)
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+#                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+#                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
                 cl, no, ny, nyrms = segmental_snr_mixer(
-                    {'target_level':metadata['target_level'],
+                    {'target_level':metadataT[0],
                      'target_level_lower':-35.0,
                      'target_level_upper':-15.0},
-                    ssl_clean[batch_idx,:].numpy(),
-                    ssl_noise[batch_idx,:].numpy(), 
-                    metadata['snr'])
+                    ssl_clean[batch_idx,:], #.numpy(),
+                    ssl_noise[batch_idx,:], #.numpy(), 
+                    metadataT[1])#.to(device)
                 ssl_noise[batch_idx,:] = torch.from_numpy(no).float()
                 ssl_clean[batch_idx,:] = torch.from_numpy(cl).float()
                 ssl_noisy[batch_idx,:] = torch.from_numpy(ny).float()
