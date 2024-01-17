@@ -168,18 +168,11 @@ class Network(torch.nn.Module):
             targetLevel,
             targetLevelLower,
             targetLevelHigher):
-#        print(clean.shape)
-#        print(noise.shape)
-#        print(meta.shape)
-#        print(clean.get_device())
-#        print(noise.get_device())
-#        print(meta.get_device())
-#        print(type(clean))
-#        print(type(noise))
-#        print(type(meta))
-#        print(meta[2])
-        ssl_noisy = torch.zeros(batchSize, 480000)
-        self._segmental_snr_mixer(clean[0,:], noise[0,:], snr, 
+        ssl_noisy = torch.zeros(batchSize, 480000).to(device)
+        ssl_noise = torch.zeros(batchSize, 480000).to(device)
+        ssl_clean = torch.zeros(batchSize, 480000).to(device)
+        for i in range(batchSize):
+            ssl_clean[i, :], ssl_noise[i,:], ssl_noisy[i,:], rms = self._segmental_snr_mixer(clean[0,:], noise[0,:], snr, 
                 targetLevel,
                 targetLevelLower,
                 targetLevelHigher)
@@ -435,29 +428,26 @@ if __name__ == '__main__':
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(train_loader):
-#            print(i)
             noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(i)
-#            print(noisy_file)
-#            print(metadata)
-#            metadataT = torch.zeros(3)
             net.train()
             noise = noise.to(device)
             clean = clean.to(device)
-#            metadataT[0] = metadata['target_level']
-#            metadataT[1] = metadata['snr']
-#            metadataT = metadataT.to(device)
             ssl_noise = torch.zeros(args.b, 480000).to(device)
             ssl_clean = torch.zeros(args.b, 480000).to(device)
             for batch_idx in range(args.b):
                 ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
                 ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-            module.synthesizeNoisySpeech(
-                    ssl_clean, ssl_noise, 
-                    args.b, 
-                    metadata['snr'],
-                    metadata['target_level'],
-                    -35,
-                    -15)
+                
+#            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+#                    ssl_clean, ssl_noise, 
+#                    args.b, 
+#                    metadata['snr'],
+#                    metadata['target_level'],
+#                    -35,
+#                    -15)
+#            print(ssl_noisy.get_device())
+#            print(ssl_noise.get_device())
+#            print(ssl_clean.get_device())
             ssl_noisy = np.zeros((args.b, 480000))
             ssl_noise = ssl_noise.cpu().numpy() #to(device)
             ssl_clean = ssl_clean.cpu().numpy() #to(device)
@@ -472,13 +462,13 @@ if __name__ == '__main__':
                 ssl_noise[batch_idx,:] = no
                 ssl_clean[batch_idx,:] = cl
                 ssl_noisy[batch_idx,:] = ny
-#                sys.exit(0)
             ssl_noise = torch.from_numpy(ssl_noise).float()#.to(device)
             ssl_clean = torch.from_numpy(ssl_clean).float()#.to(device)
             ssl_noisy = torch.from_numpy(ssl_noisy).float()#.to(device)
             ssl_noise = ssl_noise.to(device)
             ssl_noisy = ssl_noisy.to(device)
             ssl_clean = ssl_clean.to(device)
+
 #            cl, no, ny, nyrms = segmental_snr_mixer(
 #                 {'target_level':metadata['target_level'],
 #                  'target_level_lower':-35.0,
@@ -489,73 +479,17 @@ if __name__ == '__main__':
 #            ssl_noise = torch.from_numpy(no).float().to(device)
 #            ssl_clean = torch.from_numpy(cl).float().to(device)
 #            ssl_noisy = torch.from_numpy(ny).float().to(device)
-#            sys.exit(0)
 #            ssl_noisy = (0.5*ssl_clean) + (0.5*ssl_noise)
-#def segmental_snr_mixer(params, clean, noise, snr,
-#                        target_level=-25, clipping_threshold=0.99):
 
 #            for i in range(args.b):
 #                ssl_noise[i, :] = torchaudio.functional.convolve(noise[i,:], noiseFilter, "same")
 #                ssl_clean[i, :] = torchaudio.functional.convolve(clean[i,:], speechFilter, "same")
 #                ssl_noisy[i, :] = (0.5*ssl_clean[i, :]) + (0.5*ssl_noise[i, :])
 #            noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(i)
-#            print(noisy_file)
-#            print(clean_file)
-#            print(noise_file)
-#            print(metadata)
-#            sf.write(file="test_clean.wav", 
-#                    data=clean[0, :], 
-#                    samplerate=16000)
-#            sf.write(file="test_noise.wav", 
-#                    data=noise[0, :], 
-#                    samplerate=16000)
-#            sf.write(file="test_noisy.wav", 
-#                    data=noisy[0, :], 
-#                    samplerate=16000)
 #            ssl_clean = torchaudio.functional.convolve(clean[0,:], speechFilter, "same")
 #            ssl_noise = torchaudio.functional.convolve(noise[0,:], noiseFilter, "same")
-            # TODO eventually, we should try and match the SNR levels 
-            # simulated in the real dataset via a call that looks 
-            # something like:
-            # cl, no, ny, nyrms = segmental_snr_mixer(
-            #     {'target_level_lower':-35,
-            #      'target_level_upper':25},
-            #       clean,)
-            #       ...
-            # but for now we will try simulate with an SNR of 1.0
-#            ssl_noisy = (0.5*ssl_clean) + (0.5*ssl_noise)
-#            sf.write(file="test_ssl_clean.wav", 
-#                    data=ssl_clean, 
-#                    samplerate=16000)
-#            sf.write(file="test_ssl_noise.wav", 
-#                    data=ssl_noise, 
-#                    samplerate=16000)
-#            sf.write(file="test_ssl_noisy.wav", 
-#                    data=ssl_noisy, 
-#                    samplerate=16000)
-
-            # Use our spatially separated audio files for training
-
-#            print("ssl_noisy on: " + str(ssl_noisy.get_device()))
-#            print(ssl_noisy.shape)
-#            print(ssl_noisy.dtype)
 #            spec = stft_transform(ssl_noisy) # this be so broke
-#            print(spec.shape)
-#            print("torchaudio Spectrogram dtype " + str(spec.dtype))
-#            print(spec.real.shape)
-#            print(spec.imag.shape)
-#            print("torchaudio Spectrogram real dtype " + str(spec.real.dtype))
-#            print("torchaudio Spectrogram imag dtype " + str(spec.imag.dtype))
             noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
-#            noisy_abs = spec.real
-#            noisy_arg = spec.imag
-#            print(noisy_abs.dtype)
-#            print(noisy_arg.dtype)
-#            print(noisy_abs.shape)
-#            print(noisy_arg.shape)
-#            sys.exit(0)
-#            print("noisy_abs on: " + str(noisy_abs.get_device()))
-#            print("noisy_arg on :" + str(noisy_arg.get_device()))
             clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
 
             denoised_abs = net(noisy_abs)
@@ -563,8 +497,6 @@ if __name__ == '__main__':
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
             clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
 
-#            print(denoised_abs.get_device())
-#            print(noisy_arg.get_device())
             clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft)
 
             score = si_snr(clean_rec, ssl_clean)
