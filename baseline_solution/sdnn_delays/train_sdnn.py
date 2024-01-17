@@ -51,14 +51,27 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512):
 
 
 class Network(torch.nn.Module):
-    def __init__(self, threshold=0.1, tau_grad=0.1, scale_grad=0.8, max_delay=64, out_delay=0):
+    def __init__(self, 
+            threshold=0.1, 
+            tau_grad=0.1, 
+            scale_grad=0.8, 
+            max_delay=64, 
+            out_delay=0,
+            subjectID=12, 
+            speechFilterOrient=624, speechFilterChannel=0,
+            noiseFilterOrient=600,noiseFilterChannel=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
         self.stft_max = 140
         self.out_delay = out_delay
-        self.speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)).float() # .unsqueeze(0)
-        self.noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float() # .unsqueeze(0)
+        self.cipicSubject = CipicDatabase.subjects[subjectID]
+        self.speechFilter  = self.cipicSubject.getHRIRFromIndex(
+                speechFilterOrient, speechFilterChannel)
+        self.noiseFilter  = self.cipicSubject.getHRIRFromIndex(
+                noiseFilterOrient, noiseFilterChannel)
+        self.speechFilter  = torch.from_numpy(self.speechFilter).float()
+        self.noiseFilter   = torch.from_numpy(self.noiseFilter).float()
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -87,6 +100,11 @@ class Network(torch.nn.Module):
         self.blocks[2].delay.max_delay = max_delay
 
     def spatiallySeparateSpeech(self, clean, noise):
+        print(clean.shape)
+        print(noise.shape)
+        print(clean.get_device())
+        print(noise.get_device())
+        sys.exit(0)
         ssl_noise = torch.zeros(args.b, 480000)
         ssl_clean = torch.zeros(args.b, 480000)
         for batch_idx in range(args.b):
@@ -216,6 +234,32 @@ if __name__ == '__main__':
                         type=str,
                         default='../../',
                         help='dataset path')
+    # CIPIC Filter Parameters
+    parser.add_argument('-cipicSubject',
+                        type=int,
+                        default=12,
+                        help='cipic subject ID for pinna filters')
+    # Spatially distribute the sound sources, (azimuth, elevation)
+    # index = 624 ==> (0,  90)
+    # index = 600 ==> (0, -45)
+    # We choose filters in the midsagittal plane, so either selecting
+    # which channels is read from 'should' be irrelevant
+    parser.add_argument('-speechFilterOrient',
+                        type=int,
+                        default=624,
+                        help='Index into CIPIC source directions to orient the speech to ')
+    parser.add_argument('-speechFilterChannel',
+                        type=int,
+                        default=0,
+                        help='Channel to orient the speech to ')
+    parser.add_argument('-noiseFilterOrient',
+                        type=int,
+                        default=600,
+                        help='Index into CIPIC source directions to orient the noise to ')
+    parser.add_argument('-noiseFilterChannel',
+                        type=int,
+                        default=0,
+                        help='Channel to orient the noise to ')
 
     args = parser.parse_args()
 
@@ -248,16 +292,27 @@ if __name__ == '__main__':
                       args.tau_grad,
                       args.scale_grad,
                       args.dmax,
-                      args.out_delay).to(device)
+                      args.out_delay,
+                      args.cipicSubject,
+                      args.speechFilterOrient,
+                      args.speechFilterChannel,
+                      args.noiseFilterOrient,
+                      args.noiseFilterChannel).to(device)
         module = net
     else:
         print("Building GPU network")
-        net = torch.nn.DataParallel(Network(args.threshold,
-                                            args.tau_grad,
-                                            args.scale_grad,
-                                            args.dmax,
-                                            args.out_delay).to(device),
-                                    device_ids=args.gpu)
+        net = torch.nn.DataParallel(Network(
+                    args.threshold,
+                    args.tau_grad,
+                    args.scale_grad,
+                    args.dmax,
+                    args.out_delay,
+                    args.cipicSubject,
+                    args.speechFilterOrient,
+                    args.speechFilterChannel,
+                    args.noiseFilterOrient,
+                    args.noiseFilterChannel).to(device),
+                        device_ids=args.gpu)
         module = net.module
         stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
@@ -299,14 +354,9 @@ if __name__ == '__main__':
     stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
                                        accuracy_unit='dB')
 
-    # Spatially distribute the sound sources, (azimuth, elevation)
-    # index = 624 ==> (0,  90)
-    # index = 600 ==> (0, -45)
-    # We choose filters in the midsagittal plane, so either selecting
-    # which channels is read from 'should' be irrelevant
-    speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(624, 0)).float() # .unsqueeze(0)
+    speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(args.speech_orient, 0)).float() # .unsqueeze(0)
     speechFilter  = speechFilter.to(device) #view(1, 200)
-    noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float() # .unsqueeze(0)
+    noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(args.noise_orient, 0)).float() # .unsqueeze(0)
     noiseFilter   = noiseFilter.to(device) #view(1, 200)
     for epoch in range(args.epoch):
         t_st = datetime.now()
@@ -316,24 +366,14 @@ if __name__ == '__main__':
             clean = clean.to(device)
             ssl_noise = torch.zeros(args.b, 480000).to(device)
             ssl_clean = torch.zeros(args.b, 480000).to(device)
-#            print(ssl_clean.get_device())
-#            print(ssl_noise.get_device())
-#            print(speechFilter.get_device())
-#            print(noiseFilter.get_device())
             for batch_idx in range(args.b):
                 ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
                 ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-#            ssl_clean, ssl_noise = module.spatiallySeparateSpeech(clean, noise)
-#            ssl_noise = torch.zeros(args.b, 480000)
-#            ssl_clean = torch.zeros(args.b, 480000)
-#            print(ssl_clean.get_device())
-#            print(ssl_noise.get_device())
+            module.spatiallySeparateSpeech(ssl_clean, ssl_noise)
             ssl_noisy = np.zeros((args.b, 480000))
             noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(i)
             ssl_noise = ssl_noise.cpu().numpy() #to(device)
             ssl_clean = ssl_clean.cpu().numpy() #to(device)
- #           print(ssl_clean.get_device())
-#            print(ssl_noise.get_device())
             for batch_idx in range(args.b):
                 cl, no, ny, nyrms = segmental_snr_mixer(
                     {'target_level':metadata['target_level'],
@@ -348,13 +388,9 @@ if __name__ == '__main__':
             ssl_noise = torch.from_numpy(ssl_noise).float()#.to(device)
             ssl_clean = torch.from_numpy(ssl_clean).float()#.to(device)
             ssl_noisy = torch.from_numpy(ssl_noisy).float()#.to(device)
-#            print(ssl_clean.get_device())
-#            print(ssl_noise.get_device())
             ssl_noise = ssl_noise.to(device)
             ssl_noisy = ssl_noisy.to(device)
             ssl_clean = ssl_clean.to(device)
-#            print(ssl_clean.get_device())
-#            print(ssl_noise.get_device())
 #            sys.exit(0)
 #            ssl_noise = conv_transform(noise, noiseFilter) #torchaudio.functional.convolve(noise, noiseFilter, "same")
 #            ssl_clean = conv_transform(ssl_clean, speechFilter) #, "same")
