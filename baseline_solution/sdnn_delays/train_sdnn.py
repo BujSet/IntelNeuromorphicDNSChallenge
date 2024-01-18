@@ -479,8 +479,6 @@ if __name__ == '__main__':
             score = si_snr(clean_rec, ssl_clean)
             loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
 
-#            if (torch.isnan(loss) == True):
-#                print(loss)
             if torch.isnan(loss).any():
                 loss[torch.isnan(loss)] = 0
             assert torch.isnan(loss) == False
@@ -551,7 +549,11 @@ if __name__ == '__main__':
                 clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft)
                 
                 score = si_snr(clean_rec, clean)
+                if torch.isnan(score).any():
+                    score[torch.isnan(score)] = 0
                 loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+                if torch.isnan(loss).any():
+                    loss[torch.isnan(loss)] = 0
                 stats.validation.correct_samples += torch.sum(score).item()
                 stats.validation.loss_sum += loss.item()
                 stats.validation.num_samples += noisy.shape[0]
