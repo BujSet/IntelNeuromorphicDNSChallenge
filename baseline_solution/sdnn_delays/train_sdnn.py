@@ -67,13 +67,6 @@ class Network(torch.nn.Module):
         self.stft_var = 1.5
         self.stft_max = 140
         self.out_delay = out_delay
-        self.cipicSubject = CipicDatabase.subjects[subjectID]
-        self.speechFilter  = self.cipicSubject.getHRIRFromIndex(
-                speechFilterOrient, speechFilterChannel)
-        self.noiseFilter  = self.cipicSubject.getHRIRFromIndex(
-                noiseFilterOrient, noiseFilterChannel)
-        self.speechFilter  = torch.from_numpy(self.speechFilter).float()
-        self.noiseFilter   = torch.from_numpy(self.noiseFilter).float()
         self.EPS = 2.220446049250313e-16
 
         sigma_params = { # sigma-delta neuron parameters
@@ -342,12 +335,7 @@ if __name__ == '__main__':
                       args.tau_grad,
                       args.scale_grad,
                       args.dmax,
-                      args.out_delay,
-                      args.cipicSubject,
-                      args.speechFilterOrient,
-                      args.speechFilterChannel,
-                      args.noiseFilterOrient,
-                      args.noiseFilterChannel).to(device)
+                      args.out_delay).to(device)
         module = net
     else:
         print("Building GPU network")
@@ -356,20 +344,15 @@ if __name__ == '__main__':
                     args.tau_grad,
                     args.scale_grad,
                     args.dmax,
-                    args.out_delay,
-                    args.cipicSubject,
-                    args.speechFilterOrient,
-                    args.speechFilterChannel,
-                    args.noiseFilterOrient,
-                    args.noiseFilterChannel).to(device),
+                    args.out_delay).to(device),
                         device_ids=args.gpu)
         module = net.module
-        stft_transform =torchaudio.transforms.Spectrogram(
+    stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
                 power=None,
                 hop_length=math.floor(args.n_fft//4)).to(device)
-        conv_transform = torchaudio.transforms.Convolve("same").to(device)
+    conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
@@ -404,10 +387,13 @@ if __name__ == '__main__':
     stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
                                        accuracy_unit='dB')
 
-    speechFilter  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(args.speechFilterOrient, 0)).float() # .unsqueeze(0)
+    speechFilter  = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float() # .unsqueeze(0)
     speechFilter  = speechFilter.to(device) #view(1, 200)
-    noiseFilter   = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(args.noiseFilterOrient, 0)).float() # .unsqueeze(0)
+    noiseFilter   = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float() # .unsqueeze(0)
     noiseFilter   = noiseFilter.to(device) #view(1, 200)
+    print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
+    print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
+    print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
