@@ -227,7 +227,7 @@ if __name__ == '__main__':
                         help='batch size for dataloader')
     parser.add_argument('-lr',
                         type=float,
-                        default=0.01,
+                        default=0.001,
                         help='initial learning rate')
     parser.add_argument('-lam',
                         type=float,
@@ -277,6 +277,10 @@ if __name__ == '__main__':
                         type=str,
                         default='../../',
                         help='dataset path')
+    parser.add_argument('-ssnns',
+                        type=bool,
+                        default=False,
+                        help='Flag to turn on Spatial Separation of Noise and Speech')
     # CIPIC Filter Parameters
     parser.add_argument('-cipicSubject',
                         type=int,
@@ -387,31 +391,33 @@ if __name__ == '__main__':
     stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
                                        accuracy_unit='dB')
 
-    speechFilter  = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float() # .unsqueeze(0)
-    speechFilter  = speechFilter.to(device) #view(1, 200)
-    noiseFilter   = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float() # .unsqueeze(0)
-    noiseFilter   = noiseFilter.to(device) #view(1, 200)
-    print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-    print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
-    print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
+    if (args.ssnns):
+        speechFilter  = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float() # .unsqueeze(0)
+        speechFilter  = speechFilter.to(device) #view(1, 200)
+        noiseFilter   = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float() # .unsqueeze(0)
+        noiseFilter   = noiseFilter.to(device) #view(1, 200)
+        print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
+        print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
+        print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             net.train()
-            noise = noise.to(device)
-            clean = clean.to(device)
-            ssl_noise = torch.zeros(args.b, 480000).to(device)
-            ssl_clean = torch.zeros(args.b, 480000).to(device)
-            ssl_snrs  = torch.zeros(args.b, 1).to(device)
-            ssl_targlvls= torch.zeros(args.b, 1).to(device)
-            for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                ssl_snrs[batch_idx] = metadata['snr']
-                ssl_targlvls[batch_idx] = metadata['target_level']
+            if (args.ssnns):
+                noise = noise.to(device)
+                clean = clean.to(device)
+                ssl_noise = torch.zeros(args.b, 480000).to(device)
+                ssl_clean = torch.zeros(args.b, 480000).to(device)
+                ssl_snrs  = torch.zeros(args.b, 1).to(device)
+                ssl_targlvls= torch.zeros(args.b, 1).to(device)
+                for batch_idx in range(args.b):
+                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                    ssl_snrs[batch_idx] = metadata['snr']
+                    ssl_targlvls[batch_idx] = metadata['target_level']
 
-            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+                ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
                     ssl_clean, 
                     ssl_noise, 
                     args.b, 
@@ -420,6 +426,10 @@ if __name__ == '__main__':
                     -35,
                     -15)
 
+            else:
+                ssl_noise = noise.to(device)
+                ssl_noisy = noisy.to(device)
+                ssl_clean = clean.to(device)
 #            ssl_noisy = np.zeros((args.b, 480000))
 #            ssl_noise = ssl_noise.cpu().numpy() #to(device)
 #            ssl_clean = ssl_clean.cpu().numpy() #to(device)
@@ -498,20 +508,21 @@ if __name__ == '__main__':
         t_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
-            noise = noise.to(device)
-            clean = clean.to(device)
-            ssl_noise = torch.zeros(args.b, 480000).to(device)
-            ssl_clean = torch.zeros(args.b, 480000).to(device)
-            ssl_snrs  = torch.zeros(args.b, 1).to(device)
-            ssl_targlvls= torch.zeros(args.b, 1).to(device)
-            for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                ssl_snrs[batch_idx] = metadata['snr']
-                ssl_targlvls[batch_idx] = metadata['target_level']
+            if (args.ssnns):
+                noise = noise.to(device)
+                clean = clean.to(device)
+                ssl_noise = torch.zeros(args.b, 480000).to(device)
+                ssl_clean = torch.zeros(args.b, 480000).to(device)
+                ssl_snrs  = torch.zeros(args.b, 1).to(device)
+                ssl_targlvls= torch.zeros(args.b, 1).to(device)
+                for batch_idx in range(args.b):
+                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                    ssl_snrs[batch_idx] = metadata['snr']
+                    ssl_targlvls[batch_idx] = metadata['target_level']
                 
-            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+                ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
                     ssl_clean, 
                     ssl_noise, 
                     args.b, 
@@ -519,6 +530,10 @@ if __name__ == '__main__':
                     ssl_targlvls,
                     -35,
                     -15)
+            else:
+                ssl_noise = noise.to(device)
+                ssl_noisy = noisy.to(device)
+                ssl_clean = clean.to(device)
 
             with torch.no_grad():
                 noisy = ssl_noisy.to(device)
