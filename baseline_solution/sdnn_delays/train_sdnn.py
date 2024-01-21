@@ -278,8 +278,8 @@ if __name__ == '__main__':
                         default='../../',
                         help='dataset path')
     parser.add_argument('-ssnns',
-                        type=bool,
-                        default=False,
+                        dest="ssnns",
+                        action="store_true",
                         help='Flag to turn on Spatial Separation of Noise and Speech')
     # CIPIC Filter Parameters
     parser.add_argument('-cipicSubject',
