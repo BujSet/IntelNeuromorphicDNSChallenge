@@ -37,20 +37,51 @@ def collate_fn(batch):
     return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 
 
-def stft_splitter(audio, n_fft=512):
-    with torch.no_grad():
-        audio_stft = torch.stft(audio,
+def stft_splitter(audio, n_fft=512, method=None):
+    if (method == None):
+        with torch.no_grad():
+            audio_stft = torch.stft(audio,
                                 n_fft=n_fft,
                                 onesided=True,
                                 return_complex=True)
-        return audio_stft.abs(), audio_stft.angle()
+            return audio_stft.abs(), audio_stft.angle()
+    spec = method(audio)
+    return spec.abs(), spec.angle()    
 
 
-def stft_mixer(stft_abs, stft_angle, n_fft=512):
-    return torch.istft(torch.complex(stft_abs * torch.cos(stft_angle),
-                                        stft_abs * torch.sin(stft_angle)),
-                        n_fft=n_fft, onesided=True)
+def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
+    spec = torch.complex(stft_abs * torch.cos(stft_angle),
+                                        stft_abs * torch.sin(stft_angle))
+    if (method == None):
+        return torch.istft(spec, n_fft=n_fft, onesided=True)
+    if (type(method) != list):
+        return method(spec)
 
+    # Else, we a have a sequence of transforms to apply
+    method1 = method[0]
+    method2 = method[1]
+   
+#    print(stft_abs)
+##    with torch.no_grad():
+    detached = stft_abs.detach() 
+    print(detached.get_device())
+    with torch.no_grad():
+        squared = torch.square(detached)
+    print(squared.get_device())
+    power = method1(squared)
+    print(power.get_device())
+    spec = torch.complex(power * torch.cos(stft_angle),
+                         power * torch.sin(stft_angle))
+    return method2(spec)
+#    power = method1(detached)
+#    with torch.no_grad():
+#        power = method1(torch.square(spec.abs()))
+#         = method1(power)
+#    print(power.get_device())
+#    spec = torch.complex(detached * torch.cos(stft_angle),
+#                         detached * torch.sin(stft_angle))
+#
+#    return method2(spec)
 
 class Network(torch.nn.Module):
     def __init__(self, 
@@ -361,10 +392,27 @@ if __name__ == '__main__':
                 onesided=True, 
                 power=None,
                 hop_length=math.floor(args.n_fft//4)).to(device)
-    mel_transform =torchaudio.transforms.MelSpectrogram(
+    inv_stft_transform =torchaudio.transforms.InverseSpectrogram(
                 n_fft=args.n_fft,
-                n_mels=257,
                 onesided=True, 
+#                power=None,
+                hop_length=math.floor(args.n_fft//4)).to(device)
+    mel_transform =torchaudio.transforms.MelSpectrogram(
+                n_fft=4*args.n_fft,
+                n_mels=257,
+                power=2,
+                hop_length=math.floor(args.n_fft//4)).to(device)
+    # Seems like we cannot use inverseMelScale
+    # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
+
+    inv_mel_transform1 =torchaudio.transforms.InverseMelScale(
+                n_stft=(4*args.n_fft) // 2 + 1,
+                n_mels=257).to(device)
+#                power=2).to(device)
+#                hop_length=math.floor(args.n_fft//4)).to(device)
+    inv_mel_transform2 =torchaudio.transforms.GriffinLim(
+                n_fft=4*args.n_fft,
+#                n_mels=257,
                 power=2,
                 hop_length=math.floor(args.n_fft//4)).to(device)
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
@@ -403,10 +451,11 @@ if __name__ == '__main__':
                                        accuracy_unit='dB')
 
     if (args.ssnns):
-        speechFilter  = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float() # .unsqueeze(0)
-        speechFilter  = speechFilter.to(device) #view(1, 200)
-        noiseFilter   = torch.from_numpy(CipicDatabase.subjects[args.cipicSubject].getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float() # .unsqueeze(0)
-        noiseFilter   = noiseFilter.to(device) #view(1, 200)
+        CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
+        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
+        speechFilter  = speechFilter.to(device)
+        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
+        noiseFilter   = noiseFilter.to(device) 
         print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
         print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
         print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
@@ -441,66 +490,30 @@ if __name__ == '__main__':
                 ssl_noise = noise.to(device)
                 ssl_noisy = noisy.to(device)
                 ssl_clean = clean.to(device)
-#            ssl_noisy = np.zeros((args.b, 480000))
-#            ssl_noise = ssl_noise.cpu().numpy() #to(device)
-#            ssl_clean = ssl_clean.cpu().numpy() #to(device)
-#            for batch_idx in range(args.b):
-#                cl, no, ny, nyrms = segmental_snr_mixer(
-#                    {'target_level_lower':-35.0,
-#                     'target_level_upper':-15.0},
-#                    ssl_clean[batch_idx,:],
-#                    ssl_noise[batch_idx,:], 
-#                    metadata['snr'],
-#                    target_level=metadata['target_level'])#.to(device)
-#                ssl_noise[batch_idx,:] = no
-#                ssl_clean[batch_idx,:] = cl
-#                ssl_noisy[batch_idx,:] = ny
-#            ssl_noise = torch.from_numpy(ssl_noise).float()#.to(device)
-#            ssl_clean = torch.from_numpy(ssl_clean).float()#.to(device)
-#            ssl_noisy = torch.from_numpy(ssl_noisy).float()#.to(device)
-#            ssl_noise = ssl_noise.to(device)
-#            ssl_noisy = ssl_noisy.to(device)
-#            ssl_clean = ssl_clean.to(device)
-
-#            cl, no, ny, nyrms = segmental_snr_mixer(
-#                 {'target_level':metadata['target_level'],
-#                  'target_level_lower':-35.0,
-#                  'target_level_upper':-15.0},
-#                   ssl_clean[0,:].cpu().numpy(),
-#                   ssl_noise[0,:].cpu().numpy(), 
-#                   metadata['snr'])
-#            ssl_noise = torch.from_numpy(no).float().to(device)
-#            ssl_clean = torch.from_numpy(cl).float().to(device)
-#            ssl_noisy = torch.from_numpy(ny).float().to(device)
 
             if (args.spectrogram == 0):
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
             elif(args.spectrogram == 1):
-                noisy_spec = stft_transform(ssl_noisy)
-                noisy_abs = noisy_spec.abs()
-                noisy_arg = noisy_spec.angle()
-                clean_spec = stft_transform(ssl_clean)
-                clean_abs = clean_spec.abs()
-                clean_arg = clean_spec.angle()
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
             else:
-                noisy_spec = mel_transform(ssl_noisy)
-                noisy_abs = noisy_spec.abs()
-                noisy_arg = noisy_spec.angle()
-                clean_spec = mel_transform(ssl_clean)
-                clean_abs = clean_spec.abs()
-                clean_arg = clean_spec.angle()
-#            noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
-#            clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
 
             denoised_abs = net(noisy_abs)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
             clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
 
-            clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft)
+            if (args.spectrogram == 0):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+            elif (args.spectrogram == 1):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+            else:
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, [inv_mel_transform1, inv_mel_transform2])
 
-            score = si_snr(clean_rec, ssl_clean)
+            score = si_snr(clean_rec, clean)
             loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
 
             if torch.isnan(loss).any():
@@ -568,32 +581,26 @@ if __name__ == '__main__':
                 clean = ssl_clean.to(device)
                 
                 if (args.spectrogram == 0):
-                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
-                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
+                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
                 elif(args.spectrogram == 1):
-                    noisy_spec = stft_transform(ssl_noisy)
-                    noisy_abs = noisy_spec.abs()
-                    noisy_arg = noisy_spec.angle()
-                    clean_spec = stft_transform(ssl_clean)
-                    clean_abs = clean_spec.abs()
-                    clean_arg = clean_spec.angle()
+                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
+                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
                 else:
-                    noisy_spec = mel_transform(ssl_noisy)
-                    noisy_abs = noisy_spec.abs()
-                    noisy_arg = noisy_spec.angle()
-                    clean_spec = mel_transform(ssl_clean)
-                    clean_abs = clean_spec.abs()
-                    clean_arg = clean_spec.angle()
-#                noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft)
-#                clean_abs, clean_arg = stft_splitter(clean, args.n_fft)
+                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
+                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
 
                 denoised_abs = net(noisy_abs)
                 noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
                 clean_abs = slayer.axon.delay(clean_abs, out_delay)
                 clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
+                if (args.spectrogram == 0):
+                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+                elif(args.spectrogram == 1):
+                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+                else:
+                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, [inv_mel_transform1, inv_mel_transform2])
 
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft)
-                
                 score = si_snr(clean_rec, clean)
                 if torch.isnan(score).any():
                     score[torch.isnan(score)] = 0
