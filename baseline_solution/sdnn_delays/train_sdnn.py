@@ -38,15 +38,15 @@ def collate_fn(batch):
 
 
 def stft_splitter(audio, n_fft=512, method=None):
-    if (method == None):
-        with torch.no_grad():
+    with torch.no_grad():
+        if (method == None):
             audio_stft = torch.stft(audio,
                                 n_fft=n_fft,
                                 onesided=True,
                                 return_complex=True)
             return audio_stft.abs(), audio_stft.angle()
-    spec = method(audio)
-    return spec.abs(), spec.angle()    
+        spec = method(audio)
+        return spec.abs(), spec.angle()    
 
 
 def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
@@ -54,34 +54,11 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
                                         stft_abs * torch.sin(stft_angle))
     if (method == None):
         return torch.istft(spec, n_fft=n_fft, onesided=True)
-    if (type(method) != list):
-        return method(spec)
+    if (type(method) == int):
+        print("Perform inver mel scale transform")
+        sys.exit(0)
 
-    # Else, we a have a sequence of transforms to apply
-    method1 = method[0]
-    method2 = method[1]
-   
-#    print(stft_abs)
-##    with torch.no_grad():
-    detached = stft_abs.detach() 
-    print(detached.get_device())
-    with torch.no_grad():
-        squared = torch.square(detached)
-    print(squared.get_device())
-    power = method1(squared)
-    print(power.get_device())
-    spec = torch.complex(power * torch.cos(stft_angle),
-                         power * torch.sin(stft_angle))
-    return method2(spec)
-#    power = method1(detached)
-#    with torch.no_grad():
-#        power = method1(torch.square(spec.abs()))
-#         = method1(power)
-#    print(power.get_device())
-#    spec = torch.complex(detached * torch.cos(stft_angle),
-#                         detached * torch.sin(stft_angle))
-#
-#    return method2(spec)
+    return method(spec)
 
 class Network(torch.nn.Module):
     def __init__(self, 
@@ -307,7 +284,7 @@ if __name__ == '__main__':
     parser.add_argument('-spectrogram',
                         type=int,
                         default=0,
-                        help='What type of FT to use, 0: torch.stft, 1: torchaudio.Transforms.Spectrogram, 2:torchaudio.transforms.MelSpectrogram')
+                        help='What type of FT to use, 0: torch.stft, 1: torchaudio.Transforms.Spectrogram, 2:numpy melspec')
     parser.add_argument('-path',
                         type=str,
                         default='../../',
@@ -395,7 +372,6 @@ if __name__ == '__main__':
     inv_stft_transform =torchaudio.transforms.InverseSpectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
-#                power=None,
                 hop_length=math.floor(args.n_fft//4)).to(device)
     mel_transform =torchaudio.transforms.MelSpectrogram(
                 n_fft=4*args.n_fft,
@@ -404,17 +380,6 @@ if __name__ == '__main__':
                 hop_length=math.floor(args.n_fft//4)).to(device)
     # Seems like we cannot use inverseMelScale
     # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
-
-    inv_mel_transform1 =torchaudio.transforms.InverseMelScale(
-                n_stft=(4*args.n_fft) // 2 + 1,
-                n_mels=257).to(device)
-#                power=2).to(device)
-#                hop_length=math.floor(args.n_fft//4)).to(device)
-    inv_mel_transform2 =torchaudio.transforms.GriffinLim(
-                n_fft=4*args.n_fft,
-#                n_mels=257,
-                power=2,
-                hop_length=math.floor(args.n_fft//4)).to(device)
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
     # Define optimizer module.
@@ -511,7 +476,7 @@ if __name__ == '__main__':
             elif (args.spectrogram == 1):
                 clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
             else:
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, [inv_mel_transform1, inv_mel_transform2])
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
 
             score = si_snr(clean_rec, clean)
             loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
@@ -599,7 +564,7 @@ if __name__ == '__main__':
                 elif(args.spectrogram == 1):
                     clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
                 else:
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, [inv_mel_transform1, inv_mel_transform2])
+                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
 
                 score = si_snr(clean_rec, clean)
                 if torch.isnan(score).any():
