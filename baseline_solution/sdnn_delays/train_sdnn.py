@@ -363,6 +363,7 @@ if __name__ == '__main__':
                 hop_length=math.floor(args.n_fft//4)).to(device)
     mel_transform =torchaudio.transforms.MelSpectrogram(
                 n_fft=args.n_fft,
+                n_mels=257,
                 onesided=True, 
                 power=2,
                 hop_length=math.floor(args.n_fft//4)).to(device)
