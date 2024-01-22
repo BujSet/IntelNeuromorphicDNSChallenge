@@ -273,6 +273,10 @@ if __name__ == '__main__':
                         type=int,
                         default=50,
                         help='number of epochs to run')
+    parser.add_argument('-spectrogram',
+                        type=int,
+                        default=0,
+                        help='What type of FT to use, 0: torch.stft, 1: torchaudio.Transforms.Spectrogram, 2:torchaudio.transforms.MelSpectrogram')
     parser.add_argument('-path',
                         type=str,
                         default='../../',
@@ -315,6 +319,7 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         identifier += '_{}{}'.format(args.optim, args.seed)
 
+    assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
     trained_folder = 'Trained' + identifier
     logs_folder = 'Logs' + identifier
     print(trained_folder)
@@ -355,6 +360,11 @@ if __name__ == '__main__':
                 n_fft=args.n_fft,
                 onesided=True, 
                 power=None,
+                hop_length=math.floor(args.n_fft//4)).to(device)
+    mel_transform =torchaudio.transforms.MelSpectrogram(
+                n_fft=args.n_fft,
+                onesided=True, 
+                power=2,
                 hop_length=math.floor(args.n_fft//4)).to(device)
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
@@ -462,8 +472,25 @@ if __name__ == '__main__':
 #            ssl_clean = torch.from_numpy(cl).float().to(device)
 #            ssl_noisy = torch.from_numpy(ny).float().to(device)
 
-            noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
-            clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
+            if (args.spectrogram == 0):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
+            elif(args.spectrogram == 1):
+                noisy_spec = stft_transform(ssl_noisy)
+                noisy_abs = noisy_spec.abs()
+                noisy_arg = noisy_spec.angle()
+                clean_spec = stft_transform(ssl_clean)
+                clean_abs = clean_spec.abs()
+                clean_arg = clean_spec.angle()
+            else:
+                noisy_spec = mel_transform(ssl_noisy)
+                noisy_abs = noisy_spec.abs()
+                noisy_arg = noisy_spec.angle()
+                clean_spec = mel_transform(ssl_clean)
+                clean_abs = clean_spec.abs()
+                clean_arg = clean_spec.angle()
+#            noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
+#            clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
 
             denoised_abs = net(noisy_abs)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
@@ -539,8 +566,25 @@ if __name__ == '__main__':
                 noisy = ssl_noisy.to(device)
                 clean = ssl_clean.to(device)
                 
-                noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft)
-                clean_abs, clean_arg = stft_splitter(clean, args.n_fft)
+                if (args.spectrogram == 0):
+                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft)
+                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft)
+                elif(args.spectrogram == 1):
+                    noisy_spec = stft_transform(ssl_noisy)
+                    noisy_abs = noisy_spec.abs()
+                    noisy_arg = noisy_spec.angle()
+                    clean_spec = stft_transform(ssl_clean)
+                    clean_abs = clean_spec.abs()
+                    clean_arg = clean_spec.angle()
+                else:
+                    noisy_spec = mel_transform(ssl_noisy)
+                    noisy_abs = noisy_spec.abs()
+                    noisy_arg = noisy_spec.angle()
+                    clean_spec = mel_transform(ssl_clean)
+                    clean_abs = clean_spec.abs()
+                    clean_arg = clean_spec.angle()
+#                noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft)
+#                clean_abs, clean_arg = stft_splitter(clean, args.n_fft)
 
                 denoised_abs = net(noisy_abs)
                 noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
