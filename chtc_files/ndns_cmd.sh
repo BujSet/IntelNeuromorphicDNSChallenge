@@ -1,8 +1,6 @@
 #!/bin/bash
 export TORCH_EXTENSIONS_DIR=$(pwd)
 export HOME=$(pwd)
-git config --global user.email "ranganath1000@gmail.com"
-git config --global user.name "BujSet"
 git clone https://github.com/BujSet/IntelNeuromorphicDNSChallenge.git
 cd IntelNeuromorphicDNSChallenge/
 git switch develop
@@ -81,7 +79,7 @@ cd ../../
 nvidia-smi --query-gpu=timestamp,power.draw --format=csv  -i $(python chtc_files/get_device_uuid.py) -lms 500 > ../power.txt &
 POWER_CNT=$!
 sleep 10s
-python baseline_solution/sdnn_delays/train_sdnn.py -epoch 1 -cipicSubject 12 -speechFilterOrient 601 -speechFilterChannel 1 -noiseFilterOrient 621 -noiseFilterChannel 1 -path ./ > ../accuracy.txt
+python baseline_solution/sdnn_delays/train_sdnn.py -epoch 5 -ssnns -cipicSubject 12 -speechFilterOrient 601 -speechFilterChannel 1 -noiseFilterOrient 621 -noiseFilterChannel 1 -path ./ > ../accuracy.txt
 sleep 10s
 kill ${POWER_CNT}
 python chtc_files/plot_power_profile.py
