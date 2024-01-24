@@ -294,10 +294,14 @@ if __name__ == '__main__':
                         action="store_true",
                         help='Flag to turn on Spatial Separation of Noise and Speech')
     # CIPIC Filter Parameters
+
+    # ID:21 ==> Mannequin with large pinna
+    # ID 165 ==> Mannequin with small pinna
+    # The rest are real subjects
     parser.add_argument('-cipicSubject',
                         type=int,
                         default=12,
-                        help='cipic subject ID for pinna filters')
+                        help='Cipic subject ID for pinna filters')
     # Spatially distribute the sound sources, (azimuth, elevation)
     # index = 624 ==> (0,  90)
     # index = 600 ==> (0, -45)

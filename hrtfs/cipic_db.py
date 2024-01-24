@@ -30,8 +30,12 @@ class CIPIC_DB():
         self.cwd = os.path.join(os.getcwd(), "hrtfs")
         self.cwd = os.path.join(self.cwd, "cipic")
         self.subjects = dict()
-        subID = "012"
-        filePath = os.path.join(self.cwd, "subject_" + subID + ".sofa")
-        self.subjects[int(subID)] = CIPIC_Subject(int(subID), filePath)
+        # TODO, really we should should just read the directory and see what
+        # sofa files have been downloaded, but for now we'll just hardcode 
+        # these
+        subjectIDs = ["012", "021", "165"]
+        for subID in subjectIDs:
+            filePath = os.path.join(self.cwd, "subject_" + subID + ".sofa")
+            self.subjects[int(subID)] = CIPIC_Subject(int(subID), filePath)
 
 CipicDatabase = CIPIC_DB();
