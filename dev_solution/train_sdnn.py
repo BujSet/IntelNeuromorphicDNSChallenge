@@ -164,11 +164,30 @@ class Network(torch.nn.Module):
                        
         return ssl_noisy, ssl_clean, ssl_noise
 
-    def melSpectrogram(self, clean_gpu, noise_gpu, noisy_gpu, batchSize):
-        clean = clean_gpu.cpu()
-        noise = noise_gpu.cpu()
-        noisy = noisy_gpu.cpu()
+    def melSpectrogram(self, wav_gpu, args):
+        wav = wav_gpu.cpu()
+        for i in range(args.b):
+            sample = wav[i,:]
+#            print(sample)
+#            print(sample.size())
+            spec = librosa.feature.melspectrogram(
+                    y=sample.numpy(), 
+                    sr=44100,
+                    n_fft=args.n_fft,
+                    hop_length=math.floor(args.n_fft//4),
+                    power=2, 
+                    n_mels=args.n_fft)
+            print(spec.shape)
+            print(spec.size())
+            mag, phase = librosa.magphase(spec)
+            print(mag.shape)
+            print(mag.size())
+            print(phase.shape)
+            print(phase.size())
+            sys.exit(0)
 
+  
+        return wav, wav
 
 
     def forward(self, noisy):
@@ -475,8 +494,9 @@ if __name__ == '__main__':
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
                 clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
             else:
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+                noisy_abs, noisy_arg = module.melSpectrogram(ssl_noisy, args)
+                sys.exit(0)
+                clean_abs, clean_arg = module.melSpectrogram(ssl_clean, args)
 
             denoised_abs = net(noisy_abs)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
