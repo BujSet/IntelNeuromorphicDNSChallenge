@@ -172,18 +172,18 @@ class Network(torch.nn.Module):
 #            print(sample.size())
             spec = librosa.feature.melspectrogram(
                     y=sample.numpy(), 
-                    sr=44100,
+                    sr=16000,
                     n_fft=args.n_fft,
                     hop_length=math.floor(args.n_fft//4),
-                    power=2, 
+                    power=1, 
                     n_mels=args.n_fft)
-            print(spec.shape)
-            print(spec.size())
+            print(spec)
+#            print(spec.size())
             mag, phase = librosa.magphase(spec)
-            print(mag.shape)
-            print(mag.size())
-            print(phase.shape)
-            print(phase.size())
+            print(mag)
+#            print(mag.size())
+            print(phase)
+#            print(phase.size())
             sys.exit(0)
 
   
@@ -403,11 +403,6 @@ if __name__ == '__main__':
     inv_stft_transform =torchaudio.transforms.InverseSpectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
-                hop_length=math.floor(args.n_fft//4)).to(device)
-    mel_transform =torchaudio.transforms.MelSpectrogram(
-                n_fft=4*args.n_fft,
-                n_mels=257,
-                power=2,
                 hop_length=math.floor(args.n_fft//4)).to(device)
     # Seems like we cannot use inverseMelScale
     # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
