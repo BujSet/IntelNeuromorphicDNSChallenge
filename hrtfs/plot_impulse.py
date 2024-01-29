@@ -5,8 +5,9 @@ import torchaudio
 import numpy as np
 import math
 
-ch1  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 1)).float()
-ch0 = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(600, 0)).float()
+SUBJECT = 165
+ch1  = torch.from_numpy(CipicDatabase.subjects[SUBJECT].getHRIRFromIndex(600, 1)).float()
+ch0 = torch.from_numpy(CipicDatabase.subjects[SUBJECT].getHRIRFromIndex(600, 0)).float()
 minCH = min(torch.min(ch1), torch.min(ch0))
 maxCH = min(torch.max(ch1), torch.max(ch0))
 
@@ -34,8 +35,9 @@ maxPhase = max(torch.max(phase1), torch.max(phase0))
 minMag = min(torch.min(ampl1), torch.min(ampl0))
 maxMag = max(torch.max(ampl1), torch.max(ampl0))
 
-fig, axs = plt.subplots(2,3, figsize=(30,20))
-plt.suptitle("Impulse Response for Subject 12 on Midsagittal Plane", 
+fig, axs = plt.subplots(2,3, figsize=(20,10))
+plt.subplots_adjust(top=0.85) 
+plt.suptitle("Impulse Response for Subject "+str(SUBJECT)+" on Midsagittal Plane", 
         fontsize='large',
         fontweight='bold',
         y=0.91)
@@ -59,6 +61,7 @@ axs[0,2].set_title("Frequency Domain Impluse Response (Phase)")
 axs[0,2].plot(freqs, phase1, color='orange')
 axs[0,2].set_xlabel("Frequency (kHz)")
 axs[0,2].set_ylabel("Phase")
+axs[0,2].ticklabel_format(axis='y',style='sci', useOffset=True, scilimits=(0,0))
 axs[0,2].set_ylim(minPhase, maxPhase)
 
 axs[1,1].plot(freqs, ampl0, color='blue')
@@ -69,6 +72,7 @@ axs[1,2].plot(freqs, phase0, color='blue')
 axs[1,2].set_xlabel("Frequency (kHz)")
 axs[1,2].set_ylabel("Phase")
 axs[1,2].set_ylim(minPhase, maxPhase)
+axs[1,2].ticklabel_format(axis='y',style='sci', useOffset=True, scilimits=(0,0))
 
 plt.savefig("impulse_reponse.png", bbox_inches='tight')
 plt.close()

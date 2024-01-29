@@ -4,6 +4,7 @@ import torch
 import torchaudio
 import numpy as np
 
+SUBJECT = 165 
 def get_db_response(filter_freq, input_freq):
     filter_mag = filter_freq.abs() + 1e-8
     input_mag = input_freq.abs() + 1e-8
@@ -28,7 +29,7 @@ def get_db_resp(el, tone, channel):
 
     pureTone = torch.from_numpy(y).float()
     idx, deg = el
-    fir  = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(idx, channel)).float()
+    fir  = torch.from_numpy(CipicDatabase.subjects[SUBJECT].getHRIRFromIndex(idx, channel)).float()
     response = torchaudio.functional.convolve(pureTone, fir, "same")
     stft = torchaudio.transforms.Spectrogram(
         n_fft=1024,
@@ -40,7 +41,7 @@ def get_db_resp(el, tone, channel):
     return get_db_response(spec_filter, spec_clean)
 
 def get_heatmap(startIdx, channel, tones):
-    posits = CipicDatabase.subjects[12].getCartesianPositions()
+    posits = CipicDatabase.subjects[SUBJECT].getCartesianPositions()
     yval = round(posits[startIdx][1], 3)
     elevations = []
     for i in range(50):
@@ -94,7 +95,7 @@ ax2.set_yticklabels(["front","up","back"], rotation=90)
 myxticks = list(range(0, len(tones), len(tones)//4))
 axs[1,0].set_xticks(myxticks)
 axs[1,0].set_xticklabels([str(tones[i]/1000.0) for i in myxticks])
-posits = CipicDatabase.subjects[12].getCartesianPositions()
+posits = CipicDatabase.subjects[SUBJECT].getCartesianPositions()
 yval = round(posits[1200][1], 3)
 axs[0,0].set_title("y="+str(yval)) 
 yval = round(posits[900][1], 3)

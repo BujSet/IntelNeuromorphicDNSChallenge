@@ -4,11 +4,13 @@ import torch
 import torchaudio
 import numpy as np
 
+SUBJECT = 165
+
 FIRs1 = [None for _ in range(50)]
 FIRs0 = [None for _ in range(50)]
 for i in range(600, 650, 1):
-    FIRs1[i - 600] = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(i, 1)).float()
-    FIRs0[i - 600] = torch.from_numpy(CipicDatabase.subjects[12].getHRIRFromIndex(i, 0)).float()
+    FIRs1[i - 600] = torch.from_numpy(CipicDatabase.subjects[SUBJECT].getHRIRFromIndex(i, 1)).float()
+    FIRs0[i - 600] = torch.from_numpy(CipicDatabase.subjects[SUBJECT].getHRIRFromIndex(i, 0)).float()
 
 minAmpl = min(torch.min(torch.cat(FIRs0)), torch.min(torch.cat(FIRs1)))
 maxAmpl = min(torch.max(torch.cat(FIRs0)), torch.max(torch.cat(FIRs1)))
@@ -88,8 +90,9 @@ elevations = [ "-45°     (front)",
                "-45°     (back)", 
                "-50.625° (back)"]
 
-fig, axs = plt.subplots(2,3, figsize=(40,30))
-plt.suptitle("Impulse Response for Subject 12 on Midsagittal Plane", 
+fig, axs = plt.subplots(2,3, figsize=(20,10))
+plt.subplots_adjust(top=0.85) 
+plt.suptitle("Impulse Response for Subject "+str(SUBJECT)+" on Midsagittal Plane", 
         fontsize='large', 
         y=0.91,
         fontweight='bold')
@@ -107,28 +110,30 @@ for i in range(len(FIRs1)):
 axs[0,0].set_xlabel("Time (msec)")
 axs[0,0].set_ylabel("Amplitude")
 axs[0,0].set_ylim(minAmpl, maxAmpl)
-axs[0,0].set_title("Channel 1 Time Domain\nImpluse Response")
+axs[0,0].set_title("Time Domain Impluse Response")
 axs[0,0].legend()
-axs[0,1].set_title("Channel 1 Frequency Domain\nImpluse Response (Magnitude)")
+axs[0,1].set_title("Frequency Domain Impluse Response (Magnitude)")
 axs[0,1].set_xlabel("Frequency (kHz)")
 axs[0,1].set_ylabel("Magnitude")
 axs[0,1].set_ylim(minMag, maxMag)
 axs[0,2].set_xlabel("Frequency (kHz)")
 axs[0,2].set_ylabel("Phase")
-axs[0,2].set_title("Channel 1 Frequency Domain\nImpluse Response (Phase)")
+axs[0,2].set_title("Frequency Domain Impluse Response (Phase)")
+axs[0,2].ticklabel_format(axis='y',style='sci', useOffset=True, scilimits=(0,0))
 axs[0,2].set_ylim(minPhase, maxPhase)
 axs[1,0].set_xlabel("Time (msec)")
 axs[1,0].set_ylabel("Amplitude")
 axs[1,0].set_ylim(minAmpl, maxAmpl)
 axs[1,0].legend()
-axs[1,0].set_title("Channel 0 Time Domain\nImpluse Response")
-axs[1,1].set_title("Channel 0 Frequency Domain\nImpluse Response (Magnitude)")
+axs[1,0].set_title("Time Domain Impluse Response")
+axs[1,1].set_title("Frequency Domain Impluse Response (Magnitude)")
 axs[1,1].set_xlabel("Frequency (kHz)")
 axs[1,1].set_ylabel("Magnitude")
 axs[1,1].set_ylim(minMag, maxMag)
-axs[1,2].set_title("Channel 0 Frequency Domain\nImpluse Response (Phase)")
+axs[1,2].set_title("Frequency Domain Impluse Response (Phase)")
 axs[1,2].set_xlabel("Frequency (kHz)")
 axs[1,2].set_ylabel("Phase")
+axs[1,2].ticklabel_format(axis='y',style='sci', useOffset=True, scilimits=(0,0))
 axs[1,2].set_ylim(minPhase, maxPhase)
 plt.savefig("phase_ir.png", bbox_inches='tight')
 plt.close()
