@@ -88,6 +88,31 @@ CLEAN_FILE = './training_set/clean/clean_fileid_1542.wav'
 NOISE_FILE = './training_set/noise/noise_fileid_1542.wav'
 METADATA = {'snr': 16, 'target_level': -23}
 
+# Define transform
+spectrogram = T.Spectrogram(
+        n_fft=512,
+        power=2).to(device)
+
+complex_spec = T.Spectrogram(
+        n_fft=512,
+        power=1).to(device)
+
+mel_spectrogram = T.MelSpectrogram(
+    sample_rate=16000,
+    n_fft=512,
+    win_length=None,
+    hop_length=256,
+    center=True,
+    pad_mode="reflect",
+    power=1.0,
+    norm="slaney",
+    n_mels=128,
+    mel_scale="htk",
+).to(device)
+
+melscale = transforms.MelScale(sample_rate=16000, 
+        n_stft=257).to(device)
+
 
 noisy, nysr = torchaudio.load(NOISY_FILE)
 clean, clsr = torchaudio.load(CLEAN_FILE)
@@ -96,6 +121,14 @@ noise, nesr = torchaudio.load(NOISE_FILE)
 noisy = noisy.to(device)
 clean = clean.to(device)
 noise = noise.to(device)
+
+mel_noisy = mel_spectrogram(noisy).cpu()
+mel_clean = mel_spectrogram(clean).cpu()
+mel_noise = mel_spectrogram(noise).cpu()
+
+complex_noisy = mel_spectrogram(noisy).cpu()
+complex_clean = mel_spectrogram(clean).cpu()
+complex_noise = mel_spectrogram(noise).cpu()
 
 ssl_noise = conv_transform(noise, noiseFilter)
 ssl_clean = conv_transform(clean, speechFilter)
@@ -106,42 +139,48 @@ ssl_clean, ssl_noise, ssl_noisy, rms = mixer(
         -35,
         -15)
 
-# Define transform
-spectrogram = T.Spectrogram(
-        n_fft=512,
-        power=2).to(device)
-
 # Perform transform
 spec_noisy = spectrogram(ssl_noisy).cpu()
 spec_clean = spectrogram(ssl_clean).cpu()
 spec_noise = spectrogram(ssl_noise).cpu()
 
+mel_spec_noisy = mel_spectrogram(ssl_noisy).cpu()
+mel_spec_clean = mel_spectrogram(ssl_clean).cpu()
+mel_spec_noise = mel_spectrogram(ssl_noise).cpu()
+print(mel_spec_noisy.size())
+print(mel_spec_noisy)
+
 noisy = ssl_noisy.cpu()
 clean = ssl_clean.cpu()
 noise = ssl_noise.cpu()
 
-fig, axs = plt.subplots(2, 1)
-plot_waveform(noisy, nysr, title="Original (Noisy)", ax=axs[0])
+fig  = plt.figure()
+gs = fig.add_gridspec(5,2)
+#fig, axs = plt.subplots(3, 1)
+plot_waveform(noisy, nysr, title="Noisy", ax=axs[0])
 plot_spectrogram(spec_noisy[0], title="Spectrogram", ax=axs[1])
+plot_spectrogram(mel_spec_noisy[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
 fig.tight_layout()
-plt.savefig("spec_noisy_ssl.png")
+plt.savefig("mel_spec_noisy_ssl.png")
 plt.close()
 
-fig, axs = plt.subplots(2, 1)
-plot_waveform(clean, clsr, title="Original (Clean)", ax=axs[0])
+fig, axs = plt.subplots(3, 1)
+plot_waveform(clean, clsr, title="Clean", ax=axs[0])
 plot_spectrogram(spec_clean[0], title="Spectrogram", ax=axs[1])
+plot_spectrogram(mel_spec_clean[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
 fig.tight_layout()
-plt.savefig("spec_clean_ssl.png")
+plt.savefig("mel_spec_clean_ssl.png")
 plt.close()
 
-fig, axs = plt.subplots(2, 1)
-plot_waveform(noise, nesr, title="Original (Noise)", ax=axs[0])
+fig, axs = plt.subplots(3, 1)
+plot_waveform(noise, nesr, title="Noise", ax=axs[0])
 plot_spectrogram(spec_noise[0], title="Spectrogram", ax=axs[1])
+plot_spectrogram(mel_spec_noise[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
 fig.tight_layout()
-plt.savefig("spec_noise_ssl.png")
+plt.savefig("mel_spec_noise_ssl.png")
 plt.close()
 
-sf.write('ssl_noisy.wav', np.ravel(noisy.numpy()), nysr)
-sf.write('ssl_clean.wav', np.ravel(clean.numpy()), clsr)
-sf.write('ssl_noise.wav', np.ravel(noise.numpy()), nesr)
+#sf.write('ssl_noisy.wav', np.ravel(noisy.numpy()), nysr)
+#sf.write('ssl_clean.wav', np.ravel(clean.numpy()), clsr)
+#sf.write('ssl_noise.wav', np.ravel(noise.numpy()), nesr)
 
