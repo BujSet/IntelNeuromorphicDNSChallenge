@@ -115,23 +115,6 @@ complex_spectrogram = T.Spectrogram(
         n_fft=512,
         power=None).to(device)
 
-#mel_spectrogram = T.MelSpectrogram(
-#    sample_rate=16000,
-#    n_fft=512,
-#    win_length=None,
-#    hop_length=256,
-#    center=True,
-#    pad_mode="reflect",
-#    power=1.0,
-#    norm="slaney",
-#    n_mels=128,
-#    mel_scale="htk",
-#).to(device)
-
-#melscale = transforms.MelScale(sample_rate=16000, 
-#        n_stft=257).to(device)
-
-
 noisy, nysr = torchaudio.load(NOISY_FILE)
 clean, clsr = torchaudio.load(CLEAN_FILE)
 noise, nesr = torchaudio.load(NOISE_FILE)
@@ -143,6 +126,24 @@ noise = noise.to(device)
 complex_noisy = complex_spectrogram(noisy).cpu()
 complex_clean = complex_spectrogram(clean).cpu()
 complex_noise = complex_spectrogram(noise).cpu()
+mel_noisy_mag = librosa.feature.melspectrogram(
+        S=complex_noisy.abs()[0].numpy(),
+        sr=16000)
+mel_noisy_phase = librosa.feature.melspectrogram(
+        S=complex_noisy.angle()[0].numpy(),
+        sr=16000)
+mel_clean_mag = librosa.feature.melspectrogram(
+        S=complex_clean.abs()[0].numpy(),
+        sr=16000)
+mel_clean_phase = librosa.feature.melspectrogram(
+        S=complex_clean.angle()[0].numpy(),
+        sr=16000)
+mel_noise_mag = librosa.feature.melspectrogram(
+        S=complex_noise.abs()[0].numpy(),
+        sr=16000)
+mel_noise_phase = librosa.feature.melspectrogram(
+        S=complex_noise.angle()[0].numpy(),
+        sr=16000)
 
 ssl_noise = conv_transform(noise, noiseFilter)
 ssl_clean = conv_transform(clean, speechFilter)
@@ -157,9 +158,27 @@ ssl_clean, ssl_noise, ssl_noisy, rms = mixer(
 complex_ssl_noisy = complex_spectrogram(ssl_noisy).cpu()
 complex_ssl_clean = complex_spectrogram(ssl_clean).cpu()
 complex_ssl_noise = complex_spectrogram(ssl_noise).cpu()
+mel_ssl_noisy_mag = librosa.feature.melspectrogram(
+        S=complex_ssl_noisy.abs()[0].numpy(),
+        sr=16000)
+mel_ssl_noisy_phase = librosa.feature.melspectrogram(
+        S=complex_ssl_noisy.angle()[0].numpy(),
+        sr=16000)
+mel_ssl_clean_mag = librosa.feature.melspectrogram(
+        S=complex_ssl_clean.abs()[0].numpy(),
+        sr=16000)
+mel_ssl_clean_phase = librosa.feature.melspectrogram(
+        S=complex_ssl_clean.angle()[0].numpy(),
+        sr=16000)
+mel_ssl_noise_mag = librosa.feature.melspectrogram(
+        S=complex_ssl_noise.abs()[0].numpy(),
+        sr=16000)
+mel_ssl_noise_phase = librosa.feature.melspectrogram(
+        S=complex_ssl_noise.angle()[0].numpy(),
+        sr=16000)
 
 fig  = plt.figure()
-gs = fig.add_gridspec(2,6)
+gs = fig.add_gridspec(4,6)
 ax1 = fig.add_subplot(gs[0, 0])
 ax2 = fig.add_subplot(gs[0, 1])
 ax3 = fig.add_subplot(gs[0, 2])
@@ -172,18 +191,42 @@ ax9 = fig.add_subplot(gs[1, 2])
 ax10 = fig.add_subplot(gs[1, 3])
 ax11 = fig.add_subplot(gs[1, 4])
 ax12 = fig.add_subplot(gs[1, 5])
+ax13 = fig.add_subplot(gs[2, 0])
+ax14 = fig.add_subplot(gs[2, 1])
+ax15 = fig.add_subplot(gs[2, 2])
+ax16 = fig.add_subplot(gs[2, 3])
+ax17 = fig.add_subplot(gs[2, 4])
+ax18 = fig.add_subplot(gs[2, 5])
+ax19 = fig.add_subplot(gs[3, 0])
+ax20 = fig.add_subplot(gs[3, 1])
+ax21 = fig.add_subplot(gs[3, 2])
+ax22 = fig.add_subplot(gs[3, 3])
+ax23 = fig.add_subplot(gs[3, 4])
+ax24 = fig.add_subplot(gs[3, 5])
 plot_magnitude(complex_clean.abs()[0]  , title="Magnitude Clean", ax=ax1)
 plot_phase(    complex_clean.angle()[0], title="Phase Clean"    , ax=ax2)
 plot_magnitude(complex_noise.abs()[0]  , title="Magnitude Noise", ax=ax3)
 plot_phase(    complex_noise.angle()[0], title="Phase Noise"    , ax=ax4)
 plot_magnitude(complex_noisy.abs()[0]  , title="Magnitude Noisy", ax=ax5)
 plot_phase(    complex_noisy.angle()[0], title="Phase Noisy"    , ax=ax6)
-plot_magnitude(complex_ssl_clean.abs()[0]  , title="Magnitude SSL Clean", ax=ax7)
-plot_phase(    complex_ssl_clean.angle()[0], title="Phase SSL Clean"    , ax=ax8)
-plot_magnitude(complex_ssl_noise.abs()[0]  , title="Magnitude SSL Noise", ax=ax9)
-plot_phase(    complex_ssl_noise.angle()[0], title="Phase SSL Noise"    , ax=ax10)
-plot_magnitude(complex_ssl_noisy.abs()[0]  , title="Magnitude SSL Noisy", ax=ax11)
-plot_phase(    complex_ssl_noisy.angle()[0], title="Phase SSL Noisy"    , ax=ax12)
+plot_magnitude(complex_ssl_clean.abs()[0]  , title="Magnitude SS Clean", ax=ax7)
+plot_phase(    complex_ssl_clean.angle()[0], title="Phase SS Clean"    , ax=ax8)
+plot_magnitude(complex_ssl_noise.abs()[0]  , title="Magnitude SS Noise", ax=ax9)
+plot_phase(    complex_ssl_noise.angle()[0], title="Phase SS Noise"    , ax=ax10)
+plot_magnitude(complex_ssl_noisy.abs()[0]  , title="Magnitude SS Noisy", ax=ax11)
+plot_phase(    complex_ssl_noisy.angle()[0], title="Phase SS Noisy"    , ax=ax12)
+plot_magnitude(mel_clean_mag, title="Magnitude Clean (Mel Scale)", ax=ax13)
+plot_phase(    mel_clean_phase, title="Phase Clean (Mel Scale)"    , ax=ax14)
+plot_magnitude(mel_noise_mag  , title="Magnitude Noise (Mel Scale)", ax=ax15)
+plot_phase(    mel_noise_phase, title="Phase Noise (Mel Scale)"    , ax=ax16)
+plot_magnitude(mel_noisy_mag, title="Magnitude Noisy (Mel Scale)", ax=ax17)
+plot_phase(    mel_noisy_phase, title="Phase Noisy (Mel Scale)"    , ax=ax18)
+plot_magnitude(mel_ssl_clean_mag  , title="Magnitude SS Clean (Mel Scale)", ax=ax19
+plot_phase(    mel_ssl_clean_phase, title="Phase SS Clean (Mel Scale)"    , ax=ax20)
+plot_magnitude(mel_ssl_noise_mag  , title="Magnitude SS Noise (Mel Scale)", ax=ax21)
+plot_phase(    mel_ssl_noise_phase, title="Phase SS Noise (Mel Scale)"    , ax=ax22)
+plot_magnitude(mel_ssl_noisy_mag  , title="Magnitude SS Noisy (Mel Scale)", ax=ax23)
+plot_phase(    mel_ssl_noisy_phase, title="Phase SS Noisy (Mel Scale)"    , ax=ax24)
 fig.tight_layout()
 plt.savefig("complex.png")
 plt.close()
