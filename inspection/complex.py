@@ -23,10 +23,22 @@ def plot_waveform(waveform, sr, title="Waveform", ax=None):
     ax.set_xlim([0, time_axis[-1]])
     ax.set_title(title)
 
+def plot_magnitude(mag, title="Magnitude FFT", ax=None):
+    ax.set_title(title)
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("Time")
+    ax.imshow(mag.numpy(), cmap='autumn', interpolation='nearest', aspect='auto')
+
+def plot_phase(phase, title="Phase FFT", ax=None):
+    ax.set_title(title)
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("Time")
+    ax.imshow(phase.numpy(), cmap='autumn', interpolation='nearest', aspect='auto')
+
 def plot_complex(complex_tensor, title="Complex FFT", ax=None):
     ax.set_title(title)
     ax.set_ylabel("Imag")
-    ax.set_ylabel("Real")
+    ax.set_xlabel("Real")
     ax.scatter(complex_tensor.real.numpy(), complex_tensor.imag.numpy())
 
 def plot_spectrogram(specgram, title=None, ylabel="freq_bin", ax=None):
@@ -132,25 +144,6 @@ complex_noisy = complex_spectrogram(noisy).cpu()
 complex_clean = complex_spectrogram(clean).cpu()
 complex_noise = complex_spectrogram(noise).cpu()
 
-cplx_noisy_real = torch.zeros(complex_noisy.size(), dtype=torch.float64, layout=complex_noisy.layout, device=complex_noisy.device)
-cplx_noisy_imag = torch.zeros(complex_noisy.size(), dtype=torch.float64, layout=complex_noisy.layout, device=complex_noisy.device)
-cplx_noise_real = torch.zeros(complex_noise.size(), dtype=torch.float64, layout=complex_noise.layout, device=complex_noise.device)
-cplx_noise_imag = torch.zeros(complex_noise.size(), dtype=torch.float64, layout=complex_noise.layout, device=complex_noise.device)
-cplx_clean_real = torch.zeros(complex_clean.size(), dtype=torch.float64, layout=complex_clean.layout, device=complex_clean.device)
-cplx_clean_imag = torch.zeros(complex_clean.size(), dtype=torch.float64, layout=complex_clean.layout, device=complex_clean.device)
-for i in range(257):
-    for j in range(1876):
-        cplx_noisy_real[0, i, j] = complex_noisy[0, i, j].real
-        cplx_noisy_imag[0, i, j] = complex_noisy[0, i, j].imag
-        cplx_noise_real[0, i, j] = complex_noise[0, i, j].real
-        cplx_noise_imag[0, i, j] = complex_noise[0, i, j].imag
-        cplx_clean_real[0, i, j] = complex_clean[0, i, j].real
-        cplx_clean_imag[0, i, j] = complex_clean[0, i, j].imag
-cplx_noisy = torch.complex(cplx_noisy_real, cplx_noisy_imag)
-cplx_noise = torch.complex(cplx_noise_real, cplx_noise_imag)
-cplx_clean = torch.complex(cplx_clean_real, cplx_clean_imag)
-        
-
 ssl_noise = conv_transform(noise, noiseFilter)
 ssl_clean = conv_transform(clean, speechFilter)
 
@@ -165,56 +158,32 @@ complex_ssl_noisy = complex_spectrogram(ssl_noisy).cpu()
 complex_ssl_clean = complex_spectrogram(ssl_clean).cpu()
 complex_ssl_noise = complex_spectrogram(ssl_noise).cpu()
 
-print(complex_noisy.size())
-print(complex_ssl_noisy.size())
-print(complex_noisy)
-print(complex_noisy.dtype)
-print(type(complex_noisy))
-print(torch.view_as_real(complex_noisy))
-
-noisy = noisy.cpu()
-clean = clean.cpu()
-noise = noise.cpu()
-#noisy = ssl_noisy.cpu()
-#clean = ssl_clean.cpu()
-#noise = ssl_noise.cpu()
-
 fig  = plt.figure()
-gs = fig.add_gridspec(1,3)
+gs = fig.add_gridspec(2,6)
 ax1 = fig.add_subplot(gs[0, 0])
 ax2 = fig.add_subplot(gs[0, 1])
 ax3 = fig.add_subplot(gs[0, 2])
-plot_complex(cplx_clean[0], title="Complex FFT Clean", ax=ax1)
-plot_complex(cplx_noise[0], title="Complex FFT Noise", ax=ax2)
-plot_complex(cplx_noisy[0], title="Complex FFT Noisy", ax=ax3)
+ax4 = fig.add_subplot(gs[0, 3])
+ax5 = fig.add_subplot(gs[0, 4])
+ax6 = fig.add_subplot(gs[0, 5])
+ax7 = fig.add_subplot(gs[1, 0])
+ax8 = fig.add_subplot(gs[1, 1])
+ax9 = fig.add_subplot(gs[1, 2])
+ax10 = fig.add_subplot(gs[1, 3])
+ax11 = fig.add_subplot(gs[1, 4])
+ax12 = fig.add_subplot(gs[1, 5])
+plot_magnitude(complex_clean.abs()[0]  , title="Magnitude Clean", ax=ax1)
+plot_phase(    complex_clean.angle()[0], title="Phase Clean"    , ax=ax2)
+plot_magnitude(complex_noise.abs()[0]  , title="Magnitude Noise", ax=ax3)
+plot_phase(    complex_noise.angle()[0], title="Phase Noise"    , ax=ax4)
+plot_magnitude(complex_noisy.abs()[0]  , title="Magnitude Noisy", ax=ax5)
+plot_phase(    complex_noisy.angle()[0], title="Phase Noisy"    , ax=ax6)
+plot_magnitude(complex_ssl_clean.abs()[0]  , title="Magnitude SSL Clean", ax=ax7)
+plot_phase(    complex_ssl_clean.angle()[0], title="Phase SSL Clean"    , ax=ax8)
+plot_magnitude(complex_ssl_noise.abs()[0]  , title="Magnitude SSL Noise", ax=ax9)
+plot_phase(    complex_ssl_noise.angle()[0], title="Phase SSL Noise"    , ax=ax10)
+plot_magnitude(complex_ssl_noisy.abs()[0]  , title="Magnitude SSL Noisy", ax=ax11)
+plot_phase(    complex_ssl_noisy.angle()[0], title="Phase SSL Noisy"    , ax=ax12)
 fig.tight_layout()
 plt.savefig("complex.png")
 plt.close()
-#fig, axs = plt.subplots(3, 1)
-#plot_waveform(noisy, nysr, title="Noisy", ax=axs[0])
-#plot_spectrogram(spec_noisy[0], title="Spectrogram", ax=axs[1])
-#plot_spectrogram(mel_spec_noisy[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
-#fig.tight_layout()
-#plt.savefig("mel_spec_noisy_ssl.png")
-#plt.close()
-
-#fig, axs = plt.subplots(3, 1)
-#plot_waveform(clean, clsr, title="Clean", ax=axs[0])
-#plot_spectrogram(spec_clean[0], title="Spectrogram", ax=axs[1])
-#plot_spectrogram(mel_spec_clean[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
-#fig.tight_layout()
-#plt.savefig("mel_spec_clean_ssl.png")
-#plt.close()
-
-#fig, axs = plt.subplots(3, 1)
-#plot_waveform(noise, nesr, title="Noise", ax=axs[0])
-#plot_spectrogram(spec_noise[0], title="Spectrogram", ax=axs[1])
-#plot_spectrogram(mel_spec_noise[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
-#fig.tight_layout()
-#plt.savefig("mel_spec_noise_ssl.png")
-#plt.close()
-
-#sf.write('ssl_noisy.wav', np.ravel(noisy.numpy()), nysr)
-#sf.write('ssl_clean.wav', np.ravel(clean.numpy()), clsr)
-#sf.write('ssl_noise.wav', np.ravel(noise.numpy()), nesr)
-
