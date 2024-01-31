@@ -27,13 +27,13 @@ def plot_magnitude(mag, title="Magnitude FFT", ax=None):
     ax.set_title(title)
     ax.set_ylabel("Frequency")
     ax.set_xlabel("Time")
-    ax.imshow(mag.numpy(), cmap='autumn', interpolation='nearest', aspect='auto')
+    ax.imshow(mag, cmap='viridis', interpolation='nearest', aspect='auto')
 
 def plot_phase(phase, title="Phase FFT", ax=None):
     ax.set_title(title)
     ax.set_ylabel("Frequency")
     ax.set_xlabel("Time")
-    ax.imshow(phase.numpy(), cmap='autumn', interpolation='nearest', aspect='auto')
+    ax.imshow(phase, cmap='viridis', interpolation='nearest', aspect='auto')
 
 def plot_complex(complex_tensor, title="Complex FFT", ax=None):
     ax.set_title(title)
@@ -107,9 +107,9 @@ NOISE_FILE = './training_set/noise/noise_fileid_1542.wav'
 METADATA = {'snr': 16, 'target_level': -23}
 
 # Define transform
-#spectrogram = T.Spectrogram(
-#        n_fft=512,
-#        power=2).to(device)
+spectrogram = T.Spectrogram(
+        n_fft=512,
+        power=2).to(device)
 
 complex_spectrogram = T.Spectrogram(
         n_fft=512,
@@ -122,6 +122,10 @@ noise, nesr = torchaudio.load(NOISE_FILE)
 noisy = noisy.to(device)
 clean = clean.to(device)
 noise = noise.to(device)
+
+spec_noisy = spectrogram(noisy).cpu()
+spec_clean = spectrogram(clean).cpu()
+spec_noise = spectrogram(noise).cpu()
 
 complex_noisy = complex_spectrogram(noisy).cpu()
 complex_clean = complex_spectrogram(clean).cpu()
@@ -177,7 +181,7 @@ mel_ssl_noise_phase = librosa.feature.melspectrogram(
         S=complex_ssl_noise.angle()[0].numpy(),
         sr=16000)
 
-fig  = plt.figure()
+fig  = plt.figure(figsize=(20,20))
 gs = fig.add_gridspec(4,6)
 ax1 = fig.add_subplot(gs[0, 0])
 ax2 = fig.add_subplot(gs[0, 1])
@@ -203,30 +207,42 @@ ax21 = fig.add_subplot(gs[3, 2])
 ax22 = fig.add_subplot(gs[3, 3])
 ax23 = fig.add_subplot(gs[3, 4])
 ax24 = fig.add_subplot(gs[3, 5])
-plot_magnitude(complex_clean.abs()[0]  , title="Magnitude Clean", ax=ax1)
-plot_phase(    complex_clean.angle()[0], title="Phase Clean"    , ax=ax2)
-plot_magnitude(complex_noise.abs()[0]  , title="Magnitude Noise", ax=ax3)
-plot_phase(    complex_noise.angle()[0], title="Phase Noise"    , ax=ax4)
-plot_magnitude(complex_noisy.abs()[0]  , title="Magnitude Noisy", ax=ax5)
-plot_phase(    complex_noisy.angle()[0], title="Phase Noisy"    , ax=ax6)
-plot_magnitude(complex_ssl_clean.abs()[0]  , title="Magnitude SS Clean", ax=ax7)
-plot_phase(    complex_ssl_clean.angle()[0], title="Phase SS Clean"    , ax=ax8)
-plot_magnitude(complex_ssl_noise.abs()[0]  , title="Magnitude SS Noise", ax=ax9)
-plot_phase(    complex_ssl_noise.angle()[0], title="Phase SS Noise"    , ax=ax10)
-plot_magnitude(complex_ssl_noisy.abs()[0]  , title="Magnitude SS Noisy", ax=ax11)
-plot_phase(    complex_ssl_noisy.angle()[0], title="Phase SS Noisy"    , ax=ax12)
+#ax25 = fig.add_subplot(gs[4, 0])
+#ax26 = fig.add_subplot(gs[4, 1])
+#ax27 = fig.add_subplot(gs[4, 2])
+#ax28 = fig.add_subplot(gs[4, 3])
+#ax29 = fig.add_subplot(gs[4, 4])
+#ax30 = fig.add_subplot(gs[4, 5])
+plot_magnitude(complex_clean.abs()[0].numpy()  , title="Magnitude Clean", ax=ax1)
+plot_phase(    complex_clean.angle()[0].numpy(), title="Phase Clean"    , ax=ax2)
+plot_magnitude(complex_noise.abs()[0].numpy()  , title="Magnitude Noise", ax=ax3)
+plot_phase(    complex_noise.angle()[0].numpy(), title="Phase Noise"    , ax=ax4)
+plot_magnitude(complex_noisy.abs()[0].numpy()  , title="Magnitude Noisy", ax=ax5)
+plot_phase(    complex_noisy.angle()[0].numpy(), title="Phase Noisy"    , ax=ax6)
+plot_magnitude(complex_ssl_clean.abs()[0].numpy()  , title="Magnitude SS Clean", ax=ax7)
+plot_phase(    complex_ssl_clean.angle()[0].numpy(), title="Phase SS Clean"    , ax=ax8)
+plot_magnitude(complex_ssl_noise.abs()[0].numpy()  , title="Magnitude SS Noise", ax=ax9)
+plot_phase(    complex_ssl_noise.angle()[0].numpy(), title="Phase SS Noise"    , ax=ax10)
+plot_magnitude(complex_ssl_noisy.abs()[0].numpy()  , title="Magnitude SS Noisy", ax=ax11)
+plot_phase(    complex_ssl_noisy.angle()[0].numpy(), title="Phase SS Noisy"    , ax=ax12)
 plot_magnitude(mel_clean_mag, title="Magnitude Clean (Mel Scale)", ax=ax13)
 plot_phase(    mel_clean_phase, title="Phase Clean (Mel Scale)"    , ax=ax14)
 plot_magnitude(mel_noise_mag  , title="Magnitude Noise (Mel Scale)", ax=ax15)
 plot_phase(    mel_noise_phase, title="Phase Noise (Mel Scale)"    , ax=ax16)
 plot_magnitude(mel_noisy_mag, title="Magnitude Noisy (Mel Scale)", ax=ax17)
 plot_phase(    mel_noisy_phase, title="Phase Noisy (Mel Scale)"    , ax=ax18)
-plot_magnitude(mel_ssl_clean_mag  , title="Magnitude SS Clean (Mel Scale)", ax=ax19
+plot_magnitude(mel_ssl_clean_mag  , title="Magnitude SS Clean (Mel Scale)", ax=ax19)
 plot_phase(    mel_ssl_clean_phase, title="Phase SS Clean (Mel Scale)"    , ax=ax20)
 plot_magnitude(mel_ssl_noise_mag  , title="Magnitude SS Noise (Mel Scale)", ax=ax21)
 plot_phase(    mel_ssl_noise_phase, title="Phase SS Noise (Mel Scale)"    , ax=ax22)
 plot_magnitude(mel_ssl_noisy_mag  , title="Magnitude SS Noisy (Mel Scale)", ax=ax23)
 plot_phase(    mel_ssl_noisy_phase, title="Phase SS Noisy (Mel Scale)"    , ax=ax24)
+#plot_magnitude(spec_clean.abs()[0].numpy()  , title="Magnitude Clean", ax=ax25)
+#plot_phase(    spec_clean.angle()[0].numpy(), title="Phase Clean"    , ax=ax26)
+#plot_magnitude(spec_noise.abs()[0].numpy()  , title="Magnitude Noise", ax=ax27)
+#plot_phase(    spec_noise.angle()[0].numpy(), title="Phase Noise"    , ax=ax28)
+#plot_magnitude(spec_noisy.abs()[0].numpy()  , title="Magnitude Noisy", ax=ax29)
+#plot_phase(    spec_noisy.angle()[0].numpy(), title="Phase Noisy"    , ax=ax30)
 fig.tight_layout()
 plt.savefig("complex.png")
 plt.close()
