@@ -22,7 +22,6 @@ from hrtfs.cipic_db import CipicDatabase
 from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
-import librosa
 
 
 def collate_fn(batch):
@@ -67,7 +66,10 @@ class Network(torch.nn.Module):
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0):
+            out_delay=0,
+            subjectID=12, 
+            speechFilterOrient=624, speechFilterChannel=0,
+            noiseFilterOrient=600,noiseFilterChannel=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -160,21 +162,6 @@ class Network(torch.nn.Module):
                 targetLevelHigher)
                        
         return ssl_noisy, ssl_clean, ssl_noise
-
-    def melSpectrogram(self, wav_gpu, args):
-        wav = wav_gpu.cpu()
-        for i in range(args.b):
-            sample = wav[i,:]
-            spec = librosa.feature.melspectrogram(
-                    y=sample.numpy(), 
-                    sr=16000,
-                    n_fft=args.n_fft,
-                    hop_length=math.floor(args.n_fft//4),
-                    power=1, 
-                    n_mels=args.n_fft)
-            mag, phase = librosa.magphase(spec)
-        return wav, wav
-
 
     def forward(self, noisy):
         x = noisy - self.stft_mean
@@ -390,6 +377,11 @@ if __name__ == '__main__':
                 n_fft=args.n_fft,
                 onesided=True, 
                 hop_length=math.floor(args.n_fft//4)).to(device)
+    mel_transform =torchaudio.transforms.MelSpectrogram(
+                n_fft=4*args.n_fft,
+                n_mels=257,
+                power=2,
+                hop_length=math.floor(args.n_fft//4)).to(device)
     # Seems like we cannot use inverseMelScale
     # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
@@ -475,9 +467,8 @@ if __name__ == '__main__':
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
                 clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
             else:
-                noisy_abs, noisy_arg = module.melSpectrogram(ssl_noisy, args)
-                sys.exit(0)
-                clean_abs, clean_arg = module.melSpectrogram(ssl_clean, args)
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
 
             denoised_abs = net(noisy_abs)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
