@@ -91,9 +91,9 @@ class Network(torch.nn.Module):
 
         self.blocks = torch.nn.ModuleList([
             slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, 257, 512, weight_norm=False, delay=True, delay_shift=True),
+            slayer.block.sigma_delta.Dense(sdnn_params, 514, 512, weight_norm=False, delay=True, delay_shift=True),
             slayer.block.sigma_delta.Dense(sdnn_params, 512, 512, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, 512, 257, weight_norm=False),
+            slayer.block.sigma_delta.Output(sdnn_params, 512, 514, weight_norm=False),
         ])
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
@@ -468,13 +468,17 @@ if __name__ == '__main__':
                 sys.exit(0)
                 clean_abs, clean_arg = module.melSpectrogram(ssl_clean, args)
 
-            denoised_abs = net(noisy_abs)
+            joined = torch.cat((noisy_abs, noisy_arg), 1)
+            denoised = net(joined)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
             clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
 
+            denoised_abs, denoised_arg = denoised.chunk(2, dim=1)
+
             if (args.spectrogram == 0):
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+                clean_rec = stft_mixer(denoised_abs, denoised_arg, args.n_fft, None)
+#                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
             elif (args.spectrogram == 1):
                 clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
             else:
@@ -536,12 +540,18 @@ if __name__ == '__main__':
                     noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
                     clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
 
-                denoised_abs = net(noisy_abs)
+                joined = torch.cat((noisy_abs, noisy_arg), 1)
+                denoised = net(joined)
+#                denoised_abs = net(noisy_abs)
                 noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
                 clean_abs = slayer.axon.delay(clean_abs, out_delay)
                 clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
+
+                denoised_abs, denoised_arg = denoised.chunk(2, dim=1)
+
                 if (args.spectrogram == 0):
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+                    clean_rec = stft_mixer(denoised_abs, denoised_arg, args.n_fft, None)
+#                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
                 elif(args.spectrogram == 1):
                     clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
                 else:
