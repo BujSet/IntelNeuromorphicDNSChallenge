@@ -67,10 +67,7 @@ class Network(torch.nn.Module):
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0,
-            subjectID=12, 
-            speechFilterOrient=624, speechFilterChannel=0,
-            noiseFilterOrient=600,noiseFilterChannel=0):
+            out_delay=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -168,8 +165,6 @@ class Network(torch.nn.Module):
         wav = wav_gpu.cpu()
         for i in range(args.b):
             sample = wav[i,:]
-#            print(sample)
-#            print(sample.size())
             spec = librosa.feature.melspectrogram(
                     y=sample.numpy(), 
                     sr=16000,
@@ -177,16 +172,7 @@ class Network(torch.nn.Module):
                     hop_length=math.floor(args.n_fft//4),
                     power=1, 
                     n_mels=args.n_fft)
-            print(spec)
-#            print(spec.size())
             mag, phase = librosa.magphase(spec)
-            print(mag)
-#            print(mag.size())
-            print(phase)
-#            print(phase.size())
-            sys.exit(0)
-
-  
         return wav, wav
 
 
