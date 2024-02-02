@@ -1,4 +1,5 @@
 #!/bin/bash
+SHARED_DIR="/staging/groups/lipasti_pharm_group"
 export TORCH_EXTENSIONS_DIR=$(pwd)
 export HOME=$(pwd)
 git clone https://github.com/BujSet/IntelNeuromorphicDNSChallenge.git
@@ -10,27 +11,27 @@ mkdir -p training_set/
 mkdir -p validation_set/
 cd training_set/
 echo "[Train Clean] Initiating tarball copy" \
-	&& cp /staging/selagamsetty/training_set/training_set_clean.tar.gz . \
+		&& cp ${SHARED_DIR}/training_set/training_set_clean.tar.gz . \
 	&& echo "[Train Clean] Tarball copy success" \
 	&& echo "[Train Clean] Initiating tarball unpack" \
-	&& tar -xzf training_set_clean.tar.gz \
+		&& tar -xzf training_set_clean.tar.gz \
 	&& echo "[Train Clean] Tarball unpack success" \
 	&& echo "[Train Clean] Initiating tarball removal" \
-	&& rm -f training_set_clean.tar.gz \
+		&& rm -f training_set_clean.tar.gz \
 	&& echo "[Train Clean] Tarball removal success" &
 TCLEAN=$!
 echo "[Train Noise] Initiating tarball copy" \
-	&& cp /staging/selagamsetty/training_set/training_set_noise.tar.gz . \
+		&& cp ${SHARED_DIR}/training_set/training_set_noise.tar.gz . \
 	&& echo "[Train Noise] Tarball copy success" \
 	&& echo "[Train Noise] Initiating tarball unpack" \
-	&& tar -xzf training_set_noise.tar.gz \
+		&& tar -xzf training_set_noise.tar.gz \
 	&& echo "[Train Noise] Tarball unpack success" \
 	&& echo "[Train Noise] Initiating tarball removal" \
-	&& rm -f training_set_noise.tar.gz \
+		&& rm -f training_set_noise.tar.gz \
 	&& echo "[Train Noise] Tarball removal success" &
 TNOISE=$!
 echo "[Train Noisy] Initiating tarball copy" \
-        && cp /staging/selagamsetty/training_set/training_set_noisy.tar.gz . \
+        && cp ${SHARED_DIR}/training_set/training_set_noisy.tar.gz . \
 	&& echo "[Train Noisy] Tarball copy success" \
 	&& echo "[Train Noisy] Initiating tarball unpack" \
         && tar -xzf training_set_noisy.tar.gz \
@@ -41,7 +42,7 @@ echo "[Train Noisy] Initiating tarball copy" \
 TNOISY=$!
 cd ../validation_set/
 echo "[Valid Clean] Initiating tarball copy" \
-        && cp /staging/selagamsetty/validation_set/validation_set_clean.tar.gz . \
+        && cp ${SHARED_DIR}/validation_set/validation_set_clean.tar.gz . \
 	&& echo "[Valid Clean] Tarball copy success" \
 	&& echo "[Valid Clean] Initiating tarball unpack" \
         && tar -xzf validation_set_clean.tar.gz \
@@ -51,7 +52,7 @@ echo "[Valid Clean] Initiating tarball copy" \
 	&& echo "[Valid Clean] Tarball removal success" &
 VCLEAN=$!
 echo "[Valid Noise] Initiating tarball copy" \
-        && cp /staging/selagamsetty/validation_set/validation_set_noise.tar.gz . \
+        && cp ${SHARED_DIR}/validation_set/validation_set_noise.tar.gz . \
 	&& echo "[Valid Noise] Tarball copy success" \
 	&& echo "[Valid Noise] Initiating tarball unpack" \
         && tar -xzf validation_set_noise.tar.gz \
@@ -61,7 +62,7 @@ echo "[Valid Noise] Initiating tarball copy" \
 	&& echo "[Valid Noise] Tarball removal success" &
 VNOISE=$!
 echo "[Valid Noisy] Initiating tarball copy" \
-        && cp /staging/selagamsetty/validation_set/validation_set_noisy.tar.gz . \
+        && cp ${SHARED_DIR}/validation_set/validation_set_noisy.tar.gz . \
 	&& echo "[Valid Noisy] Tarball copy success" \
 	&& echo "[Valid Noisy] Initiating tarball unpack" \
         && tar -xzf validation_set_noisy.tar.gz \
