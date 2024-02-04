@@ -22,6 +22,7 @@ from hrtfs.cipic_db import CipicDatabase
 from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
+import random
 
 
 def collate_fn(batch):
@@ -293,6 +294,10 @@ if __name__ == '__main__':
                         dest="ssnns",
                         action="store_true",
                         help='Flag to turn on Spatial Separation of Noise and Speech')
+    parser.add_argument('-randomize_orients',
+                        dest="randomize_orients",
+                        action="store_true",
+                        help='Flag to turn randomly spatially separate of Noise and Speech')
     # CIPIC Filter Parameters
 
     # ID:21 ==> Mannequin with large pinna
@@ -426,13 +431,22 @@ if __name__ == '__main__':
         noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
         noiseFilter   = noiseFilter.to(device) 
         print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-        print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
-        print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
+        if (not args.randomize_orients):
+            print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
+            print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     for epoch in range(args.epoch):
         t_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             net.train()
+
             if (args.ssnns):
+                if (args.randomize_orients):
+                    speechOrient  = random.randint(0, 1249)
+                    noiseOrient   = random.randint(0, 1249)
+                    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
+                    speechFilter  = speechFilter.to(device)
+                    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
+                    noiseFilter   = noiseFilter.to(device) 
                 noise = noise.to(device)
                 clean = clean.to(device)
                 ssl_noise = torch.zeros(args.b, 480000).to(device)
@@ -519,6 +533,13 @@ if __name__ == '__main__':
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
             if (args.ssnns):
+                if (args.randomize_orients):
+                    speechOrient  = random.randint(0, 1249)
+                    noiseOrient   = random.randint(0, 1249)
+                    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
+                    speechFilter  = speechFilter.to(device)
+                    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
+                    noiseFilter   = noiseFilter.to(device) 
                 noise = noise.to(device)
                 clean = clean.to(device)
                 ssl_noise = torch.zeros(args.b, 480000).to(device)
