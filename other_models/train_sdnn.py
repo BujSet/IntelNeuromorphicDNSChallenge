@@ -441,8 +441,8 @@ if __name__ == '__main__':
 
             if (args.ssnns):
                 if (args.randomize_orients):
-                    speechOrient  = random.randint(0, 1249)
-                    noiseOrient   = random.randint(0, 1249)
+                    speechOrient  = random.randint(600, 649)
+                    noiseOrient   = random.randint(600, 649)
                     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
                     speechFilter  = speechFilter.to(device)
                     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
@@ -534,8 +534,8 @@ if __name__ == '__main__':
             net.eval()
             if (args.ssnns):
                 if (args.randomize_orients):
-                    speechOrient  = random.randint(0, 1249)
-                    noiseOrient   = random.randint(0, 1249)
+                    speechOrient  = random.randint(600, 649)
+                    noiseOrient   = random.randint(600, 649)
                     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
                     speechFilter  = speechFilter.to(device)
                     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
