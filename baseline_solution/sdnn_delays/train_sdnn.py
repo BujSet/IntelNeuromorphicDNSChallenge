@@ -14,6 +14,8 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from lava.lib.dl import slayer
+import sys
+sys.path.append('./')
 from audio_dataloader import DNSAudio
 from snr import si_snr
 
@@ -21,12 +23,14 @@ from snr import si_snr
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
 
+    indices = torch.IntTensor([s[4] for s in batch])
+
     for sample in batch:
         noisy += [torch.FloatTensor(sample[0])]
         clean += [torch.FloatTensor(sample[1])]
         noise += [torch.FloatTensor(sample[2])]
 
-    return torch.stack(noisy), torch.stack(clean), torch.stack(noise)
+    return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 
 
 def stft_splitter(audio, n_fft=512):
@@ -277,7 +281,7 @@ if __name__ == '__main__':
 
     for epoch in range(args.epoch):
         t_st = datetime.now()
-        for i, (noisy, clean, noise) in enumerate(train_loader):
+        for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             net.train()
             noisy = noisy.to(device)
             clean = clean.to(device)
@@ -322,7 +326,7 @@ if __name__ == '__main__':
             stats.print(epoch, i, samples_sec, header=header_list)
 
         t_st = datetime.now()
-        for i, (noisy, clean, noise) in enumerate(validation_loader):
+        for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
 
             with torch.no_grad():

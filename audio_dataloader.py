@@ -40,7 +40,8 @@ class DNSAudio:
     def __getitem__(self, n: int) -> Tuple[np.ndarray,
                                            np.ndarray,
                                            np.ndarray,
-                                           Dict[str, Any]]:
+                                           Dict[str, Any],
+                                           int]:
         """Gets the nth sample from the dataset.
 
         Parameters
@@ -84,7 +85,7 @@ class DNSAudio:
             noise_audio = np.concatenate([noise_audio,
                                           np.zeros(num_samples
                                                    - len(noise_audio))])
-        return noisy_audio, clean_audio, noise_audio, metadata
+        return noisy_audio, clean_audio, noise_audio, metadata, n
 
     def __len__(self) -> int:
         """Length of the dataset.
