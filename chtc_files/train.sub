@@ -1,5 +1,5 @@
 # train.sub
-container_image = docker://rselagam/ndns:v45
+container_image = docker://rselagam/ndns:v47_cuda12.1.1
 universe = container
 
 # Specify your executable (single binary or a script that runs several
@@ -19,7 +19,7 @@ when_to_transfer_output = ON_EXIT
 # Note that we don't really need to transfer this file as a copy exists in the
 # git repo that is pulled. However, for running interactive jobs, it's useful
 # to use this.
-transfer_input_files = ndns_cmd.sh
+transfer_input_files = /staging/groups/lipasti_pharm_group/init.sh
 want_io_proxy = true
 
 +WantGPULab = true
