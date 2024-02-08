@@ -441,13 +441,8 @@ if __name__ == '__main__':
 
             if (args.ssnns):
                 if (args.randomize_orients):
-                    orient = random.randint(0,1)
-                    if (orient == 0):
-                        speechOrient  = 600
-                        noiseOrient   = 624
-                    else:
-                        speechOrient  = 624
-                        noiseOrient   = 600
+                    speechOrient  = random.randint(0,1249)
+                    noiseOrient   = random.randint(0,1249)
                     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
                     speechFilter  = speechFilter.to(device)
                     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
@@ -535,17 +530,14 @@ if __name__ == '__main__':
         if (epoch != args.epoch - 1):
             continue
         t_st = datetime.now()
+        """
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
             if (args.ssnns):
                 if (args.randomize_orients):
                     orient = random.randint(0,1)
-                    if (orient == 0):
-                        speechOrient  = 600
-                        noiseOrient   = 624
-                    else:
-                        speechOrient  = 624
-                        noiseOrient   = 600
+                    speechOrient  = random.randint(0,1249)
+                    noiseOrient   = random.randint(0,1249)
                     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
                     speechFilter  = speechFilter.to(device)
                     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
@@ -619,24 +611,26 @@ if __name__ == '__main__':
                 header_list = [f'Valid: [{processed}/{total} '
                                f'({100.0 * processed / total:.0f}%)]']
                 stats.print(epoch, i, samples_sec, header=header_list)
+        """
 
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
-        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
+#        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
         writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
-        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
+#        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
 
-        stats.update()
-        stats.plot(path=trained_folder + '/')
-        if stats.validation.best_accuracy is True:
-            torch.save(module.state_dict(), trained_folder + '/network.pt')
-        stats.save(trained_folder + '/')
+#        stats.update()
+#        stats.plot(path=trained_folder + '/')
+#        if stats.validation.best_accuracy is True:
+#            torch.save(module.state_dict(), trained_folder + '/network.pt')
+#        stats.save(trained_folder + '/')
 
-    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
-    module.export_hdf5(trained_folder + '/network.net')
+    torch.save(module.state_dict(), trained_folder + '/network.pt')
+#    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
+#    module.export_hdf5(trained_folder + '/network.net')
 
-    params_dict = {}
-    for key, val in args._get_kwargs():
-        params_dict[key] = str(val)
-    writer.add_hparams(params_dict, {'SI-SNR': stats.validation.max_accuracy})
-    writer.flush()
-    writer.close()
+#    params_dict = {}
+#    for key, val in args._get_kwargs():
+#        params_dict[key] = str(val)
+#    writer.add_hparams(params_dict, {'SI-SNR': stats.validation.max_accuracy})
+#    writer.flush()
+#    writer.close()
