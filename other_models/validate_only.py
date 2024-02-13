@@ -542,7 +542,6 @@ if __name__ == '__main__':
             net.eval()
             if (args.ssnns):
                 if (args.randomize_orients):
-                    orient = random.randint(0,1)
                     speechOrient  = random.randint(0,1249)
                     noiseOrient   = random.randint(0,1249)
                     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
@@ -562,6 +561,7 @@ if __name__ == '__main__':
                     ssl_snrs[batch_idx] = metadata['snr']
                     ssl_targlvls[batch_idx] = metadata['target_level']
                 
+                print("Iteration:"+str(i)+", speech:"+str(speechOrient)+", noise:" +str(noiseOrient))
                 ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
                     ssl_clean, 
                     ssl_noise, 
