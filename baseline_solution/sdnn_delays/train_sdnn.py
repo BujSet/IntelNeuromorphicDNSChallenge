@@ -276,7 +276,8 @@ if __name__ == '__main__':
                                        accuracy_unit='dB')
 
     for epoch in range(args.epoch):
-        t_st = datetime.now()
+        epoch_st = datetime.now()  
+        train_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(train_loader):
             net.train()
             noisy = noisy.to(device)
@@ -320,8 +321,10 @@ if __name__ == '__main__':
             header_list = [f'Train: [{processed}/{total} '
                            f'({100.0 * processed / total:.0f}%)]']
             stats.print(epoch, i, samples_sec, header=header_list)
-
-        t_st = datetime.now()
+        train_et = datetime.now()
+        print(f"Training for Epoch {epoch} took: {train_et - train_st}")
+        
+        val_st = datetime.now()
         for i, (noisy, clean, noise) in enumerate(validation_loader):
             net.eval()
 
@@ -353,7 +356,8 @@ if __name__ == '__main__':
                 header_list = [f'Valid: [{processed}/{total} '
                                f'({100.0 * processed / total:.0f}%)]']
                 stats.print(epoch, i, samples_sec, header=header_list)
-
+        val_et = datetime.now()
+        print(f"Validation for Epoch {epoch} took: {val_et - val_st}")
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
         writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
         writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
@@ -364,7 +368,8 @@ if __name__ == '__main__':
         if stats.validation.best_accuracy is True:
             torch.save(module.state_dict(), trained_folder + '/network.pt')
         stats.save(trained_folder + '/')
-
+        epoch_et = datetime.now() 
+        print(f"Total time for Epoch {epoch} took: {epoch_et - epoch_st}")
     net.load_state_dict(torch.load(trained_folder + '/network.pt'))
     net.export_hdf5(trained_folder + '/network.net')
 

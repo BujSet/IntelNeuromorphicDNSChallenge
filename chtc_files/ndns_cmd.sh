@@ -2,14 +2,20 @@
 SHARED_DIR="/staging/groups/lipasti_pharm_group"
 export TORCH_EXTENSIONS_DIR=$(pwd)
 export HOME=$(pwd)
+GIT_START_TIME=$(date +%s)
 git clone https://github.com/BujSet/IntelNeuromorphicDNSChallenge.git
 cd IntelNeuromorphicDNSChallenge/
 git switch develop
 git submodule init
 git submodule update
+GIT_END_TIME=$(date +%s)
+echo "Git operations took $((GIT_END_TIME - GIT_START_TIME)) seconds."
+
 mkdir -p training_set/
 mkdir -p validation_set/
 cd training_set/
+
+TARBALL_START_TIME=$(date +%s)
 echo "[Train Clean] Initiating tarball copy" \
 		&& cp ${SHARED_DIR}/training_set/training_set_clean.tar.gz . \
 	&& echo "[Train Clean] Tarball copy success" \
@@ -73,16 +79,30 @@ echo "[Valid Noisy] Initiating tarball copy" \
 VNOISY=$!
 wait $TCLEAN $TNOISE $TNOISY $VCLEAN $VNOISE $VNOISY
 cd ../hrtfs/cipic/
+TARBALL_END_TIME=$(date +%s)
+echo "Tarball operations took $((TARBALL_END_TIME - TARBALL_START_TIME)) seconds."
+
+DOWNLOAD_CIPIC_START_TIME=$(date +%s)
+
 echo "[CIPIC HRTFs] Downloading HRTFs from CIPIC database" \
         && ./download.sh \
         && echo "[CIPIC HRTFs] Filter Dataset download success"
 cd ../../
-nvidia-smi --query-gpu=timestamp,power.draw --format=csv  -i $(python chtc_files/get_device_uuid.py) -lms 500 > ../power.txt &
-POWER_CNT=$!
-sleep 10s
-python baseline_solution/sdnn_delays/train_sdnn.py -epoch 5 -ssnns -cipicSubject 12 -speechFilterOrient 601 -speechFilterChannel 1 -noiseFilterOrient 621 -noiseFilterChannel 1 -path ./ > ../accuracy.txt
-sleep 10s
-kill ${POWER_CNT}
-python chtc_files/plot_power_profile.py
-mv power_profile.png ../
+DOWNLOAD_CIPIC_END_TIME=$(date +%s)
+echo "CIPIC download operations took $((DOWNLOAD_CIPIC_END_TIME - DOWNLOAD_CIPIC_START_TIME)) seconds."
+
+# nvidia-smi --query-gpu=timestamp,power.draw --format=csv  -i $(python chtc_files/get_device_uuid.py) -lms 500 > ../power.txt &
+# POWER_CNT=$!
+# sleep 10s
+# main thing
+echo "Starting main Python script"
+PYTHON_START_TIME=$(date +%s)
+python baseline_solution/sdnn_delays/train_sdnn.py -epoch 1 -ssnns -cipicSubject 21 -speechFilterOrient 601 -speechFilterChannel 1 -noiseFilterOrient 621 -noiseFilterChannel 1 -path ./ > ../accuracy.txt
+PYTHON_END_TIME=$(date +%s)
+echo "Main Python script execution took $((PYTHON_END_TIME - PYTHON_START_TIME)) seconds."
+
+# sleep 10s
+# kill ${POWER_CNT}
+# python chtc_files/plot_power_profile.py
+# mv power_profile.png ../
 
