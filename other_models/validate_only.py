@@ -439,8 +439,8 @@ if __name__ == '__main__':
         if (not args.randomize_orients):
             print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
             print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
-    """
     for epoch in range(args.epoch):
+        """
         t_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             net.train()
