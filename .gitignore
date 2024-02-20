@@ -4,3 +4,6 @@ hrtfs/*.pyc
 hrtfs/*.png
 *.png
 __pycache__/
+training_set/
+validation_set/
+
