@@ -365,13 +365,13 @@ if __name__ == '__main__':
         module = net
     else:
         print("Building GPU network")
-        net = torch.nn.DataParallel(Network(
+        net = Network(
                     args.threshold,
                     args.tau_grad,
                     args.scale_grad,
                     args.dmax,
-                    args.out_delay).to(device),
-                        device_ids=args.gpu)
+                    args.out_delay)
+        net = torch.nn.DataParallel(net.to(device), device_ids=args.gpu)
         module = net.module
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
@@ -530,7 +530,13 @@ if __name__ == '__main__':
         if (epoch != args.epoch - 1):
             continue
         t_st = datetime.now()
-        """
+        print("")
+        print("")
+        print("")
+        print("Speech Orientation, Noise Orientation, Validation Accuracy")
+        print("")
+        print("")
+        print("")
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
             if (args.ssnns):
@@ -610,22 +616,30 @@ if __name__ == '__main__':
                     (i + 1) / validation_loader.batch_size
                 header_list = [f'Valid: [{processed}/{total} '
                                f'({100.0 * processed / total:.0f}%)]']
+
+
+                print("")
+                print("")
+                print(str(speechOrient)+","+str(noiseOrient)+"," + str(stats.validation.accuracy))
+                print("")
+                print("")
                 stats.print(epoch, i, samples_sec, header=header_list)
-        """
+                print("")
+                print("")
 
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
-#        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
+        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
         writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
-#        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
+        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
 
-#        stats.update()
+        stats.update()
 #        stats.plot(path=trained_folder + '/')
-#        if stats.validation.best_accuracy is True:
-#            torch.save(module.state_dict(), trained_folder + '/network.pt')
+        if stats.validation.best_accuracy is True:
+            torch.save(module.state_dict(), trained_folder + '/network.pt')
 #        stats.save(trained_folder + '/')
 
     torch.save(module.state_dict(), trained_folder + '/network.pt')
-#    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
+    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
 #    module.export_hdf5(trained_folder + '/network.net')
 
 #    params_dict = {}

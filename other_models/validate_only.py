@@ -369,15 +369,17 @@ if __name__ == '__main__':
         module = net
     else:
         print("Building GPU network")
-        net = torch.nn.DataParallel(Network(
+        net = Network(
                     args.threshold,
                     args.tau_grad,
                     args.scale_grad,
                     args.dmax,
-                    args.out_delay).to(device),
-                        device_ids=args.gpu)
+                    args.out_delay)
+        print(net)
+        net.load_state_dict(torch.load(args.model + '/network.pt'))
+        net = torch.nn.DataParallel(net.to(device), device_ids=args.gpu)
         module = net.module
-    module.load_state_dict(torch.load(args.model + '/network.pt'))
+#    module.load_state_dict(torch.load(args.model + '/network.pt'))
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
