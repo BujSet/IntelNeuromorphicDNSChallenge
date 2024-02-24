@@ -495,8 +495,8 @@ if __name__ == '__main__':
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
 
-            if i < 10:
-                module.grad_flow(path=trained_folder + '/')
+#            if i < 10:
+#                module.grad_flow(path=trained_folder + '/')
 
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
@@ -506,12 +506,13 @@ if __name__ == '__main__':
             stats.training.num_samples += noisy.shape[0]
 
             processed = i * train_loader.batch_size
-            total = len(train_loader.dataset)
-            time_elapsed = (datetime.now() - t_st).total_seconds()
-            samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-            header_list = [f'Train: [{processed}/{total} '
+            if (processed >= 59937):
+               total = len(train_loader.dataset)
+               time_elapsed = (datetime.now() - t_st).total_seconds()
+               samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
+               header_list = [f'Train: [{processed}/{total} '
                            f'({100.0 * processed / total:.0f}%)]']
-            stats.print(epoch, i, samples_sec, header=header_list)
+               stats.print(epoch, i, samples_sec, header=header_list)
 
         if (epoch != args.epoch - 1):
             continue
@@ -581,13 +582,14 @@ if __name__ == '__main__':
                 stats.validation.num_samples += noisy.shape[0]
 
                 processed = i * validation_loader.batch_size
-                total = len(validation_loader.dataset)
-                time_elapsed = (datetime.now() - t_st).total_seconds()
-                samples_sec = time_elapsed / \
-                    (i + 1) / validation_loader.batch_size
-                header_list = [f'Valid: [{processed}/{total} '
+                if (processed >= 59937):
+                    total = len(validation_loader.dataset)
+                    time_elapsed = (datetime.now() - t_st).total_seconds()
+                    samples_sec = time_elapsed / \
+                        (i + 1) / validation_loader.batch_size
+                    header_list = [f'Valid: [{processed}/{total} '
                                f'({100.0 * processed / total:.0f}%)]']
-                stats.print(epoch, i, samples_sec, header=header_list)
+                    stats.print(epoch, i, samples_sec, header=header_list)
 
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
         writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
