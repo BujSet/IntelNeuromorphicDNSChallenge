@@ -278,10 +278,14 @@ if __name__ == '__main__':
                         type=int,
                         default=None,
                         help='random seed of the experiment')
-    parser.add_argument('-epoch',
+    parser.add_argument('-training_epoch',
                         type=int,
                         default=50,
-                        help='number of epochs to run')
+                        help='number of training epochs to run')
+    parser.add_argument('-validation_epoch',
+                        type=int,
+                        default=50,
+                        help='number of validation epochs to run after training')
     parser.add_argument('-spectrogram',
                         type=int,
                         default=0,
@@ -434,19 +438,14 @@ if __name__ == '__main__':
         if (not args.randomize_orients):
             print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
             print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
-    for epoch in range(args.epoch):
+    training_st = datetime.now()
+    for epoch in range(args.training_epoch):
         t_st = datetime.now()
         batch_st = datetime.now()
         batch_tot = 0.0
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             batch_tot += (datetime.now() - batch_st).total_seconds()
             net.train()
-#            if (i == 5):
-#                # Starting spin
-#                skip_st = datetime.now()
-#            if (i >= 5):
-#                continue
-
             if (args.ssnns):
                 if (args.randomize_orients):
                     speechOrient  = random.randint(0,1249)
@@ -517,9 +516,6 @@ if __name__ == '__main__':
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
 
-#            if i < 10:
-#                module.grad_flow(path=trained_folder + '/')
-
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
 
@@ -531,32 +527,25 @@ if __name__ == '__main__':
             total = len(train_loader.dataset)
             time_elapsed = (datetime.now() - t_st).total_seconds()
             samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-            header_list = [f'Train: [{processed}/{total} '
-                           f'({100.0 * processed / total:.0f}%)]']
-            stats.print(epoch, i, samples_sec, header=header_list)
+#            header_list = [f'Train: [{processed}/{total} '
+#                           f'({100.0 * processed / total:.0f}%)]']
+#            stats.print(epoch, i, samples_sec, header=header_list)
             batch_st = datetime.now()
 
-        print("")
-        print("")
-        print("")
-        print("Training time: " + str(time_elapsed))
-        print("Mini batch fill time: " + str(batch_tot))
-        if (epoch != args.epoch - 1):
-            continue
-
-#        torch.save(module.state_dict(), trained_folder + '/network.pt')
-#        module.load_state_dict(torch.load(trained_folder + '/network.pt'))
-#        print("")
-#        print("")
-#        print("")
-#        skip_time_elapsed = (datetime.now() - skip_st).total_seconds()
-#        skip_sample_sec = skip_time_elapsed / (60000.0 - 5)
-#        print("Skipping took  " + str(skip_sample_sec))
-        print("Speech Orientation, Noise Orientation, Validation Accuracy")
-        print("")
-        print("")
-        print("")
+        writer.add_scalar('Loss/train', stats.training.loss, epoch)
+        writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
+        stats.update()
+    print("")
+    training_time = (datetime.now() - training_st).total_seconds()
+    print("Training time: " + str(training_time))
+    print("Mini batch fill time: " + str(batch_tot))
+    print("Speech Orientation, Noise Orientation, Validation Accuracy")
+    print("")
+    validation_st = datetime.now()
+    for epoch in range(args.training_epoch):
         t_st = datetime.now()
+        batch_st = datetime.now()
+        batch_tot = 0.0
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
             if (args.ssnns):
@@ -634,23 +623,21 @@ if __name__ == '__main__':
                 time_elapsed = (datetime.now() - t_st).total_seconds()
                 samples_sec = time_elapsed / \
                     (i + 1) / validation_loader.batch_size
-                header_list = [f'Valid: [{processed}/{total} '
-                               f'({100.0 * processed / total:.0f}%)]']
-
-
+#                header_list = [f'Valid: [{processed}/{total} '
+#                               f'({100.0 * processed / total:.0f}%)]']
                 print(str(speechOrient)+","+str(noiseOrient)+"," + str(stats.validation.accuracy))
 #                stats.print(epoch, i, samples_sec, header=header_list)
-
-        print("")
-        print("")
-        print("")
-        print("Validation time: " + str(time_elapsed))
-        writer.add_scalar('Loss/train', stats.training.loss, epoch)
+            batch_st = datetime.now()
         writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
-        writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
         writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
-
         stats.update()
+
+    print("")
+    print("")
+    print("")
+    validation_time = (datetime.now() - validation_st).total_seconds()
+    print("Validation time: " + str(validation_time))
+    print("Mini batch fill time: " + str(batch_tot))
 #        stats.plot(path=trained_folder + '/')
 #        if stats.validation.best_accuracy is True:
 #            torch.save(module.state_dict(), trained_folder + '/network.pt')
