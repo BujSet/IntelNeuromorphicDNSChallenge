@@ -344,7 +344,7 @@ if __name__ == '__main__':
     trained_folder = 'Trained' + identifier
     logs_folder = 'Logs' + identifier
     print(trained_folder)
-    writer = SummaryWriter('runs/' + identifier)
+#    writer = SummaryWriter('runs/' + identifier)
 
     os.makedirs(trained_folder, exist_ok=True)
     os.makedirs(logs_folder, exist_ok=True)
@@ -438,6 +438,7 @@ if __name__ == '__main__':
         if (not args.randomize_orients):
             print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
             print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
+    print("Training for " + str(args.training_epoch) + " epochs, validating for " + str(args.validation_epoch) + " epochs")
     training_st = datetime.now()
     for epoch in range(args.training_epoch):
         t_st = datetime.now()
@@ -532,8 +533,8 @@ if __name__ == '__main__':
 #            stats.print(epoch, i, samples_sec, header=header_list)
             batch_st = datetime.now()
 
-        writer.add_scalar('Loss/train', stats.training.loss, epoch)
-        writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
+#        writer.add_scalar('Loss/train', stats.training.loss, epoch)
+#        writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
         stats.update()
     print("")
     training_time = (datetime.now() - training_st).total_seconds()
@@ -542,7 +543,7 @@ if __name__ == '__main__':
     print("Speech Orientation, Noise Orientation, Validation Accuracy")
     print("")
     validation_st = datetime.now()
-    for epoch in range(args.training_epoch):
+    for epoch in range(args.validation_epoch):
         t_st = datetime.now()
         batch_st = datetime.now()
         batch_tot = 0.0
@@ -628,9 +629,10 @@ if __name__ == '__main__':
                 print(str(speechOrient)+","+str(noiseOrient)+"," + str(stats.validation.accuracy))
 #                stats.print(epoch, i, samples_sec, header=header_list)
             batch_st = datetime.now()
-        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
-        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
-        stats.update()
+#        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
+#        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
+#        stats.testing.update()
+#        stats.testing.reset()
 
     print("")
     print("")
