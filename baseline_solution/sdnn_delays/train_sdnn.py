@@ -14,9 +14,13 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from lava.lib.dl import slayer
+import sys
+sys.path.append('./')
 from audio_dataloader import DNSAudio
+from hrtfs.cipic_db import CipicDatabase 
+import torchaudio
 from snr import si_snr
-
+from noisyspeech_synthesizer import segmental_snr_mixer
 
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
