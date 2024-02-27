@@ -23,6 +23,7 @@ def cartDist(origin, dest):
 
 for i in range(len(onlyfiles)):
     filename = onlyfiles[i]
+#    print(filename)
     path = join(mypath, filename)
     name_tokens = filename.replace('.txt', '').split('_')
 
@@ -35,6 +36,7 @@ for i in range(len(onlyfiles)):
     with open(path, 'r') as F:
         lines = F.readlines()
         tokens = lines[-1].split()
+#        print(tokens)
         score = float(tokens[-2])
         dists[i] = ((speech - noise) * 5.625)
 
