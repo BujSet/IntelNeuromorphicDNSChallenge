@@ -439,35 +439,42 @@ if __name__ == '__main__':
             print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
             print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     print("Training for " + str(args.training_epoch) + " epochs, validating for " + str(args.validation_epoch) + " epochs")
+    with open("training_orients.txt", 'w') as tof:
+        print("Speech Orientation, Noise Orientation, Training Accuracy", file=tof)
     training_st = datetime.now()
     for epoch in range(args.training_epoch):
         t_st = datetime.now()
         batch_st = datetime.now()
         batch_tot = 0.0
+        conv_tot = 0.0
+        synth_tot = 0.0
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             batch_tot += (datetime.now() - batch_st).total_seconds()
             net.train()
             if (args.ssnns):
-                if (args.randomize_orients):
-                    speechOrient  = random.randint(0,1249)
-                    noiseOrient   = random.randint(0,1249)
-                    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
-                    speechFilter  = speechFilter.to(device)
-                    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
-                    noiseFilter   = noiseFilter.to(device) 
                 noise = noise.to(device)
                 clean = clean.to(device)
+                conv_st = datetime.now()
                 ssl_noise = torch.zeros(args.b, 480000).to(device)
                 ssl_clean = torch.zeros(args.b, 480000).to(device)
                 ssl_snrs  = torch.zeros(args.b, 1).to(device)
                 ssl_targlvls= torch.zeros(args.b, 1).to(device)
                 for batch_idx in range(args.b):
+                    if (args.randomize_orients):
+                        speechOrient  = random.randint(0,1249)
+                        noiseOrient   = random.randint(0,1249)
+                        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
+                        speechFilter  = speechFilter.to(device)
+                        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
+                        noiseFilter   = noiseFilter.to(device) 
                     ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
                     ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
                     noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
                     ssl_snrs[batch_idx] = metadata['snr']
                     ssl_targlvls[batch_idx] = metadata['target_level']
+                conv_tot += (datetime.now() - conv_st).total_seconds()
 
+                synth_st = datetime.now()
                 ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
                     ssl_clean, 
                     ssl_noise, 
@@ -476,6 +483,7 @@ if __name__ == '__main__':
                     ssl_targlvls,
                     -35,
                     -15)
+                synth_tot += (datetime.now() - synth_st).total_seconds()
 
             else:
                 ssl_noise = noise.to(device)
@@ -531,6 +539,8 @@ if __name__ == '__main__':
 #            header_list = [f'Train: [{processed}/{total} '
 #                           f'({100.0 * processed / total:.0f}%)]']
 #            stats.print(epoch, i, samples_sec, header=header_list)
+            with open("training_orients.txt", 'w') as tof:
+                print(str(speechOrient) + "," + str(noiseOrient) + "," +str(stats.training.accuracy), file=tof)
             batch_st = datetime.now()
 
 #        writer.add_scalar('Loss/train', stats.training.loss, epoch)
@@ -540,37 +550,46 @@ if __name__ == '__main__':
     training_time = (datetime.now() - training_st).total_seconds()
     print("Training time: " + str(training_time))
     print("Mini batch fill time: " + str(batch_tot))
-    print("Speech Orientation, Noise Orientation, Validation Accuracy")
+    print("Convolution time: " + str(conv_tot))
+    print("Synth time: " + str(synth_tot))
     print("")
+    with open("validation_orients.txt", 'w') as vof:
+        print("Speech Orientation, Noise Orientation, Validation Accuracy", file=vof)
     validation_st = datetime.now()
     for epoch in range(args.validation_epoch):
         t_st = datetime.now()
         batch_st = datetime.now()
         batch_tot = 0.0
+        conv_tot = 0.0
+        synth_tot = 0.0
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
+            batch_tot += (datetime.now() - batch_st).total_seconds()
             net.eval()
             if (args.ssnns):
-                if (args.randomize_orients):
-                    orient = random.randint(0,1)
-                    speechOrient  = random.randint(0,1249)
-                    noiseOrient   = random.randint(0,1249)
-                    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
-                    speechFilter  = speechFilter.to(device)
-                    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
-                    noiseFilter   = noiseFilter.to(device) 
                 noise = noise.to(device)
                 clean = clean.to(device)
+                conv_st = datetime.now()
                 ssl_noise = torch.zeros(args.b, 480000).to(device)
                 ssl_clean = torch.zeros(args.b, 480000).to(device)
                 ssl_snrs  = torch.zeros(args.b, 1).to(device)
                 ssl_targlvls= torch.zeros(args.b, 1).to(device)
                 for batch_idx in range(args.b):
+                    if (args.randomize_orients):
+                        orient = random.randint(0,1)
+                        speechOrient  = random.randint(0,1249)
+                        noiseOrient   = random.randint(0,1249)
+                        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
+                        speechFilter  = speechFilter.to(device)
+                        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
+                        noiseFilter   = noiseFilter.to(device) 
                     ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
                     ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
                     noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
                     ssl_snrs[batch_idx] = metadata['snr']
                     ssl_targlvls[batch_idx] = metadata['target_level']
+                conv_tot += (datetime.now() - conv_st).total_seconds()
                 
+                synth_st = datetime.now()
                 ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
                     ssl_clean, 
                     ssl_noise, 
@@ -579,6 +598,7 @@ if __name__ == '__main__':
                     ssl_targlvls,
                     -35,
                     -15)
+                synth_tot += (datetime.now() - synth_st).total_seconds()
             else:
                 ssl_noise = noise.to(device)
                 ssl_noisy = noisy.to(device)
@@ -626,8 +646,10 @@ if __name__ == '__main__':
                     (i + 1) / validation_loader.batch_size
 #                header_list = [f'Valid: [{processed}/{total} '
 #                               f'({100.0 * processed / total:.0f}%)]']
-                print(str(speechOrient)+","+str(noiseOrient)+"," + str(stats.validation.accuracy))
+#                print(str(speechOrient)+","+str(noiseOrient)+"," + str(stats.validation.accuracy))
 #                stats.print(epoch, i, samples_sec, header=header_list)
+            with open("validation_orients.txt", 'w') as vof:
+                print(str(speechOrient) + "," + str(noiseOrient) + "," +str(stats.validation.accuracy), file=tof)
             batch_st = datetime.now()
 #        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
 #        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
@@ -640,6 +662,8 @@ if __name__ == '__main__':
     validation_time = (datetime.now() - validation_st).total_seconds()
     print("Validation time: " + str(validation_time))
     print("Mini batch fill time: " + str(batch_tot))
+    print("Convolution time: " + str(conv_tot))
+    print("Synth time: " + str(synth_tot))
 #        stats.plot(path=trained_folder + '/')
 #        if stats.validation.best_accuracy is True:
 #            torch.save(module.state_dict(), trained_folder + '/network.pt')
