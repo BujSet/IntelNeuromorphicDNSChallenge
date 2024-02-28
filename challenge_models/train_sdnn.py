@@ -22,6 +22,8 @@ from hrtfs.cipic_db import CipicDatabase
 from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
+import librosa
+
 
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
@@ -65,10 +67,7 @@ class Network(torch.nn.Module):
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0,
-            subjectID=12, 
-            speechFilterOrient=624, speechFilterChannel=0,
-            noiseFilterOrient=600,noiseFilterChannel=0):
+            out_delay=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -161,6 +160,21 @@ class Network(torch.nn.Module):
                 targetLevelHigher)
                        
         return ssl_noisy, ssl_clean, ssl_noise
+
+    def melSpectrogram(self, wav_gpu, args):
+        wav = wav_gpu.cpu()
+        for i in range(args.b):
+            sample = wav[i,:]
+            spec = librosa.feature.melspectrogram(
+                    y=sample.numpy(), 
+                    sr=16000,
+                    n_fft=args.n_fft,
+                    hop_length=math.floor(args.n_fft//4),
+                    power=1, 
+                    n_mels=args.n_fft)
+            mag, phase = librosa.magphase(spec)
+        return wav, wav
+
 
     def forward(self, noisy):
         x = noisy - self.stft_mean
@@ -345,28 +359,18 @@ if __name__ == '__main__':
 
     lam = args.lam
 
-    print('Using GPUs {}'.format(args.gpu))
-    device = torch.device('cuda:{}'.format(args.gpu[0]))
-
     out_delay = args.out_delay
-    if len(args.gpu) == 0:
-        print("Building CPU network")
-        net = Network(args.threshold,
-                      args.tau_grad,
-                      args.scale_grad,
-                      args.dmax,
-                      args.out_delay).to(device)
-        module = net
-    else:
-        print("Building GPU network")
-        net = torch.nn.DataParallel(Network(
-                    args.threshold,
-                    args.tau_grad,
-                    args.scale_grad,
-                    args.dmax,
-                    args.out_delay).to(device),
-                        device_ids=args.gpu)
-        module = net.module
+
+    # By default, only build the GPU model
+    device = torch.device('cuda:{}'.format(0))
+    net = torch.nn.DataParallel(Network(
+                args.threshold,
+                args.tau_grad,
+                args.scale_grad,
+                args.dmax,
+                args.out_delay).to(device),
+                    device_ids=[0])
+    module = net.module
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
@@ -376,13 +380,7 @@ if __name__ == '__main__':
                 n_fft=args.n_fft,
                 onesided=True, 
                 hop_length=math.floor(args.n_fft//4)).to(device)
-    mel_transform =torchaudio.transforms.MelSpectrogram(
-                n_fft=4*args.n_fft,
-                n_mels=257,
-                power=2,
-                hop_length=math.floor(args.n_fft//4)).to(device)
-    # Seems like we cannot use inverseMelScale
-    # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
+
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
     # Define optimizer module.
@@ -429,8 +427,6 @@ if __name__ == '__main__':
         print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     for epoch in range(args.epoch):
         t_st = datetime.now()
-        epoch_st = datetime.now()  
-        train_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             net.train()
             if (args.ssnns):
@@ -468,8 +464,9 @@ if __name__ == '__main__':
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
                 clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
             else:
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+                noisy_abs, noisy_arg = module.melSpectrogram(ssl_noisy, args)
+                sys.exit(0)
+                clean_abs, clean_arg = module.melSpectrogram(ssl_clean, args)
 
             denoised_abs = net(noisy_abs)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
@@ -496,8 +493,8 @@ if __name__ == '__main__':
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
 
-#            if i < 10:
-#                module.grad_flow(path=trained_folder + '/')
+            if i < 10:
+                module.grad_flow(path=trained_folder + '/')
 
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
@@ -507,49 +504,23 @@ if __name__ == '__main__':
             stats.training.num_samples += noisy.shape[0]
 
             processed = i * train_loader.batch_size
-            if (processed >= 59937):
-               total = len(train_loader.dataset)
-               time_elapsed = (datetime.now() - t_st).total_seconds()
-               samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-               header_list = [f'Train: [{processed}/{total} '
+            total = len(train_loader.dataset)
+            time_elapsed = (datetime.now() - t_st).total_seconds()
+            samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
+            header_list = [f'Train: [{processed}/{total} '
                            f'({100.0 * processed / total:.0f}%)]']
-               stats.print(epoch, i, samples_sec, header=header_list)
+            stats.print(epoch, i, samples_sec, header=header_list)
 
         if (epoch != args.epoch - 1):
             continue
-        t_st = datetime.now()  
-        train_et = datetime.now()
-        print(f"Training for Epoch {epoch} took: {train_et - train_st}")
-        
-        val_st = datetime.now()
+        t_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
-            if (args.ssnns):
-                noise = noise.to(device)
-                clean = clean.to(device)
-                ssl_noise = torch.zeros(args.b, 480000).to(device)
-                ssl_clean = torch.zeros(args.b, 480000).to(device)
-                ssl_snrs  = torch.zeros(args.b, 1).to(device)
-                ssl_targlvls= torch.zeros(args.b, 1).to(device)
-                for batch_idx in range(args.b):
-                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                    ssl_snrs[batch_idx] = metadata['snr']
-                    ssl_targlvls[batch_idx] = metadata['target_level']
-                
-                ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                    ssl_clean, 
-                    ssl_noise, 
-                    args.b, 
-                    ssl_snrs,
-                    ssl_targlvls,
-                    -35,
-                    -15)
-            else:
-                ssl_noise = noise.to(device)
-                ssl_noisy = noisy.to(device)
-                ssl_clean = clean.to(device)
+            # For validation, don't add spatial separation of speech and noise,
+            # as that's how the default dataset is prepared
+            ssl_noise = noise.to(device)
+            ssl_noisy = noisy.to(device)
+            ssl_clean = clean.to(device)
 
             with torch.no_grad():
                 noisy = ssl_noisy.to(device)
@@ -587,16 +558,13 @@ if __name__ == '__main__':
                 stats.validation.num_samples += noisy.shape[0]
 
                 processed = i * validation_loader.batch_size
-                if (processed >= 59937):
-                    total = len(validation_loader.dataset)
-                    time_elapsed = (datetime.now() - t_st).total_seconds()
-                    samples_sec = time_elapsed / \
-                        (i + 1) / validation_loader.batch_size
-                    header_list = [f'Valid: [{processed}/{total} '
+                total = len(validation_loader.dataset)
+                time_elapsed = (datetime.now() - t_st).total_seconds()
+                samples_sec = time_elapsed / \
+                    (i + 1) / validation_loader.batch_size
+                header_list = [f'Valid: [{processed}/{total} '
                                f'({100.0 * processed / total:.0f}%)]']
                 stats.print(epoch, i, samples_sec, header=header_list)
-        val_et = datetime.now()
-        print(f"Validation for Epoch {epoch} took: {val_et - val_st}")
 
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
         writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
@@ -609,11 +577,9 @@ if __name__ == '__main__':
             torch.save(module.state_dict(), trained_folder + '/network.pt')
         stats.save(trained_folder + '/')
 
-        epoch_et = datetime.now() 
-        print(f"Total time for Epoch {epoch} took: {epoch_et - epoch_st}")
-    
     module.load_state_dict(torch.load(trained_folder + '/network.pt'))
     module.export_hdf5(trained_folder + '/network.net')
+
     params_dict = {}
     for key, val in args._get_kwargs():
         params_dict[key] = str(val)

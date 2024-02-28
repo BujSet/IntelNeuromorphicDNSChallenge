@@ -48,7 +48,7 @@ echo "[Train Noisy] Initiating tarball copy" \
 TNOISY=$!
 cd ../validation_set/
 echo "[Valid Clean] Initiating tarball copy" \
-        && cp ${SHARED_DIR}/validation_set/validation_set_clean.tar.gz . \
+  && cp ${SHARED_DIR}/validation_set/validation_set_clean.tar.gz . \
 	&& echo "[Valid Clean] Tarball copy success" \
 	&& echo "[Valid Clean] Initiating tarball unpack" \
         && tar -xzf validation_set_clean.tar.gz \
@@ -94,10 +94,9 @@ echo "CIPIC download operations took $((DOWNLOAD_CIPIC_END_TIME - DOWNLOAD_CIPIC
 # nvidia-smi --query-gpu=timestamp,power.draw --format=csv  -i $(python chtc_files/get_device_uuid.py) -lms 500 > ../power.txt &
 # POWER_CNT=$!
 # sleep 10s
-# main thing
 echo "Starting main Python script"
 PYTHON_START_TIME=$(date +%s)
-python baseline_solution/sdnn_delays/train_sdnn.py -epoch 1 -ssnns -cipicSubject 21 -speechFilterOrient 601 -speechFilterChannel 1 -noiseFilterOrient 621 -noiseFilterChannel 1 -path ./ > ../accuracy.txt
+python baseline_solution/sdnn_delays/train_sdnn.py -epoch 1 -ssnns -cipicSubject 12 -speechFilterOrient 601 -speechFilterChannel 1 -noiseFilterOrient 621 -noiseFilterChannel 1 -path ./ > ../accuracy.txt
 PYTHON_END_TIME=$(date +%s)
 echo "Main Python script execution took $((PYTHON_END_TIME - PYTHON_START_TIME)) seconds."
 
@@ -105,4 +104,3 @@ echo "Main Python script execution took $((PYTHON_END_TIME - PYTHON_START_TIME))
 # kill ${POWER_CNT}
 # python chtc_files/plot_power_profile.py
 # mv power_profile.png ../
-
