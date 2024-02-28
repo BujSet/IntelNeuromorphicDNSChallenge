@@ -23,7 +23,6 @@ from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
 
-
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
 
@@ -430,6 +429,8 @@ if __name__ == '__main__':
         print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     for epoch in range(args.epoch):
         t_st = datetime.now()
+        epoch_st = datetime.now()  
+        train_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             net.train()
             if (args.ssnns):
@@ -516,7 +517,11 @@ if __name__ == '__main__':
 
         if (epoch != args.epoch - 1):
             continue
-        t_st = datetime.now()
+        t_st = datetime.now()  
+        train_et = datetime.now()
+        print(f"Training for Epoch {epoch} took: {train_et - train_st}")
+        
+        val_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
             net.eval()
             if (args.ssnns):
@@ -589,7 +594,9 @@ if __name__ == '__main__':
                         (i + 1) / validation_loader.batch_size
                     header_list = [f'Valid: [{processed}/{total} '
                                f'({100.0 * processed / total:.0f}%)]']
-                    stats.print(epoch, i, samples_sec, header=header_list)
+                stats.print(epoch, i, samples_sec, header=header_list)
+        val_et = datetime.now()
+        print(f"Validation for Epoch {epoch} took: {val_et - val_st}")
 
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
         writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
@@ -602,9 +609,11 @@ if __name__ == '__main__':
             torch.save(module.state_dict(), trained_folder + '/network.pt')
         stats.save(trained_folder + '/')
 
+        epoch_et = datetime.now() 
+        print(f"Total time for Epoch {epoch} took: {epoch_et - epoch_st}")
+    
     module.load_state_dict(torch.load(trained_folder + '/network.pt'))
     module.export_hdf5(trained_folder + '/network.net')
-
     params_dict = {}
     for key, val in args._get_kwargs():
         params_dict[key] = str(val)
