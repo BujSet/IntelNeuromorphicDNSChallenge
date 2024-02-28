@@ -427,7 +427,10 @@ if __name__ == '__main__':
         print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
         print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
         print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
+    
     for epoch in range(args.epoch):
+        if (epoch < 5 or epoch % 5 == 0):
+            print(f"Entering epoch: {epoch}")
         t_st = datetime.now()
         epoch_st = datetime.now()  
         train_st = datetime.now()
@@ -519,7 +522,7 @@ if __name__ == '__main__':
             continue
         t_st = datetime.now()  
         train_et = datetime.now()
-        print(f"Training for Epoch {epoch} took: {train_et - train_st}")
+        print(f"Training Epoch {epoch} took: {train_et - train_st}")
         
         val_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
@@ -596,7 +599,7 @@ if __name__ == '__main__':
                                f'({100.0 * processed / total:.0f}%)]']
                 stats.print(epoch, i, samples_sec, header=header_list)
         val_et = datetime.now()
-        print(f"Validation for Epoch {epoch} took: {val_et - val_st}")
+        print(f"Validation Epoch {epoch} took: {val_et - val_st}")
 
         writer.add_scalar('Loss/train', stats.training.loss, epoch)
         writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
