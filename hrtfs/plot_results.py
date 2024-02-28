@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from cipic_db import CipicDatabase 
 
-mypath = '/home/selagamsetty/private/results/'
+mypath = '/research/selagamsetty/private/results/'
 onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
 print("Reading " + str(len(onlyfiles)) + " files")
 channel0 = np.empty([50, 50], dtype=float)
