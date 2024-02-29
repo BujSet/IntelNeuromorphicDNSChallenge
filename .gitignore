@@ -6,3 +6,5 @@ hrtfs/*.png
 __pycache__/
 training_set/
 validation_set/
+training_orients.txt
+validation_orients.txt

@@ -460,14 +460,19 @@ if __name__ == '__main__':
                     ssl_clean = torch.zeros(args.b, 480000).to(device)
                     ssl_snrs  = torch.zeros(args.b, 1).to(device)
                     ssl_targlvls= torch.zeros(args.b, 1).to(device)
+                    speechOrients = torch.zeros(args.b, 1)
+                    noiseOrients = torch.zeros(args.b, 1)
                     for batch_idx in range(args.b):
                         if (args.randomize_orients):
                             speechOrient  = random.randint(0,1249)
+                            speechOrients[batch_idx] = speechOrient
                             noiseOrient   = random.randint(0,1249)
+                            noiseOrients[batch_idx] = noiseOrient
                             speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
                             speechFilter  = speechFilter.to(device)
                             noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
-                            noiseFilter   = noiseFilter.to(device) 
+                            noiseFilter   = noiseFilter.to(device)                             
+#                            print(str(batch_idx) + "," + str(speechOrient) + "," + str(noiseOrient))
                         ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
                         ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
                         noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
@@ -532,6 +537,9 @@ if __name__ == '__main__':
             stats.training.correct_samples += torch.sum(score).item()
             stats.training.loss_sum += loss.item()
             stats.training.num_samples += noisy.shape[0]
+#            print(score.shape)
+#            print(score)
+#            print(str(stats.training.accuracy))
 
             processed = i * train_loader.batch_size
             total = len(train_loader.dataset)
@@ -542,8 +550,13 @@ if __name__ == '__main__':
 #            stats.print(epoch, i, samples_sec, header=header_list)
             # TODO need to record this for every sample in mini batch
             with open("training_orients.txt", 'w') as tof:
-                print(str(speechOrient) + "," + str(noiseOrient) + "," +str(stats.training.accuracy), file=tof)
+                for batch_idx in range(args.b):
+                    speechO = int(speechOrients[batch_idx].item())
+                    noiseO = int(noiseOrients[batch_idx].item())
+                    sample_snr = float(score[batch_idx].item())
+                    print(str(speechO) + "," + str(noiseO) + "," +str(sample_snr), file=tof)
             batch_st = datetime.now()
+#            sys.exit(0)
 
 #        writer.add_scalar('Loss/train', stats.training.loss, epoch)
 #        writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
@@ -576,11 +589,14 @@ if __name__ == '__main__':
                     ssl_clean = torch.zeros(args.b, 480000).to(device)
                     ssl_snrs  = torch.zeros(args.b, 1).to(device)
                     ssl_targlvls= torch.zeros(args.b, 1).to(device)
+                    speechOrients = torch.zeros(args.b, 1)
+                    noiseOrients = torch.zeros(args.b, 1)
                     for batch_idx in range(args.b):
                         if (args.randomize_orients):
-                            orient = random.randint(0,1)
                             speechOrient  = random.randint(0,1249)
+                            speechOrients[batch_idx] = speechOrient
                             noiseOrient   = random.randint(0,1249)
+                            noiseOrients[batch_idx] = noiseOrient
                             speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
                             speechFilter  = speechFilter.to(device)
                             noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
@@ -652,7 +668,10 @@ if __name__ == '__main__':
 #                stats.print(epoch, i, samples_sec, header=header_list)
             # TODO need to record this for every sample in mini batch
             with open("validation_orients.txt", 'w') as vof:
-                print(str(speechOrient) + "," + str(noiseOrient) + "," +str(stats.validation.accuracy), file=vof)
+                speechO = int(speechOrients[batch_idx].item())
+                noiseO = int(noiseOrients[batch_idx].item())
+                sample_snr = float(score[batch_idx].item())
+                print(str(speechO) + "," + str(noiseO) + "," +str(sample_snr), file=vof)
             batch_st = datetime.now()
 #        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
 #        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
