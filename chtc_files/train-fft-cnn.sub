@@ -19,7 +19,7 @@ when_to_transfer_output = ON_EXIT
 # Note that we don't really need to transfer this file as a copy exists in the
 # git repo that is pulled. However, for running interactive jobs, it's useful
 # to use this.
-transfer_input_files = ndns_cmd.sh
+transfer_input_files = train-noise-nn.sh
 want_io_proxy = true
 
 +WantGPULab = true
