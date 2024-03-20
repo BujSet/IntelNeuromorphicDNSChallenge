@@ -22,6 +22,21 @@ def initialize_beam(x_dim, y_dim, initial_pos, theta_deg, sink_pos):
     sink = torch.tensor(sink_pos, dtype=torch.float32)
     return pos, angle, sink
 
+def beam_reflections(h, x, theta):
+    intra_box_hyp = (h/2)/np.sin(theta)
+    intra_box_base = intra_box_hyp*np.tan(theta)
+    full_hyp = x/np.cos(theta)
+    num_reflections = full_hyp / intra_box_hyp
+
+#def mic_positions(w, theta):
+
+# 2/28 notes
+# design a NN to learn how to phase shift noise
+# have noise go through a CNN and get added to the signal(which is silence) and see 
+# if it can learn how to do a FFT with only convolution
+# phase shift in time domain 
+
+
 def simulate_and_plot_beam_path(x_dim, y_dim, beams, initial_pos):
     """
     Simulate the beam's path and plot it.
@@ -63,9 +78,11 @@ def simulate_and_plot_beam_path(x_dim, y_dim, beams, initial_pos):
             # work with frequencies too
             # get the factors (coefficients) for a perfect acoustic reflector (get them from the Pyroom acoustics source)
             # subwavelength question. 
+            
             # OTHER TODOs:
             # look at utilization on GPU (A100s) on Condor
             # explore mp3s instead of wav files in ters of transer times 
+            # get timing info on validation vs training runs 
 
             if torch.norm(pos - sink) < 0.5:
                 reached_sink = True

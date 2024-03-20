@@ -6,3 +6,20 @@ hrtfs/*.png
 __pycache__/
 training_set/
 validation_set/
+
+fft-can/data/*
+!fft-can/data/dataset.py
+!fft-can/data/preprocess.py
+
+fft-can/model/__pycache__/
+fft-can/model/*.wav
+
+.DS_STORE
+
+*.wav
+*.pt
+*.pth
+
+# Rob's local files
+explore-data.py
+extract-noise.py
