@@ -1,4 +1,4 @@
-# train.sub
+# train-fft-cnn.sub
 container_image = docker://rselagam/ndns:v45
 universe = container
 
