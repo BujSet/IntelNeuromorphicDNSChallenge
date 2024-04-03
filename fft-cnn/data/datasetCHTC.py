@@ -18,7 +18,7 @@ class NoiseDataset(Dataset):
         self.file_paths = file_paths
         self.base_path = base_path
 
-     def _get_filenames(self, n: int) -> Tuple[str, str]:
+    def _get_filenames(self, n: int) -> Tuple[str, str]:
         noisy_file = self.noisy_files[n % self.__len__()]
         filename = noisy_file.split(os.sep)[-1]
         file_id = int(self.file_id_from_name.findall(filename)[0])
