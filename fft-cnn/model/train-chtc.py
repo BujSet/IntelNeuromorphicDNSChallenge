@@ -85,7 +85,7 @@ if __name__ == '__main__':
                               num_workers=4,
                               pin_memory=True)
 
-     for epoch in range(args.epoch):
+    for epoch in range(args.epoch):
         if (epoch < 5 or epoch % 5 == 0):
             print(f"Entering epoch: {epoch}")
         
