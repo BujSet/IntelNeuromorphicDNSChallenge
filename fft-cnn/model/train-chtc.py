@@ -5,6 +5,16 @@ import argparse
 from torch.utils.data import DataLoader
 import sys
 import os 
+
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+print(f"script_dir: {script_dir}")
+# Add the 'data' directory to the path
+# Assuming 'data' and 'model' are sibling directories
+data_dir = os.path.join(script_dir, '..', 'data')
+print(f"data_dir: {data_dir}")
+sys.path.insert(0, data_dir)
+
 sys.path.append('./')
 
 import glob
@@ -15,6 +25,8 @@ from datasetCHTC import NoiseDataset
 
 if __name__ == '__main__':
     print("Entered train-chtc.py")
+    print("exiting")
+    return 0
     parser = argparse.ArgumentParser()
     parser.add_argument('-gpu',
                         type=int,
