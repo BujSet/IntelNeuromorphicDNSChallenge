@@ -4,6 +4,7 @@ import torch.nn as nn
 import argparse
 from torch.utils.data import DataLoader
 import sys
+import os 
 sys.path.append('./')
 
 import glob
@@ -37,6 +38,7 @@ if __name__ == '__main__':
                         help='dataset path')
 
     args = parser.parse_args()
+    identifier = 'test'
     trained_folder = 'Trained' + identifier
     logs_folder = 'Logs' + identifier
     print(trained_folder)
@@ -52,7 +54,6 @@ if __name__ == '__main__':
     print('Using GPUs {}'.format(args.gpu))
     device = torch.device('cuda:{}'.format(args.gpu[0]))
     
-    out_delay = args.out_delay
     if len(args.gpu) == 0:
         print("Building CPU network")
         net = PhaseShiftCNN().to(device)
@@ -67,7 +68,8 @@ if __name__ == '__main__':
     
     optimizer = torch.optim.Adam(net.parameters(),
                                 lr = args.lr)
-    
+    loss_function = nn.MSELoss()
+
     train_set = NoiseDataset(root=args.path + 'training_set/')
     validation_set = NoiseDataset(root=args.path + 'validation_set/')
     
@@ -101,27 +103,30 @@ if __name__ == '__main__':
             loss.backward() 
             optimizer.step()
         
-        for batch_idx, data in enumerate(validation_loader):
-            net.eval()
+        # for batch_idx, data in enumerate(validation_loader):
+        #     net.eval()
             
-            inputs = data.to(device) 
-            outputs = net(inputs)
-            targets = torch.zeros_like(outputs).to(device) # maybe this works
-            loss = loss_function(outputs, targets)
+        #     inputs = data.to(device) 
+        #     outputs = net(inputs)
+        #     targets = torch.zeros_like(outputs).to(device) # maybe this works
+        #     loss = loss_function(outputs, targets)
         
-        writer.add_scalar('Loss/train', stats.training.loss, epoch)
-        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
+        # writer.add_scalar('Loss/train', stats.training.loss, epoch)
+        # writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
         
-        stats.update()
-        stats.plot(path=trained_folder + '/')
+        # stats.update()
+        # stats.plot(path=trained_folder + '/')
         
-        if stats.validation.best_accuracy is True:
-            torch.save(module.state_dict(), trained_folder + '/fft-cnn.pt')
+        # if (epoch>1):
+        #     torch.save(module.state_dict(), trained_folder + '/fft-cnn.pt')
 
-        stats.save(trained_folder + '/')
+        # if stats.validation.best_accuracy is True:
+        #     torch.save(module.state_dict(), trained_folder + '/fft-cnn.pt')
+
+        # stats.save(trained_folder + '/')
     
-    module.load_state_dict(torch.load(trained_folder + '/fft-cnn.pt'))
-    module.export_hdf5(trained_folder + '/fft-cnn.net')
+    # module.load_state_dict(torch.load(trained_folder + '/fft-cnn.pt'))
+    # module.export_hdf5(trained_folder + '/fft-cnn.net')
     params_dict = {}
     for key, val in args._get_kwargs():
         params_dict[key] = str(val)
