@@ -1,7 +1,10 @@
 import os
+import glob
+import re
 import torch
-from torch.utils.data import Dataset
 import torchaudio
+from torch.utils.data import Dataset
+from typing import Tuple
 
 class NoiseDataset(Dataset):
     def __init__(self, root: str = './'):
@@ -14,10 +17,8 @@ class NoiseDataset(Dataset):
         """
         self.root = root
         self.noisy_files = glob.glob(root + 'noisy/**.wav')
-
-        self.file_paths = file_paths
-        self.base_path = base_path
-
+        self.file_id_from_name = re.compile('fileid_(\d+)')
+    
     def _get_filenames(self, n: int) -> Tuple[str, str]:
         noisy_file = self.noisy_files[n % self.__len__()]
         filename = noisy_file.split(os.sep)[-1]
@@ -30,7 +31,7 @@ class NoiseDataset(Dataset):
         return len(self.noisy_files)
 
     def __getitem__(self, idx):
-        noisy_file, noise_file = self._get_filenames(n)
+        noisy_file, noise_file = self._get_filenames(idx)
 
         waveform, sample_rate = torchaudio.load(noise_file)
 
@@ -43,15 +44,15 @@ class NoiseDataset(Dataset):
         magnitude = torch.abs(stft)
         phase = torch.angle(stft)
 
-        phase_path = path + "_phase.pt"
-        torch.save(phase, phase_path)
+        # phase_path = path + "_phase.pt"
+        # torch.save(phase, phase_path)
         # Concatenate magnitude and phase along the last dimension
         input_data = torch.cat((magnitude.unsqueeze(-1), phase.unsqueeze(-1)), dim=-1)
 
         return input_data
    
-    if __name__ == '__main__':
-        train_set = NoiseDataset(
-            root='../../data/MicrosoftDNS_4_ICASSP/training_set/')
-        validation_set = NoiseDataset(
-            root='../../data/MicrosoftDNS_4_ICASSP/validation_set/')
+if __name__ == '__main__':
+    train_set = NoiseDataset(
+        root='../../data/MicrosoftDNS_4_ICASSP/training_set/')
+    validation_set = NoiseDataset(
+        root='../../data/MicrosoftDNS_4_ICASSP/validation_set/')
