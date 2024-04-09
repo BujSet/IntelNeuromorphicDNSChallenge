@@ -24,7 +24,6 @@ import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
 import librosa
 
-
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
 
@@ -100,6 +99,43 @@ class Network(torch.nn.Module):
 
         self.blocks[1].delay.max_delay = max_delay
         self.blocks[2].delay.max_delay = max_delay
+
+    def _display_weights(self, filename):
+        layerIndices = []
+        # First determine which layers have actual weights
+        vmin =  100000.0
+        vmax = -100000.0
+        for i in range(len(self.blocks)):
+            block = self.blocks[i]
+            if (hasattr(block, 'synapse')):
+                if (hasattr(block.synapse, 'weight')):
+                    layerIndices.append(i)
+                    mini = block.synapse.weight.cpu().detach().min()
+                    maxi = block.synapse.weight.cpu().detach().max()
+                    if (mini < vmin):
+                        vmin = mini
+                    if (maxi > vmax):
+                        vmax = maxi
+
+        fig, axs = plt.subplots(1, len(layerIndices), figsize=(30,20))
+
+        for i in range(len(layerIndices)):
+            idx = layerIndices[i]
+            block = self.blocks[idx]
+            assert(hasattr(block, 'synapse') and hasattr(block.synapse, 'weight'))
+            w = block.synapse.weight.cpu().squeeze().detach().numpy().transpose()
+            pad = np.zeros((max(w.shape), max(w.shape)))
+            m = w.reshape((w.shape[0], -1))
+            pad[0:m.shape[0], 0:m.shape[1]] = m
+            im = axs[i].imshow(pad, cmap='hot', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
+            axs[i].set_title('Layer ' + str(i) + ' Weights')
+        axs[1].set_xlabel("Output Neurons")
+        axs[0].set_ylabel("Input Neurons")
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+        fig.colorbar(im, cax=cbar_ax)
+        plt.savefig(filename, bbox_inches='tight')
+        plt.close()
 
     def _segmental_snr_mixer(self, clean, noise, snr,
                         target_level, 
