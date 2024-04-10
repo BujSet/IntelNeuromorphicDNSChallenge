@@ -207,8 +207,9 @@ class Network(torch.nn.Module):
         for block in self.blocks:
             x = block(x)
 
-        mask = torch.relu(x + 1)
-        return slayer.axon.delay(x, self.out_delay) * mask
+#        mask = torch.relu(x + 1)
+        x = torch.relu(x + 1)
+        return slayer.axon.delay(x, self.out_delay) #* mask
 
     def grad_flow(self, path):
         # helps monitor the gradient flow
