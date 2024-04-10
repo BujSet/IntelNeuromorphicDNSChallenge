@@ -131,7 +131,7 @@ class Network(torch.nn.Module):
             pad = np.zeros((max(w.shape), max(w.shape)))
             m = w.reshape((w.shape[0], -1))
             pad[0:m.shape[0], 0:m.shape[1]] = m
-            im = axs[i].imshow(pad, cmap='hot', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
+            im = axs[i].imshow(pad, cmap='seismic', interpolation='nearest', aspect='auto', vmin=vmin, vmax=vmax)
             axs[i].set_title('Layer ' + str(i) + ' Weights')
         axs[1].set_xlabel("Output Neurons")
         axs[0].set_ylabel("Input Neurons")
