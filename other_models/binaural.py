@@ -208,7 +208,7 @@ class Network(torch.nn.Module):
             x = block(x)
 
         mask = torch.relu(x + 1)
-        return slayer.axon.delay(noisy, self.out_delay) * mask
+        return slayer.axon.delay(x, self.out_delay) * mask
 
     def grad_flow(self, path):
         # helps monitor the gradient flow
@@ -317,11 +317,11 @@ if __name__ == '__main__':
                         help='random seed of the experiment')
     parser.add_argument('-training_epoch',
                         type=int,
-                        default=50,
+                        default=5,
                         help='number of training epochs to run')
     parser.add_argument('-validation_epoch',
                         type=int,
-                        default=50,
+                        default=0,
                         help='number of validation epochs to run after training')
     parser.add_argument('-spectrogram',
                         type=int,
@@ -355,11 +355,11 @@ if __name__ == '__main__':
     # which channels is read from 'should' be irrelevant
     parser.add_argument('-speechFilterOrient',
                         type=int,
-                        default=624,
+                        default=608,
                         help='Index into CIPIC source directions to orient the speech to ')
     parser.add_argument('-noiseFilterOrient',
                         type=int,
-                        default=600,
+                        default=608,
                         help='Index into CIPIC source directions to orient the noise to ')
 
     args = parser.parse_args()
@@ -468,9 +468,10 @@ if __name__ == '__main__':
             batch_tot += (datetime.now() - batch_st).total_seconds()
             net.train()
             with torch.no_grad():
+                noise = noise.to(device)
+                clean = clean.to(device)
+                noisy = noisy.to(device)
                 if (args.ssnns):
-                    noise = noise.to(device)
-                    clean = clean.to(device)
                     conv_st = datetime.now()
                     ssl_noise0 = torch.zeros(args.b, 480000).to(device)
                     ssl_noise1 = torch.zeros(args.b, 480000).to(device)
@@ -524,8 +525,8 @@ if __name__ == '__main__':
                     synth_tot += (datetime.now() - synth_st).total_seconds()
 
                 else:
-                	print("TODO need to fix this for later")
-                	assert(False)
+                    print("TODO need to fix this for later")
+                    assert(False)
                     ssl_noise = noise.to(device)
                     ssl_noisy = noisy.to(device)
                     ssl_clean = clean.to(device)
@@ -542,10 +543,15 @@ if __name__ == '__main__':
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
                 clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
 
-            denoised_abs = net(torch.cat(noisy_abs0, noisy_abs1), 0)
+            binaural_noisy_abs = torch.cat((noisy_abs0, noisy_abs1), 1)
+
+            denoised_abs = net(binaural_noisy_abs)
+            # need normal phase since network doesn't output it for us
+            noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft, None)
+            clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
-            clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
+            clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
 
             if (args.spectrogram == 0):
                 clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
@@ -581,9 +587,9 @@ if __name__ == '__main__':
             total = len(train_loader.dataset)
             time_elapsed = (datetime.now() - t_st).total_seconds()
             samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-#            header_list = [f'Train: [{processed}/{total} '
-#                           f'({100.0 * processed / total:.0f}%)]']
-#            stats.print(epoch, i, samples_sec, header=header_list)
+            header_list = [f'Train: [{processed}/{total} '
+                           f'({100.0 * processed / total:.0f}%)]']
+            stats.print(epoch, i, samples_sec, header=header_list)
             # TODO need to record this for every sample in mini batch
             with open("training_orients.txt", 'w') as tof:
                 for batch_idx in range(args.b):
@@ -606,6 +612,7 @@ if __name__ == '__main__':
     print("")
     with open("validation_orients.txt", 'w') as vof:
         print("Speech Orientation, Noise Orientation, Validation Accuracy", file=vof)
+    module._display_weights("final_weights.png")
     validation_st = datetime.now()
     for epoch in range(args.validation_epoch):
         t_st = datetime.now()
@@ -722,7 +729,6 @@ if __name__ == '__main__':
     print("Mini batch fill time: " + str(batch_tot))
     print("Convolution time: " + str(conv_tot))
     print("Synth time: " + str(synth_tot))
-    module._display_weights("final_weights.png")
 #        stats.plot(path=trained_folder + '/')
 #        if stats.validation.best_accuracy is True:
 #            torch.save(module.state_dict(), trained_folder + '/network.pt')
