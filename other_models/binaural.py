@@ -587,9 +587,9 @@ if __name__ == '__main__':
             total = len(train_loader.dataset)
             time_elapsed = (datetime.now() - t_st).total_seconds()
             samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-            header_list = [f'Train: [{processed}/{total} '
-                           f'({100.0 * processed / total:.0f}%)]']
-            stats.print(epoch, i, samples_sec, header=header_list)
+#            header_list = [f'Train: [{processed}/{total} '
+#                           f'({100.0 * processed / total:.0f}%)]']
+#            stats.print(epoch, i, samples_sec, header=header_list)
             # TODO need to record this for every sample in mini batch
             with open("training_orients.txt", 'w') as tof:
                 for batch_idx in range(args.b):
