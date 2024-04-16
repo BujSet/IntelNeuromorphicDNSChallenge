@@ -541,8 +541,10 @@ if __name__ == '__main__':
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
                 clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
             else:
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+            	noisy_abs0, noisy_arg0 = stft_splitter(ssl_noisy0, args.n_fft, mel_transform)
+                noisy_abs1, noisy_arg1 = stft_splitter(ssl_noisy1, args.n_fft, mel_transform)
+                clean_abs0, clean_arg0 = stft_splitter(ssl_clean0, args.n_fft, mel_transform)
+                clean_abs1, clean_arg1 = stft_splitter(ssl_clean1, args.n_fft, mel_transform)
 
             binaural_noisy_abs = torch.cat((noisy_abs0, noisy_abs1), 1)
 
