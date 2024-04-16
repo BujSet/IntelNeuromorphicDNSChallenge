@@ -615,9 +615,10 @@ if __name__ == '__main__':
     print("Convolution time: " + str(conv_tot))
     print("Synth time: " + str(synth_tot))
     print("")
+    module._display_weights("final_weights.png")
     with open("validation_orients.txt", 'w') as vof:
         print("Speech Orientation, Noise Orientation, Validation Accuracy", file=vof)
-    module._display_weights("final_weights.png")
+    
     validation_st = datetime.now()
     for epoch in range(args.validation_epoch):
         t_st = datetime.now()
