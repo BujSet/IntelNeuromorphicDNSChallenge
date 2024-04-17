@@ -558,12 +558,13 @@ if __name__ == '__main__':
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
             clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
 
-            if (args.spectrogram == 0):
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
-            elif (args.spectrogram == 1):
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
-            else:
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
+            clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+#            if (args.spectrogram == 0):
+#                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+#            elif (args.spectrogram == 1):
+#                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+#            else:
+#                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
 
             score = si_snr(clean_rec, clean)
             loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
@@ -689,12 +690,13 @@ if __name__ == '__main__':
                 noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
                 clean_abs = slayer.axon.delay(clean_abs, out_delay)
                 clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
-                if (args.spectrogram == 0):
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
-                elif(args.spectrogram == 1):
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
-                else:
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+#                if (args.spectrogram == 0):
+#                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+#                elif(args.spectrogram == 1):
+#                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+#                else:
+#                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
 
                 score = si_snr(clean_rec, clean)
                 if torch.isnan(score).any():
