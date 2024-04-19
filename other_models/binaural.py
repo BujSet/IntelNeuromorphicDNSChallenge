@@ -619,6 +619,12 @@ if __name__ == '__main__':
     module._display_weights("final_weights.png")
     with open("validation_orients.txt", 'w') as vof:
         print("Speech Orientation, Noise Orientation, Validation Accuracy", file=vof)
+    if (args.ssnns):
+        CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
+        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, 0)).float()
+        speechFilter  = speechFilter.to(device)
+        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, 0)).float()
+        noiseFilter   = noiseFilter.to(device)
     
     validation_st = datetime.now()
     for epoch in range(args.validation_epoch):
