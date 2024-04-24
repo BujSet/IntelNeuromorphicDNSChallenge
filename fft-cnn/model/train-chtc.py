@@ -20,7 +20,7 @@ sys.path.append('./')
 import glob
 from torch.utils.tensorboard import SummaryWriter
 
-from nn import PhaseShiftCNN
+from network import PhaseShiftCNN
 from datasetCHTC import NoiseDataset
 
 if __name__ == '__main__':
