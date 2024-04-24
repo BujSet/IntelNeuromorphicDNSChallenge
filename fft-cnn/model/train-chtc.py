@@ -100,7 +100,7 @@ if __name__ == '__main__':
         if (epoch < 5 or epoch % 5 == 0):
             print(f"Entering epoch: {epoch}")
         
-        for batch_idx, data in enumerate(train_loader):
+        for batch_idx, (dirty, clean) in enumerate(train_loader):
             net.train()
             
             inputs = data.to(device) 
@@ -108,8 +108,8 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             outputs = net(inputs)
             
-            targets = torch.zeros_like(outputs).to(device) # maybe this works
-            loss = loss_function(outputs, targets)
+            # targets = torch.zeros_like(outputs).to(device) # maybe this works
+            loss = loss_function(outputs, clean)
             
             loss.backward() 
             optimizer.step()
