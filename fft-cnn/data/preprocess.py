@@ -21,7 +21,7 @@ def load_and_preprocess_audio(path):
     
     input_data = torch.cat((magnitude.unsqueeze(-1), phase.unsqueeze(-1)), dim=-1)
     
-    return input_data, sample_rate, original_length
+    return input_data, sample_rate, original_length, phase, magnitude
 
 # path = 'training/iQD6mIwQkbw.wav'
 # input_data = load_and_preprocess_audio(path)
