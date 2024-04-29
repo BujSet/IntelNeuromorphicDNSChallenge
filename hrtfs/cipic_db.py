@@ -33,7 +33,7 @@ class CIPIC_DB():
         # TODO, really we should should just read the directory and see what
         # sofa files have been downloaded, but for now we'll just hardcode 
         # these
-        subjectIDs = ["012", "021", "165"]
+        subjectIDs = ["009", "010", "012", "017", "018", "021", "148", "165"]
         for subID in subjectIDs:
             filePath = os.path.join(self.cwd, "subject_" + subID + ".sofa")
             self.subjects[int(subID)] = CIPIC_Subject(int(subID), filePath)
