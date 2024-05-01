@@ -5,6 +5,8 @@ import torch
 import torchaudio
 from torch.utils.data import Dataset
 from typing import Tuple
+import numpy as np
+from scipy.io.wavfile import read, write
 
 class NoiseDataset(Dataset):
     def __init__(self, root: str = './'):
@@ -33,23 +35,33 @@ class NoiseDataset(Dataset):
     def __getitem__(self, idx):
         noisy_file, noise_file = self._get_filenames(idx)
 
-        waveform, sample_rate = torchaudio.load(noise_file)
+        fs, audio = read(noise_file)
+        audio = audio.astype(np.float32)  # Ensure float32 type for processing
+        signal = audio.astype(np.float32)  # Ensure float32 type for processing
+        t = np.linspace(0, len(audio) / fs, len(audio), endpoint=False)
 
+        fft_result = np.fft.fft(signal)
+        fft_magnitude = np.abs(fft_result)
+        fft_phase = np.angle(fft_result)
+        
+        phase_tensor = torch.tensor(fft_phase.reshape(-1, 1), dtype=torch.float32)
+        magnitude_tensor = torch.tensor(fft_magnitude, dtype=torch.float32)
+        
         # Preprocess the audio - STFT, magnitude, and phase
-        n_fft = 2048  # Number of FFT components
-        hop_length = 512  # Number of samples between successive frames
-        window = torch.hann_window(n_fft)
+        # n_fft = 2048  # Number of FFT components
+        # hop_length = 512  # Number of samples between successive frames
+        # window = torch.hann_window(n_fft)
 
-        stft = torch.stft(waveform, n_fft=n_fft, hop_length=hop_length, window=window, return_complex=True)
-        magnitude = torch.abs(stft)
-        phase = torch.angle(stft)
+        # stft = torch.stft(waveform, n_fft=n_fft, hop_length=hop_length, window=window, return_complex=True)
+        # magnitude = torch.abs(stft)
+        # phase = torch.angle(stft)
 
-        # phase_path = path + "_phase.pt"
-        # torch.save(phase, phase_path)
-        # Concatenate magnitude and phase along the last dimension
-        input_data = torch.cat((magnitude.unsqueeze(-1), phase.unsqueeze(-1)), dim=-1)
+        # # phase_path = path + "_phase.pt"
+        # # torch.save(phase, phase_path)
+        # # Concatenate magnitude and phase along the last dimension
+        # input_data = torch.cat((magnitude.unsqueeze(-1), phase.unsqueeze(-1)), dim=-1)
 
-        return input_data
+        return magnitude_tensor, phase_tensor, signal
    
 if __name__ == '__main__':
     train_set = NoiseDataset(

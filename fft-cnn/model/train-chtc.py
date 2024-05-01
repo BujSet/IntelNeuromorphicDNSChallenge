@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import argparse
+import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.data import DataLoader
 import sys
 import os 
@@ -25,7 +26,6 @@ from datasetCHTC import NoiseDataset
 
 if __name__ == '__main__':
     print("Entered train-chtc.py")
-    print("exiting")
     parser = argparse.ArgumentParser()
     parser.add_argument('-gpu',
                         type=int,
@@ -37,7 +37,7 @@ if __name__ == '__main__':
                         help='batch size for dataloader')
     parser.add_argument('-lr',
                         type=float,
-                        default=0.001,
+                        default=0.01,
                         help='initial learning rate')
     parser.add_argument('-epoch',
                         type=int,
@@ -80,7 +80,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(net.parameters(),
                                 lr = args.lr)
     loss_function = nn.MSELoss()
-
+    scheduler = lr_scheduler.steLR(optimizer, step_size=100, gamma=0.1)
     train_set = NoiseDataset(root=args.path + 'training_set/')
     validation_set = NoiseDataset(root=args.path + 'validation_set/')
     
@@ -95,49 +95,34 @@ if __name__ == '__main__':
                               shuffle=True,
                               num_workers=4,
                               pin_memory=True)
-
+    
+    net.train()
     for epoch in range(args.epoch):
-        if (epoch < 5 or epoch % 5 == 0):
+        if (epoch % 10 == 0):
             print(f"Entering epoch: {epoch}")
         
-        for batch_idx, (dirty, clean) in enumerate(train_loader):
-            net.train()
-            
-            inputs = data.to(device) 
-            
+        for batch_idx, (magnitude, phase, original_signal) in enumerate(train_loader):
             optimizer.zero_grad()
-            outputs = net(inputs)
             
-            # targets = torch.zeros_like(outputs).to(device) # maybe this works
-            loss = loss_function(outputs, clean)
+            adjusted_phase = model(phase).squeeze()
             
-            loss.backward() 
+            # Combine with original magnitude to get adjusted FFT
+            adjusted_fft = magnitude * torch.exp(1j * adjusted_phase)
+
+            # Perform IFFT to convert the adjusted complex FFT back to the time domain
+            adjusted_signal = torch.fft.ifft(adjusted_fft).real
+            
+            # Calculate the result of adding the original signal and the adjusted signal
+            combined_signal = original_signal + adjusted_signal
+            
+            # The goal is to minimize the output of the combined_signal, aiming for silence
+            loss = criterion(combined_signal, torch.zeros_like(combined_signal))
+            
+            loss.backward()
             optimizer.step()
+            scheduler.step()
         
-        # for batch_idx, data in enumerate(validation_loader):
-        #     net.eval()
-            
-        #     inputs = data.to(device) 
-        #     outputs = net(inputs)
-        #     targets = torch.zeros_like(outputs).to(device) # maybe this works
-        #     loss = loss_function(outputs, targets)
-        
-        # writer.add_scalar('Loss/train', stats.training.loss, epoch)
-        # writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
-        
-        # stats.update()
-        # stats.plot(path=trained_folder + '/')
-        
-        # if (epoch>1):
-        #     torch.save(module.state_dict(), trained_folder + '/fft-cnn.pt')
-
-        # if stats.validation.best_accuracy is True:
-        #     torch.save(module.state_dict(), trained_folder + '/fft-cnn.pt')
-
-        # stats.save(trained_folder + '/')
-    
-    # module.load_state_dict(torch.load(trained_folder + '/fft-cnn.pt'))
-    # module.export_hdf5(trained_folder + '/fft-cnn.net')
+   
     params_dict = {}
     for key, val in args._get_kwargs():
         params_dict[key] = str(val)
