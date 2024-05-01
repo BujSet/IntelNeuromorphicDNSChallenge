@@ -8,3 +8,5 @@ training_set/
 validation_set/
 training_orients.txt
 validation_orients.txt
+Trained/
+runs/
