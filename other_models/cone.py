@@ -69,10 +69,11 @@ class ConeFilter(torch.nn.Module):
         sample_rate=44100.0,
         steps=100):
         super().__init__()
-        self.x0 = torch.nn.Parameter(torch.zeros(1))
-        self.angle = torch.nn.Parameter(torch.zeros(1))
-        self.depth = torch.nn.Parameter(torch.zeros(1))
-        self.freq_map = torch.from_numpy(librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)).float()
+        self.x0 = torch.nn.Parameter(torch.randn(1))
+        self.angle = torch.nn.Parameter(torch.randn(1))
+        self.depth = torch.nn.Parameter(torch.randn(1))
+        freq_map = torch.from_numpy(librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)).float()
+        self.register_buffer('freq_map', freq_map, persistent=False)
         self.c = 343 # Speed of sound in air m/s
         self.rho = 1.293 # Air density kg/m^3
         self.steps = 100
@@ -81,7 +82,6 @@ class ConeFilter(torch.nn.Module):
     def forward(self, noisy):
         scalar = self.c*self.rho
         result = noisy
-        self.freq_map = self.freq_map.to('cuda:0')
         tot_impedance = None
         myx0 = torch.relu(self.x0) # x0 must be non-negative
         mydepth = torch.relu(self.depth) # depth must be non-negative
