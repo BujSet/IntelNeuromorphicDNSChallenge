@@ -478,16 +478,9 @@ if __name__ == '__main__':
             total = len(train_loader.dataset)
             time_elapsed = (datetime.now() - t_st).total_seconds()
             samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-#            header_list = [f'Train: [{processed}/{total} '
-#                           f'({100.0 * processed / total:.0f}%)]']
-#            stats.print(epoch, i, samples_sec, header=header_list)
-            # TODO need to record this for every sample in mini batch
-            with open("training_orients.txt", 'w') as tof:
-                for batch_idx in range(args.b):
-                    speechO = int(speechOrients[batch_idx].item())
-                    noiseO = int(noiseOrients[batch_idx].item())
-                    sample_snr = float(score[batch_idx].item())
-                    print(str(speechO) + "," + str(noiseO) + "," +str(sample_snr), file=tof)
+            header_list = [f'Train: [{processed}/{total} '
+                          f'({100.0 * processed / total:.0f}%)]']
+            stats.print(epoch, i, samples_sec, header=header_list)
             batch_st = datetime.now()
 
 #        writer.add_scalar('Loss/train', stats.training.loss, epoch)
@@ -504,67 +497,54 @@ if __name__ == '__main__':
     with open("validation_orients.txt", 'w') as vof:
         print("Speech Orientation, Noise Orientation, Validation Accuracy", file=vof)
     validation_st = datetime.now()
-    for epoch in range(args.validation_epoch):
-        t_st = datetime.now()
-        batch_st = datetime.now()
-        batch_tot = 0.0
-        conv_tot = 0.0
-        synth_tot = 0.0
-        for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
-            batch_tot += (datetime.now() - batch_st).total_seconds()
-            net.eval()
-            with torch.no_grad():
 
-                noisy = ssl_noisy.to(device)
-                clean = ssl_clean.to(device)
-                
-                if (args.spectrogram == 0):
-                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
-                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
-                elif(args.spectrogram == 1):
-                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
-                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
-                else:
-                    noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
-                    clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+    t_st = datetime.now()
+    for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
+        net.eval()
+        with torch.no_grad():
 
-                denoised_abs = net(noisy_abs)
-                noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
-                clean_abs = slayer.axon.delay(clean_abs, out_delay)
-                clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
-                if (args.spectrogram == 0):
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
-                elif(args.spectrogram == 1):
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
-                else:
-                    clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
+            ssl_noisy = noisy.to(device)
+            ssl_clean = clean.to(device)
+            
+            if (args.spectrogram == 0):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+            elif(args.spectrogram == 1):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
+            else:
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
 
-                score = si_snr(clean_rec, clean)
-                if torch.isnan(score).any():
-                    score[torch.isnan(score)] = 0
-                loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
-                if torch.isnan(loss).any():
-                    loss[torch.isnan(loss)] = 0
-                stats.validation.correct_samples += torch.sum(score).item()
-                stats.validation.loss_sum += loss.item()
-                stats.validation.num_samples += noisy.shape[0]
+            denoised_abs = net(noisy_abs)
+            noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
+            clean_abs = slayer.axon.delay(clean_abs, out_delay)
+            clean = slayer.axon.delay(clean, args.n_fft // 4 * out_delay)
+            if (args.spectrogram == 0):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+            elif(args.spectrogram == 1):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+            else:
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
 
-                processed = i * validation_loader.batch_size
-                total = len(validation_loader.dataset)
-                time_elapsed = (datetime.now() - t_st).total_seconds()
-                samples_sec = time_elapsed / \
-                    (i + 1) / validation_loader.batch_size
-#                header_list = [f'Valid: [{processed}/{total} '
-#                               f'({100.0 * processed / total:.0f}%)]']
-#                print(str(speechOrient)+","+str(noiseOrient)+"," + str(stats.validation.accuracy))
-#                stats.print(epoch, i, samples_sec, header=header_list)
-            # TODO need to record this for every sample in mini batch
-            with open("validation_orients.txt", 'w') as vof:
-                speechO = int(speechOrients[batch_idx].item())
-                noiseO = int(noiseOrients[batch_idx].item())
-                sample_snr = float(score[batch_idx].item())
-                print(str(speechO) + "," + str(noiseO) + "," +str(sample_snr), file=vof)
-            batch_st = datetime.now()
+            score = si_snr(clean_rec, clean)
+            if torch.isnan(score).any():
+                score[torch.isnan(score)] = 0
+            loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+            if torch.isnan(loss).any():
+                loss[torch.isnan(loss)] = 0
+            stats.validation.correct_samples += torch.sum(score).item()
+            stats.validation.loss_sum += loss.item()
+            stats.validation.num_samples += noisy.shape[0]
+
+            processed = i * validation_loader.batch_size
+            total = len(validation_loader.dataset)
+            time_elapsed = (datetime.now() - t_st).total_seconds()
+            samples_sec = time_elapsed / \
+                (i + 1) / validation_loader.batch_size
+           header_list = [f'Valid: [{processed}/{total} '
+                          f'({100.0 * processed / total:.0f}%)]']
+           stats.print(epoch, i, samples_sec, header=header_list)
 #        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
 #        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
 #        stats.testing.update()
