@@ -194,71 +194,10 @@ class Network(torch.nn.Module):
         plt.savefig(filename, bbox_inches='tight')
         plt.close()
 
-    def _segmental_snr_mixer(self, clean, noise, snr,
-                        target_level, 
-                        target_level_lower,
-                        target_level_higher,
-                        clipping_threshold=0.99,
-                        ):
-        '''Function to mix clean speech and noise at various segmental SNR levels'''
-        clean_div = torch.max(torch.abs(clean)) + self.EPS
-        noise_div = torch.max(torch.abs(noise)) + self.EPS
-        ssl_clean = torch.div(clean, clean_div.item())
-        ssl_noise = torch.div(noise, noise_div.item())
-        # TODO should only calculate the RMS of the 'active' windows, but
-        # for now we just use the whole audio sample
-        clean_rms = torch.sqrt(torch.mean(torch.square(ssl_clean))).item()
-        noise_rms = torch.sqrt(torch.mean(torch.square(ssl_noise))).item()
-        clean_scalar = 10 ** (target_level / 20) / (clean_rms + self.EPS)
-        noise_scalar = 10 ** (target_level / 20) / (noise_rms + self.EPS)
-        ssl_clean = torch.mul(ssl_clean, clean_scalar)
-        ssl_noise = torch.mul(ssl_noise, noise_scalar)
-        # Adjust noise to SNR level
-        noise_scalar = clean_rms / (10**(snr/20)) / (noise_rms+self.EPS)
-        ssl_noise = torch.mul(ssl_noise, noise_scalar)
-        ssl_noisy = torch.add(ssl_clean, ssl_noise)
-        noisy_rms_level = torch.randint(
-                target_level_lower,
-                target_level_higher,
-                (1,))
-        noisy_rmsT = torch.sqrt(torch.mean(torch.square(ssl_noisy)))
-        noisy_rms = torch.sqrt(torch.mean(torch.square(ssl_noisy))).item()
-        noisy_scalar = 10 ** (noisy_rms_level / 20) / (noisy_rms + self.EPS)
-        ssl_noisy = torch.mul(ssl_noisy, noisy_scalar.item())
-        ssl_clean = torch.mul(ssl_clean, noisy_scalar.item())
-        ssl_noise = torch.mul(ssl_noise, noisy_scalar.item())
-        # check if any clipping happened
-        needToClip = torch.gt(torch.abs(ssl_noisy), 0.99).any() # 0.99 is the clipping threshold 
-        if (needToClip):
-            noisyspeech_maxamplevel = torch.max(torch.abs(ssl_noisy)).item() / (0.99 - self.EPS)
-            ssl_noisy = torch.div(ssl_noisy, noisyspeech_maxamplevel)
-            ssl_noise = torch.div(ssl_noise, noisyspeech_maxamplevel)
-            ssl_clean = torch.div(ssl_clean, noisyspeech_maxamplevel)
-            noisy_rms_level = int(20 * np.log10(noisy_scalar/noisyspeech_maxamplevel * (noisy_rms + self.EPS)))
-        return ssl_clean, ssl_noise, ssl_noisy, noisy_rms_level
-
-    def synthesizeNoisySpeech(self, clean, noise, batchSize, 
-            snr,
-            targetLevel,
-            targetLevelLower,
-            targetLevelHigher):
-        ssl_noisy = torch.zeros(batchSize, 480000).to(device)
-        ssl_noise = torch.zeros(batchSize, 480000).to(device)
-        ssl_clean = torch.zeros(batchSize, 480000).to(device)
-        for i in range(batchSize):
-            ssl_clean[i, :], ssl_noise[i,:], ssl_noisy[i,:], rms = self._segmental_snr_mixer(clean[i,:], noise[i,:], 
-                snr[i].item(), 
-                targetLevel[i].item(),
-                targetLevelLower,
-                targetLevelHigher)
-                       
-        return ssl_noisy, ssl_clean, ssl_noise
-
     def forward(self, noisy):
 
         cone = self.blocks[0]
         noisy = cone(noisy)
-
 
         x = noisy - self.stft_mean
 
@@ -378,10 +317,6 @@ if __name__ == '__main__':
                         type=int,
                         default=50,
                         help='number of training epochs to run')
-    parser.add_argument('-validation_epoch',
-                        type=int,
-                        default=50,
-                        help='number of validation epochs to run after training')
     parser.add_argument('-spectrogram',
                         type=int,
                         default=0,
@@ -390,44 +325,6 @@ if __name__ == '__main__':
                         type=str,
                         default='../../',
                         help='dataset path')
-    parser.add_argument('-ssnns',
-                        dest="ssnns",
-                        action="store_true",
-                        help='Flag to turn on Spatial Separation of Noise and Speech')
-    parser.add_argument('-randomize_orients',
-                        dest="randomize_orients",
-                        action="store_true",
-                        help='Flag to turn randomly spatially separate of Noise and Speech')
-    # CIPIC Filter Parameters
-
-    # ID:21 ==> Mannequin with large pinna
-    # ID 165 ==> Mannequin with small pinna
-    # The rest are real subjects
-    parser.add_argument('-cipicSubject',
-                        type=int,
-                        default=12,
-                        help='Cipic subject ID for pinna filters')
-    # Spatially distribute the sound sources, (azimuth, elevation)
-    # index = 624 ==> (0,  90)
-    # index = 600 ==> (0, -45)
-    # We choose filters in the midsagittal plane, so either selecting
-    # which channels is read from 'should' be irrelevant
-    parser.add_argument('-speechFilterOrient',
-                        type=int,
-                        default=608,
-                        help='Index into CIPIC source directions to orient the speech to ')
-    parser.add_argument('-speechFilterChannel',
-                        type=int,
-                        default=0,
-                        help='Channel to orient the speech to ')
-    parser.add_argument('-noiseFilterOrient',
-                        type=int,
-                        default=608,
-                        help='Index into CIPIC source directions to orient the noise to ')
-    parser.add_argument('-noiseFilterChannel',
-                        type=int,
-                        default=0,
-                        help='Channel to orient the noise to ')
 
     args = parser.parse_args()
 
@@ -439,7 +336,7 @@ if __name__ == '__main__':
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
     trained_folder = 'Trained' + identifier
     logs_folder = 'Logs' + identifier
-    print(trained_folder)
+    # print(trained_folder)
 #    writer = SummaryWriter('runs/' + identifier)
 
     os.makedirs(trained_folder, exist_ok=True)
@@ -455,25 +352,25 @@ if __name__ == '__main__':
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
-    if len(args.gpu) == 0:
-        print("Building CPU network")
-        net = Network(args.threshold,
-                      args.tau_grad,
-                      args.scale_grad,
-                      args.dmax,
-                      args.out_delay).to(device)
-        module = net
-    else:
-        print("Building GPU network")
-        net = Network(
-                    args.threshold,
-                    args.tau_grad,
-                    args.scale_grad,
-                    args.dmax,
-                    args.out_delay)
-        net = torch.nn.DataParallel(net.to(device), device_ids=args.gpu)
-        module = net.module
-    module._display_weights("initial_weights.png")
+    # if len(args.gpu) == 0:
+    #     print("Building CPU network")
+    #     net = Network(args.threshold,
+    #                   args.tau_grad,
+    #                   args.scale_grad,
+    #                   args.dmax,
+    #                   args.out_delay).to(device)
+    #     module = net
+    # else:
+    print("Building GPU network")
+    net = Network(
+                args.threshold,
+                args.tau_grad,
+                args.scale_grad,
+                args.dmax,
+                args.out_delay)
+    net = torch.nn.DataParallel(net.to(device), device_ids=args.gpu)
+    module = net.module
+    # module._display_weights("initial_weights.png")
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
@@ -516,28 +413,10 @@ if __name__ == '__main__':
     base_stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
                                             accuracy_unit='dB')
 
-    # print()
-    # print('Base Statistics')
-    # nop_stats(train_loader, base_stats, base_stats.training)
-    # nop_stats(validation_loader, base_stats, base_stats.validation)
-    # print()
-
     stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
                                        accuracy_unit='dB')
 
-    if (args.ssnns):
-        CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
-        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
-        speechFilter  = speechFilter.to(device)
-        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
-        noiseFilter   = noiseFilter.to(device) 
-        print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-        if (not args.randomize_orients):
-            print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
-            print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
-    print("Training for " + str(args.training_epoch) + " epochs, validating for " + str(args.validation_epoch) + " epochs")
-    with open("training_orients.txt", 'w') as tof:
-        print("Speech Orientation, Noise Orientation, Training Accuracy", file=tof)
+    print("Training for " + str(args.training_epoch) + " epochs")
     training_st = datetime.now()
     for epoch in range(args.training_epoch):
         t_st = datetime.now()
@@ -548,50 +427,10 @@ if __name__ == '__main__':
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             batch_tot += (datetime.now() - batch_st).total_seconds()
             net.train()
-            with torch.no_grad():
-                if (args.ssnns):
-                    noise = noise.to(device)
-                    clean = clean.to(device)
-                    conv_st = datetime.now()
-                    ssl_noise = torch.zeros(args.b, 480000).to(device)
-                    ssl_clean = torch.zeros(args.b, 480000).to(device)
-                    ssl_snrs  = torch.zeros(args.b, 1).to(device)
-                    ssl_targlvls= torch.zeros(args.b, 1).to(device)
-                    speechOrients = torch.zeros(args.b, 1)
-                    noiseOrients = torch.zeros(args.b, 1)
-                    for batch_idx in range(args.b):
-                        if (args.randomize_orients):
-                            speechOrient  = random.randint(0,1249)
-                            speechOrients[batch_idx] = speechOrient
-                            noiseOrient   = random.randint(0,1249)
-                            noiseOrients[batch_idx] = noiseOrient
-                            speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
-                            speechFilter  = speechFilter.to(device)
-                            noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
-                            noiseFilter   = noiseFilter.to(device)                             
-#                            print(str(batch_idx) + "," + str(speechOrient) + "," + str(noiseOrient))
-                        ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                        ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                        noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                        ssl_snrs[batch_idx] = metadata['snr']
-                        ssl_targlvls[batch_idx] = metadata['target_level']
-                    conv_tot += (datetime.now() - conv_st).total_seconds()
 
-                    synth_st = datetime.now()
-                    ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                        ssl_clean, 
-                        ssl_noise, 
-                        args.b, 
-                        ssl_snrs,
-                        ssl_targlvls,
-                        -35,
-                        -15)
-                    synth_tot += (datetime.now() - synth_st).total_seconds()
-
-                else:
-                    ssl_noise = noise.to(device)
-                    ssl_noisy = noisy.to(device)
-                    ssl_clean = clean.to(device)
+            ssl_noise = noise.to(device)
+            ssl_noisy = noisy.to(device)
+            ssl_clean = clean.to(device)
 
             if (args.spectrogram == 0):
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
@@ -634,9 +473,6 @@ if __name__ == '__main__':
             stats.training.correct_samples += torch.sum(score).item()
             stats.training.loss_sum += loss.item()
             stats.training.num_samples += noisy.shape[0]
-#            print(score.shape)
-#            print(score)
-#            print(str(stats.training.accuracy))
 
             processed = i * train_loader.batch_size
             total = len(train_loader.dataset)
@@ -653,7 +489,6 @@ if __name__ == '__main__':
                     sample_snr = float(score[batch_idx].item())
                     print(str(speechO) + "," + str(noiseO) + "," +str(sample_snr), file=tof)
             batch_st = datetime.now()
-#            sys.exit(0)
 
 #        writer.add_scalar('Loss/train', stats.training.loss, epoch)
 #        writer.add_scalar('SI-SNR/train', stats.training.accuracy, epoch)
@@ -665,7 +500,7 @@ if __name__ == '__main__':
     print("Convolution time: " + str(conv_tot))
     print("Synth time: " + str(synth_tot))
     print("")
-    module._display_weights()
+    # module._display_weights()
     with open("validation_orients.txt", 'w') as vof:
         print("Speech Orientation, Noise Orientation, Validation Accuracy", file=vof)
     validation_st = datetime.now()
@@ -679,47 +514,6 @@ if __name__ == '__main__':
             batch_tot += (datetime.now() - batch_st).total_seconds()
             net.eval()
             with torch.no_grad():
-                if (args.ssnns):
-                    noise = noise.to(device)
-                    clean = clean.to(device)
-                    conv_st = datetime.now()
-                    ssl_noise = torch.zeros(args.b, 480000).to(device)
-                    ssl_clean = torch.zeros(args.b, 480000).to(device)
-                    ssl_snrs  = torch.zeros(args.b, 1).to(device)
-                    ssl_targlvls= torch.zeros(args.b, 1).to(device)
-                    speechOrients = torch.zeros(args.b, 1)
-                    noiseOrients = torch.zeros(args.b, 1)
-                    for batch_idx in range(args.b):
-                        if (args.randomize_orients):
-                            speechOrient  = random.randint(0,1249)
-                            speechOrients[batch_idx] = speechOrient
-                            noiseOrient   = random.randint(0,1249)
-                            noiseOrients[batch_idx] = noiseOrient
-                            speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
-                            speechFilter  = speechFilter.to(device)
-                            noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
-                            noiseFilter   = noiseFilter.to(device) 
-                        ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                        ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                        noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                        ssl_snrs[batch_idx] = metadata['snr']
-                        ssl_targlvls[batch_idx] = metadata['target_level']
-                    conv_tot += (datetime.now() - conv_st).total_seconds()
-                
-                    synth_st = datetime.now()
-                    ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                        ssl_clean, 
-                        ssl_noise, 
-                        args.b, 
-                        ssl_snrs,
-                        ssl_targlvls,
-                        -35,
-                        -15)
-                    synth_tot += (datetime.now() - synth_st).total_seconds()
-                else:
-                    ssl_noise = noise.to(device)
-                    ssl_noisy = noisy.to(device)
-                    ssl_clean = clean.to(device)
 
                 noisy = ssl_noisy.to(device)
                 clean = ssl_clean.to(device)
@@ -776,22 +570,22 @@ if __name__ == '__main__':
 #        stats.testing.update()
 #        stats.testing.reset()
 
-    print("")
-    print("")
-    print("")
-    validation_time = (datetime.now() - validation_st).total_seconds()
-    print("Validation time: " + str(validation_time))
-    print("Mini batch fill time: " + str(batch_tot))
-    print("Convolution time: " + str(conv_tot))
-    print("Synth time: " + str(synth_tot))
-    module._display_weights("final_weights.png")
+    # print("")
+    # print("")
+    # print("")
+    # validation_time = (datetime.now() - validation_st).total_seconds()
+    # print("Validation time: " + str(validation_time))
+    # print("Mini batch fill time: " + str(batch_tot))
+    # print("Convolution time: " + str(conv_tot))
+    # print("Synth time: " + str(synth_tot))
+    # module._display_weights("final_weights.png")
 #        stats.plot(path=trained_folder + '/')
 #        if stats.validation.best_accuracy is True:
 #            torch.save(module.state_dict(), trained_folder + '/network.pt')
 #        stats.save(trained_folder + '/')
 
-    torch.save(module.state_dict(), trained_folder + '/network.pt')
-    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
+    # torch.save(module.state_dict(), trained_folder + '/network.pt')
+    # module.load_state_dict(torch.load(trained_folder + '/network.pt'))
 #    module.export_hdf5(trained_folder + '/network.net')
 
 #    params_dict = {}
