@@ -534,7 +534,7 @@ if __name__ == '__main__':
                 for batch_idx in range(args.b):
                     ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
                     ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                    noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                     ssl_snrs[batch_idx] = metadata['snr']
                     ssl_targlvls[batch_idx] = metadata['target_level']
                 
