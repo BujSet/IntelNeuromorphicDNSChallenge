@@ -542,9 +542,9 @@ if __name__ == '__main__':
             time_elapsed = (datetime.now() - t_st).total_seconds()
             samples_sec = time_elapsed / \
                 (i + 1) / validation_loader.batch_size
-           header_list = [f'Valid: [{processed}/{total} '
+            header_list = [f'Valid: [{processed}/{total} '
                           f'({100.0 * processed / total:.0f}%)]']
-           stats.print(epoch, i, samples_sec, header=header_list)
+            stats.print(epoch, i, samples_sec, header=header_list)
 #        writer.add_scalar('Loss/valid', stats.validation.loss, epoch)
 #        writer.add_scalar('SI-SNR/valid', stats.validation.accuracy, epoch)
 #        stats.testing.update()
