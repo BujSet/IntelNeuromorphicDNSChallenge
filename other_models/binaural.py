@@ -67,10 +67,7 @@ class Network(torch.nn.Module):
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0,
-            subjectID=12, 
-            speechFilterOrient=624, speechFilterChannel=0,
-            noiseFilterOrient=600,noiseFilterChannel=0):
+            out_delay=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -414,6 +411,9 @@ if __name__ == '__main__':
     # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
+    # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
+    downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
+
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
@@ -496,10 +496,10 @@ if __name__ == '__main__':
                             noiseFilter0   = noiseFilter0.to(device)
                             noiseFilter1   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, 1)).float()
                             noiseFilter1   = noiseFilter1.to(device)
-                        ssl_noise0[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter0)
-                        ssl_noise1[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter1)
-                        ssl_clean0[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter0)
-                        ssl_clean1[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter1)
+                        ssl_noise0[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter0))
+                        ssl_noise1[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter1))
+                        ssl_clean0[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter0))
+                        ssl_clean1[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter1))
                         noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
                         ssl_snrs[batch_idx] = metadata['snr']
                         ssl_targlvls[batch_idx] = metadata['target_level']
@@ -657,9 +657,9 @@ if __name__ == '__main__':
                             speechFilter  = speechFilter.to(device)
                             noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
                             noiseFilter   = noiseFilter.to(device) 
-                        ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                        ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                        noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                        ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+                        ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+                        noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                         ssl_snrs[batch_idx] = metadata['snr']
                         ssl_targlvls[batch_idx] = metadata['target_level']
                     conv_tot += (datetime.now() - conv_st).total_seconds()

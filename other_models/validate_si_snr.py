@@ -286,6 +286,9 @@ if __name__ == '__main__':
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
+    # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
+    downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
+
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
@@ -324,8 +327,8 @@ if __name__ == '__main__':
             speechOrients = torch.zeros(args.b, 1)
             noiseOrients = torch.zeros(args.b, 1)
             for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
                 noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                 ssl_snrs[batch_idx] = metadata['snr']
                 ssl_targlvls[batch_idx] = metadata['target_level']

@@ -67,10 +67,7 @@ class Network(torch.nn.Module):
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0,
-            subjectID=12, 
-            speechFilterOrient=624, speechFilterChannel=0,
-            noiseFilterOrient=600,noiseFilterChannel=0):
+            out_delay=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -398,6 +395,9 @@ if __name__ == '__main__':
     # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
+    # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
+    downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
+
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
@@ -442,102 +442,6 @@ if __name__ == '__main__':
             print("\tPlacing speech at orient " + str(args.speechFilterOrient) + " from channel " + str(args.speechFilterChannel))
             print("\tPlacing noise at  orient " + str(args.noiseFilterOrient) + " from channel " + str(args.noiseFilterChannel))
     for epoch in range(args.epoch):
-        """
-        t_st = datetime.now()
-        for i, (noisy, clean, noise, idx) in enumerate(train_loader):
-            net.train()
-
-            if (args.ssnns):
-                if (args.randomize_orients):
-                    speechOrient  = random.randint(0,1249)
-                    noiseOrient   = random.randint(0,1249)
-                    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechOrient, args.speechFilterChannel)).float()
-                    speechFilter  = speechFilter.to(device)
-                    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseOrient, args.noiseFilterChannel)).float()
-                    noiseFilter   = noiseFilter.to(device) 
-                noise = noise.to(device)
-                clean = clean.to(device)
-                ssl_noise = torch.zeros(args.b, 480000).to(device)
-                ssl_clean = torch.zeros(args.b, 480000).to(device)
-                ssl_snrs  = torch.zeros(args.b, 1).to(device)
-                ssl_targlvls= torch.zeros(args.b, 1).to(device)
-                for batch_idx in range(args.b):
-                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                    ssl_snrs[batch_idx] = metadata['snr']
-                    ssl_targlvls[batch_idx] = metadata['target_level']
-
-                ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                    ssl_clean, 
-                    ssl_noise, 
-                    args.b, 
-                    ssl_snrs,
-                    ssl_targlvls,
-                    -35,
-                    -15)
-
-            else:
-                ssl_noise = noise.to(device)
-                ssl_noisy = noisy.to(device)
-                ssl_clean = clean.to(device)
-
-            if (args.spectrogram == 0):
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
-            elif(args.spectrogram == 1):
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
-            else:
-                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
-
-            denoised_abs = net(noisy_abs)
-            noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
-            clean_abs = slayer.axon.delay(clean_abs, out_delay)
-            clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
-
-            if (args.spectrogram == 0):
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
-            elif (args.spectrogram == 1):
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
-            else:
-                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
-
-            score = si_snr(clean_rec, clean)
-            loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
-
-            if torch.isnan(loss).any():
-                loss[torch.isnan(loss)] = 0
-            assert torch.isnan(loss) == False
-
-            optimizer.zero_grad()
-            loss.backward()
-            module.validate_gradients()
-            torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
-            optimizer.step()
-
-            if i < 10:
-                module.grad_flow(path=trained_folder + '/')
-
-            if torch.isnan(score).any():
-                score[torch.isnan(score)] = 0
-
-            stats.training.correct_samples += torch.sum(score).item()
-            stats.training.loss_sum += loss.item()
-            stats.training.num_samples += noisy.shape[0]
-
-            processed = i * train_loader.batch_size
-            total = len(train_loader.dataset)
-            time_elapsed = (datetime.now() - t_st).total_seconds()
-            samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-            header_list = [f'Train: [{processed}/{total} '
-                           f'({100.0 * processed / total:.0f}%)]']
-            stats.print(epoch, i, samples_sec, header=header_list)
-
-        if (epoch != args.epoch - 1):
-            continue
-        """
         t_st = datetime.now()
 
         for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
@@ -557,9 +461,9 @@ if __name__ == '__main__':
                 ssl_snrs  = torch.zeros(args.b, 1).to(device)
                 ssl_targlvls= torch.zeros(args.b, 1).to(device)
                 for batch_idx in range(args.b):
-                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+                    noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                     ssl_snrs[batch_idx] = metadata['snr']
                     ssl_targlvls[batch_idx] = metadata['target_level']
                 
