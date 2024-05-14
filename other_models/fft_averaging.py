@@ -15,15 +15,12 @@ from torch.utils.tensorboard import SummaryWriter
 import soundfile as sf
 
 from lava.lib.dl import slayer
-import sys
 sys.path.append('./')
 from audio_dataloader import DNSAudio
 from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
 import torchaudio
-from noisyspeech_synthesizer import segmental_snr_mixer
-import random
-
+import librosa
 
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
@@ -37,7 +34,6 @@ def collate_fn(batch):
 
     return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 
-
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
         if (method == None):
@@ -48,7 +44,6 @@ def stft_splitter(audio, n_fft=512, method=None):
             return audio_stft.abs(), audio_stft.angle()
         spec = method(audio)
         return spec.abs(), spec.angle()    
-
 
 def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
     spec = torch.complex(stft_abs * torch.cos(stft_angle),
@@ -61,16 +56,19 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
 
     return method(spec)
 
+def min_max_rescale(inputT):
+    with torch.no_grad():
+        mini = torch.min(inputT)
+        maxi = torch.max(inputT)
+        return torch.div(torch.sub(inputT, mini), maxi - mini)
+
 class Network(torch.nn.Module):
     def __init__(self, 
             threshold=0.1, 
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0,
-            subjectID=12, 
-            speechFilterOrient=624, speechFilterChannel=0,
-            noiseFilterOrient=600,noiseFilterChannel=0):
+            out_delay=0):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -173,41 +171,37 @@ class Network(torch.nn.Module):
         mask = torch.relu(x + 1)
         return slayer.axon.delay(noisy, self.out_delay) * mask
 
-    def grad_flow(self, path):
-        # helps monitor the gradient flow
-        grad = [b.synapse.grad_norm for b in self.blocks if hasattr(b, 'synapse')]
+    # def grad_flow(self, path):
+    #     # helps monitor the gradient flow
+    #     grad = [b.synapse.grad_norm for b in self.blocks if hasattr(b, 'synapse')]
 
-        plt.figure()
-        plt.semilogy(grad)
-        plt.savefig(path + 'gradFlow.png')
-        plt.close()
+    #     plt.figure()
+    #     plt.semilogy(grad)
+    #     plt.savefig(path + 'gradFlow.png')
+    #     plt.close()
 
-        return grad
+    #     return grad
 
-    def validate_gradients(self):
-        valid_gradients = True
-        for name, param in self.named_parameters():
-            if param.grad is not None:
-                valid_gradients = not (torch.isnan(param.grad).any()
-                                       or torch.isinf(param.grad).any())
-                if not valid_gradients:
-                    break
-        if not valid_gradients:
-            self.zero_grad()
+    # def validate_gradients(self):
+    #     valid_gradients = True
+    #     for name, param in self.named_parameters():
+    #         if param.grad is not None:
+    #             valid_gradients = not (torch.isnan(param.grad).any()
+    #                                    or torch.isinf(param.grad).any())
+    #             if not valid_gradients:
+    #                 break
+    #     if not valid_gradients:
+    #         self.zero_grad()
 
-    def export_hdf5(self, filename):
-        # network export to hdf5 format
-        h = h5py.File(filename, 'w')
-        layer = h.create_group('layer')
-        for i, b in enumerate(self.blocks):
-            b.export_hdf5(layer.create_group(f'{i}'))
+    # def export_hdf5(self, filename):
+    #     # network export to hdf5 format
+    #     h = h5py.File(filename, 'w')
+    #     layer = h.create_group('layer')
+    #     for i, b in enumerate(self.blocks):
+    #         b.export_hdf5(layer.create_group(f'{i}'))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-gpu',
-                        type=int,
-                        default=[0],
-                        help='which gpu(s) to use', nargs='+')
     parser.add_argument('-b',
                         type=int,
                         default=32,
@@ -258,7 +252,7 @@ if __name__ == '__main__':
                         help='random seed of the experiment')
     parser.add_argument('-path',
                         type=str,
-                        default='../../',
+                        default='./',
                         help='dataset path')
     # CIPIC Filter Parameters
 
@@ -276,7 +270,7 @@ if __name__ == '__main__':
     # which channels is read from 'should' be irrelevant
     parser.add_argument('-speechFilterOrient',
                         type=int,
-                        default=624,
+                        default=608,
                         help='Index into CIPIC source directions to orient the speech to ')
     parser.add_argument('-speechFilterChannel',
                         type=int,
@@ -284,7 +278,7 @@ if __name__ == '__main__':
                         help='Channel to orient the speech to ')
     parser.add_argument('-noiseFilterOrient',
                         type=int,
-                        default=600,
+                        default=608,
                         help='Index into CIPIC source directions to orient the noise to ')
     parser.add_argument('-noiseFilterChannel',
                         type=int,
@@ -310,29 +304,21 @@ if __name__ == '__main__':
 
     lam = args.lam
 
-    print('Using GPUs {}'.format(args.gpu))
-    device = torch.device('cuda:{}'.format(args.gpu[0]))
+    device = torch.device('cuda:0')
 
     out_delay = args.out_delay
-    if len(args.gpu) == 0:
-        print("Building CPU network")
-        net = Network(args.threshold,
-                      args.tau_grad,
-                      args.scale_grad,
-                      args.dmax,
-                      args.out_delay).to(device)
-        module = net
-    else:
-        print("Building GPU network")
-        net = Network(
-                    args.threshold,
-                    args.tau_grad,
-                    args.scale_grad,
-                    args.dmax,
-                    args.out_delay)
-        net = torch.nn.DataParallel(net.to(device), device_ids=args.gpu)
-        module = net.module
+    net = Network(
+                args.threshold,
+                args.tau_grad,
+                args.scale_grad,
+                args.dmax,
+                args.out_delay)
+    net = torch.nn.DataParallel(net.to(device), device_ids=[0])
+    module = net.module
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
+
+    # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
+    downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
 
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
@@ -355,16 +341,34 @@ if __name__ == '__main__':
                                    num_workers=4,
                                    pin_memory=True)
 
+    print("About to load filters")
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
     speechFilter  = speechFilter.to(device)
     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
-    noiseFilter   = noiseFilter.to(device) 
+    noiseFilter   = noiseFilter.to(device)
+
+    freqs = librosa.fft_frequencies(sr=16000, n_fft=512)
+    yticks = [i for i in range(0, 257, 16)]
+
+    # run it for training set
+
+    sum_noise = torch.zeros(257, 3751).to(device)
+    sum_noisy = torch.zeros(257, 3751).to(device)
+    sum_clean = torch.zeros(257, 3751).to(device)
+
+    ssl_sum_noise = torch.zeros(257, 3751).to(device)
+    ssl_sum_noisy = torch.zeros(257, 3751).to(device)
+    ssl_sum_clean = torch.zeros(257, 3751).to(device)
+    net.eval()
+    num_iters = 0
     for i, (noisy, clean, noise, idx) in enumerate(train_loader):
-        net.train()
         with torch.no_grad():
+
+            noisy = noisy.to(device)
             noise = noise.to(device)
             clean = clean.to(device)
+
             ssl_noise = torch.zeros(args.b, 480000).to(device)
             ssl_clean = torch.zeros(args.b, 480000).to(device)
             ssl_snrs  = torch.zeros(args.b, 1).to(device)
@@ -372,11 +376,12 @@ if __name__ == '__main__':
             speechOrients = torch.zeros(args.b, 1)
             noiseOrients = torch.zeros(args.b, 1)
             for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
                 noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
                 ssl_snrs[batch_idx] = metadata['snr']
                 ssl_targlvls[batch_idx] = metadata['target_level']
+
             ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
                         ssl_clean, 
                         ssl_noise, 
@@ -386,14 +391,96 @@ if __name__ == '__main__':
                         -35,
                         -15)
 
-        noise_abs, noise_arg = stft_splitter(ssl_noise, args.n_fft, None)
-        noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
-        clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+        noise_abs, noise_arg = stft_splitter(noise, args.n_fft, None) 
+        noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft, None)
+        clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
+
+        ssl_noise_abs, ssl_noise_arg = stft_splitter(ssl_noise, args.n_fft, None) 
+        ssl_noisy_abs, ssl_noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+        ssl_clean_abs, ssl_clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+        
+        with torch.no_grad():
+            sum_noise += torch.sum(noise_abs, dim=0)
+            sum_noisy += torch.sum(noisy_abs, dim=0)
+            sum_clean += torch.sum(clean_abs, dim=0)
+
+            ssl_sum_noise += torch.sum(ssl_noise_abs, dim=0)
+            ssl_sum_noisy += torch.sum(ssl_noisy_abs, dim=0)
+            ssl_sum_clean += torch.sum(ssl_clean_abs, dim=0)
+
+        num_iters += 1.0
+        # print(i)
+        # if (i == 10):
+        #     break
+    sum_noise = min_max_rescale(sum_noise)
+    sum_noisy = min_max_rescale(sum_noisy)
+    sum_clean = min_max_rescale(sum_clean)
+
+    ssl_sum_noise = min_max_rescale(ssl_sum_noise)
+    ssl_sum_noisy = min_max_rescale(ssl_sum_noisy)
+    ssl_sum_clean = min_max_rescale(ssl_sum_clean)
+    with torch.no_grad():
+        sum_noise = torch.div(sum_noise, num_iters).detach().cpu()
+        sum_noisy = torch.div(sum_noisy, num_iters).detach().cpu()
+        sum_clean = torch.div(sum_clean, num_iters).detach().cpu()
+
+        ssl_sum_noise = torch.div(ssl_sum_noise, num_iters).detach().cpu()
+        ssl_sum_noisy = torch.div(ssl_sum_noisy, num_iters).detach().cpu()
+        ssl_sum_clean = torch.div(ssl_sum_clean, num_iters).detach().cpu()
+  
+    fig, axs = plt.subplots(3, 2, figsize=(30,10))
+    fig.tight_layout()
+    axs[0,0].imshow(sum_noise, aspect='auto')
+    axs[0,0].title.set_text("Noise")
+    axs[0,0].set_ylabel("Frequency (kHz)")
+    axs[0,0].set_yticks(yticks)
+    axs[0,0].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[1,0].imshow(sum_clean, aspect='auto')
+    axs[1,0].title.set_text("Clean")
+    axs[1,0].set_ylabel("Frequency (kHz)")
+    axs[1,0].set_yticks(yticks)
+    axs[1,0].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,0].imshow(sum_noisy, aspect='auto')
+    axs[2,0].title.set_text("Noisy")
+    axs[2,0].set_ylabel("Frequncy (kHz)")
+    axs[2,0].set_yticks(yticks)
+    axs[2,0].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,0].set_xlabel("FFT Frame")
+    axs[0,1].imshow(ssl_sum_noise, aspect='auto')
+    axs[0,1].title.set_text("Pinna Noise")
+    axs[0,1].set_yticks(yticks)
+    axs[0,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[1,1].imshow(ssl_sum_clean, aspect='auto')
+    axs[1,1].title.set_text("Pinna Clean")
+    axs[1,1].set_yticks(yticks)
+    axs[1,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,1].imshow(ssl_sum_noisy, aspect='auto')
+    axs[2,1].title.set_text("Pinna Noisy")
+    axs[2,1].set_yticks(yticks)
+    axs[2,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,1].set_xlabel("FFT Frame")
+    plt.savefig("training_fft.png", bbox_inches='tight')
+    plt.close()
+    
+    print("Finished training set, looking at validation now...")
+    # Now run it for validation set
+
+    sum_noise = torch.zeros(257, 3751).to(device)
+    sum_noisy = torch.zeros(257, 3751).to(device)
+    sum_clean = torch.zeros(257, 3751).to(device)
+
+    ssl_sum_noise = torch.zeros(257, 3751).to(device)
+    ssl_sum_noisy = torch.zeros(257, 3751).to(device)
+    ssl_sum_clean = torch.zeros(257, 3751).to(device)
+    net.eval()
+    num_iters = 0
     for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
-        net.eval()
         with torch.no_grad():
+
+            noisy = noisy.to(device)
             noise = noise.to(device)
             clean = clean.to(device)
+
             ssl_noise = torch.zeros(args.b, 480000).to(device)
             ssl_clean = torch.zeros(args.b, 480000).to(device)
             ssl_snrs  = torch.zeros(args.b, 1).to(device)
@@ -401,9 +488,9 @@ if __name__ == '__main__':
             speechOrients = torch.zeros(args.b, 1)
             noiseOrients = torch.zeros(args.b, 1)
             for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+                noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                 ssl_snrs[batch_idx] = metadata['snr']
                 ssl_targlvls[batch_idx] = metadata['target_level']
 
@@ -416,11 +503,75 @@ if __name__ == '__main__':
                         -35,
                         -15)
 
-            noise = ssl_noise.to(device)
-            noisy = ssl_noisy.to(device)
-            clean = ssl_clean.to(device)
-                
-            noise_abs, noise_arg = stft_splitter(ssl_noise, args.n_fft, None)
-            noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
-            clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+        noise_abs, noise_arg = stft_splitter(noise, args.n_fft, None) 
+        noisy_abs, noisy_arg = stft_splitter(noisy, args.n_fft, None)
+        clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
 
+        ssl_noise_abs, ssl_noise_arg = stft_splitter(ssl_noise, args.n_fft, None) 
+        ssl_noisy_abs, ssl_noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+        ssl_clean_abs, ssl_clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+        
+        with torch.no_grad():
+            sum_noise += torch.sum(noise_abs, dim=0)
+            sum_noisy += torch.sum(noisy_abs, dim=0)
+            sum_clean += torch.sum(clean_abs, dim=0)
+
+            ssl_sum_noise += torch.sum(ssl_noise_abs, dim=0)
+            ssl_sum_noisy += torch.sum(ssl_noisy_abs, dim=0)
+            ssl_sum_clean += torch.sum(ssl_clean_abs, dim=0)
+
+        num_iters += 1.0
+        # print(i)
+        # if (i == 10):
+        #     break
+    sum_noise = min_max_rescale(sum_noise)
+    sum_noisy = min_max_rescale(sum_noisy)
+    sum_clean = min_max_rescale(sum_clean)
+
+    ssl_sum_noise = min_max_rescale(ssl_sum_noise)
+    ssl_sum_noisy = min_max_rescale(ssl_sum_noisy)
+    ssl_sum_clean = min_max_rescale(ssl_sum_clean)
+    with torch.no_grad():
+        sum_noise = torch.div(sum_noise, num_iters).detach().cpu()
+        sum_noisy = torch.div(sum_noisy, num_iters).detach().cpu()
+        sum_clean = torch.div(sum_clean, num_iters).detach().cpu()
+
+        ssl_sum_noise = torch.div(ssl_sum_noise, num_iters).detach().cpu()
+        ssl_sum_noisy = torch.div(ssl_sum_noisy, num_iters).detach().cpu()
+        ssl_sum_clean = torch.div(ssl_sum_clean, num_iters).detach().cpu()
+
+    fig, axs = plt.subplots(3, 2, figsize=(30,10))
+    fig.tight_layout()
+    axs[0,0].imshow(sum_noise, aspect='auto')
+    axs[0,0].title.set_text("Noise")
+    axs[0,0].set_ylabel("Frequency (kHz)")
+    axs[0,0].set_yticks(yticks)
+    axs[0,0].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[1,0].imshow(sum_clean, aspect='auto')
+    axs[1,0].title.set_text("Clean")
+    axs[1,0].set_ylabel("Frequency (kHz)")
+    axs[1,0].set_yticks(yticks)
+    axs[1,0].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,0].imshow(sum_noisy, aspect='auto')
+    axs[2,0].title.set_text("Noisy")
+    axs[2,0].set_ylabel("Frequncy (kHz)")
+    axs[2,0].set_yticks(yticks)
+    axs[2,0].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,0].set_xlabel("FFT Frame")
+    axs[0,1].imshow(ssl_sum_noise, aspect='auto')
+    axs[0,1].title.set_text("Pinna Noise")
+    axs[0,1].set_yticks(yticks)
+    axs[0,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[1,1].imshow(ssl_sum_clean, aspect='auto')
+    axs[1,1].title.set_text("Pinna Clean")
+    axs[1,1].set_yticks(yticks)
+    axs[1,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,1].imshow(ssl_sum_noisy, aspect='auto')
+    axs[2,1].title.set_text("Pinna Noisy")
+    axs[2,1].set_yticks(yticks)
+    axs[2,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
+    axs[2,1].set_xlabel("FFT Frame")
+    plt.savefig("validation_fft.png", bbox_inches='tight')
+    plt.close()
+
+    
