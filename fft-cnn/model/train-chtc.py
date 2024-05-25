@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import argparse
-import torch.optim.lr_scheduler as lr_scheduler
+# import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.data import DataLoader
 import sys
 import os 
@@ -80,7 +80,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(net.parameters(),
                                 lr = args.lr)
     loss_function = nn.MSELoss()
-    scheduler = lr_scheduler.steLR(optimizer, step_size=100, gamma=0.1)
+    # scheduler = lr_scheduler.steLR(optimizer, step_size=100, gamma=0.1)
     train_set = NoiseDataset(root=args.path + 'training_set/')
     validation_set = NoiseDataset(root=args.path + 'validation_set/')
     
@@ -120,7 +120,7 @@ if __name__ == '__main__':
             
             loss.backward()
             optimizer.step()
-            scheduler.step()
+            # scheduler.step()
         
    
     params_dict = {}
