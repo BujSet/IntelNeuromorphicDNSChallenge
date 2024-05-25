@@ -25,7 +25,7 @@ from network import PhaseShiftCNN
 from datasetCHTC import NoiseDataset
 
 if __name__ == '__main__':
-    print("Entered train-chtc.py")
+    print("Entered train-chtc.py from NOISE CANCEL")
     parser = argparse.ArgumentParser()
     parser.add_argument('-gpu',
                         type=int,

@@ -96,6 +96,7 @@ cd training_set/
 # nvidia-smi --query-gpu=timestamp,power.draw --format=csv  -i $(python chtc_files/get_device_uuid.py) -lms 500 > ../power.txt &
 # POWER_CNT=$!
 # sleep 10s
+
 echo "Starting main Python script"
 PYTHON_START_TIME=$(date +%s)
 python fft-cnn/model/train-chtc.py -epoch 1 -path ./ > ../accuracy-fft-cnn.txt

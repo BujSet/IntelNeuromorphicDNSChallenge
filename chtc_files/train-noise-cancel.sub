@@ -1,4 +1,4 @@
-# train-fft-cnn.sub
+train-noise-cancel.sub
 container_image = docker://rselagam/ndns:v45
 universe = container
 
@@ -8,9 +8,9 @@ universe = container
 #  $(Process) will be a integer number for each job, starting with "0"
 #  and increasing for the relevant number of jobs.
 executable = train-fft-nn.sh
-log = $(Cluster)_$(Process).log
-output = $(Cluster)_$(Process).out
-error = $(Cluster)_$(Process).err
+log = $(Cluster)_$(Process)-noise-cancel.log
+output = $(Cluster)_$(Process)-noise-cancel.out
+error = $(Cluster)_$(Process)-noise-cancel.err
 
 # Specify that HTCondor should transfer files to and from the
 #  computer where each job runs.
