@@ -107,7 +107,7 @@ if __name__ == '__main__':
         for batch_idx, (magnitude, phase, original_signal) in enumerate(train_loader):
             optimizer.zero_grad()
             
-            adjusted_phase = model(phase).squeeze()
+            adjusted_phase = net(phase).squeeze()
             
             # Combine with original magnitude to get adjusted FFT
             adjusted_fft = magnitude * torch.exp(1j * adjusted_phase)
