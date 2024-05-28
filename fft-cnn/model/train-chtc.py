@@ -97,7 +97,10 @@ if __name__ == '__main__':
                               pin_memory=True)
     
     net.train()
+    best_loss = float('inf')
+    
     for epoch in range(args.epoch):
+        total_loss = 0.0
         if (epoch % 10 == 0):
             print(f"Entering epoch: {epoch}")
         
@@ -120,11 +123,15 @@ if __name__ == '__main__':
             
             loss.backward()
             optimizer.step()
+            total_loss += loss.item()
             # scheduler.step()
         
+        avg_loss = total_loss / len(train_loader)
+        print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
    
     params_dict = {}
     for key, val in args._get_kwargs():
         params_dict[key] = str(val)
+        
     writer.flush()
     writer.close()
