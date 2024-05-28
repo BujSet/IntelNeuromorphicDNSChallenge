@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import argparse
-# import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.data import DataLoader
 import sys
 import os 
@@ -63,24 +62,20 @@ if __name__ == '__main__':
             f.write('{} : {}\n'.format(arg, value))
 
     print('Using GPUs {}'.format(args.gpu))
-    device = torch.device('cuda:{}'.format(args.gpu[0]))
+    device = torch.device('cuda:{}'.format(args.gpu[0]) if torch.cuda.is_available() else 'cpu')
     
     if len(args.gpu) == 0:
         print("Building CPU network")
         net = PhaseShiftCNN().to(device)
-
         module = net
     else:
         print("Building GPU network")
         net = torch.nn.DataParallel(PhaseShiftCNN().to(device),
                                     device_ids=args.gpu)
-        
         module = net.module
     
-    optimizer = torch.optim.Adam(net.parameters(),
-                                lr = args.lr)
+    optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
     loss_function = nn.MSELoss()
-    # scheduler = lr_scheduler.steLR(optimizer, step_size=100, gamma=0.1)
     train_set = NoiseDataset(root=args.path + 'training_set/')
     validation_set = NoiseDataset(root=args.path + 'validation_set/')
     
@@ -91,10 +86,10 @@ if __name__ == '__main__':
                               pin_memory=True)
     
     validation_loader = DataLoader(validation_set, 
-                              batch_size=args.b,
-                              shuffle=True,
-                              num_workers=4,
-                              pin_memory=True)
+                                   batch_size=args.b,
+                                   shuffle=True,
+                                   num_workers=4,
+                                   pin_memory=True)
     
     net.train()
     best_loss = float('inf')
@@ -105,6 +100,10 @@ if __name__ == '__main__':
             print(f"Entering epoch: {epoch}")
         
         for batch_idx, (magnitude, phase, original_signal) in enumerate(train_loader):
+            magnitude = magnitude.to(device)
+            phase = phase.to(device)
+            original_signal = original_signal.to(device)
+            
             optimizer.zero_grad()
             
             adjusted_phase = net(phase).squeeze()
@@ -119,12 +118,11 @@ if __name__ == '__main__':
             combined_signal = original_signal + adjusted_signal
             
             # The goal is to minimize the output of the combined_signal, aiming for silence
-            loss = criterion(combined_signal, torch.zeros_like(combined_signal))
+            loss = loss_function(combined_signal, torch.zeros_like(combined_signal))
             
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-            # scheduler.step()
         
         avg_loss = total_loss / len(train_loader)
         print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
