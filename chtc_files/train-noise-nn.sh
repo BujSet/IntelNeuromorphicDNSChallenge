@@ -15,6 +15,7 @@ echo "Git operations took $((GIT_END_TIME - GIT_START_TIME)) seconds."
 
 mkdir -p training_set/
 mkdir -p validation_set/
+mkdir -p models/
 cd training_set/
 
 TARBALL_START_TIME=$(date +%s)
