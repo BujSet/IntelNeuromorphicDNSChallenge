@@ -93,7 +93,9 @@ if __name__ == '__main__':
     
     net.train()
     best_loss = float('inf')
-    model_save_path = "../../models/phase_shift_cnn_model.pth"
+    model_save_path = "phase_shift_cnn_model.pth"
+    # os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+
     for epoch in range(args.epoch):
         total_loss = 0.0
         if (epoch % 10 == 0):
