@@ -128,7 +128,7 @@ if __name__ == '__main__':
         print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
         if avg_loss < best_loss:
             best_loss = avg_loss
-            torch.save(model.state_dict(), model_save_path)
+            torch.save(net.state_dict(), model_save_path)
             print(f"Model saved to {model_save_path}")
             
     params_dict = {}
