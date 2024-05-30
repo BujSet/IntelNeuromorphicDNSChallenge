@@ -128,17 +128,17 @@ if __name__ == '__main__':
         
         avg_loss = total_loss / len(train_loader)
         print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
-        
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            torch.save(net.state_dict(), trained_folder + '/network.pt')
-            print(f"Model saved to {model_save_path}")
+        print("Would have saved the model here...")
+    #     if avg_loss < best_loss:
+    #         best_loss = avg_loss
+    #         torch.save(net.state_dict(), trained_folder + '/network.pt')
+    #         print(f"Model saved to {model_save_path}")
             
-    module.load_state_dict(torch.load(trained_folder + '/network.pt'))
-    module.export_hdf5(trained_folder + '/network.net')
-    params_dict = {}
-    for key, val in args._get_kwargs():
-        params_dict[key] = str(val)
+    # module.load_state_dict(torch.load(trained_folder + '/network.pt'))
+    # module.export_hdf5(trained_folder + '/network.net')
+    # params_dict = {}
+    # for key, val in args._get_kwargs():
+    #     params_dict[key] = str(val)
     
     writer.flush()
     writer.close()
