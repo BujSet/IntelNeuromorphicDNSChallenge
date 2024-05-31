@@ -99,7 +99,7 @@ echo "CIPIC download operations took $((DOWNLOAD_CIPIC_END_TIME - DOWNLOAD_CIPIC
 # sleep 10s
 echo "Starting main Python script"
 PYTHON_START_TIME=$(date +%s)
-python fft-cnn/model/train-chtc.py -epoch 2 -path ./ > ../accuracy-fft-cnn.txt
+python fft-cnn/model/train-chtc.py -epoch 1 -path ./ > ../accuracy-fft-cnn.txt
 PYTHON_END_TIME=$(date +%s)
 echo "Main Python script execution took $((PYTHON_END_TIME - PYTHON_START_TIME)) seconds."
 

@@ -125,10 +125,11 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
+            break
         
         avg_loss = total_loss / len(train_loader)
-        print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
-        print("Would have saved the model here...")
+        # print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
+        # print("Would have saved the model here...")
     #     if avg_loss < best_loss:
     #         best_loss = avg_loss
     #         torch.save(net.state_dict(), trained_folder + '/network.pt')
