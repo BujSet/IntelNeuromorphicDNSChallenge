@@ -121,15 +121,36 @@ if __name__ == '__main__':
             
             # The goal is to minimize the output of the combined_signal, aiming for silence
             loss = loss_function(combined_signal, torch.zeros_like(combined_signal))
-            
+            print(f"Epcoh {epoch+1} Training Loss: {loss}")
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-            break
+        
+        for batch_idx, (magnitude, phase, original_signal) in enumerate(validation_loader):
+            net.eval()
+            with torch.no_grad():
+                magnitude = magnitude.to(device)
+                phase = phase.to(device)
+                original_signal = original_signal.to(device)
+
+                adjusted_phase = net(phase).squeeze()
+                
+                # Combine with original magnitude to get adjusted FFT
+                adjusted_fft = magnitude * torch.exp(1j * adjusted_phase)
+
+                # Perform IFFT to convert the adjusted complex FFT back to the time domain
+                adjusted_signal = torch.fft.ifft(adjusted_fft).real
+                
+                # Calculate the result of adding the original signal and the adjusted signal
+                combined_signal = original_signal + adjusted_signal
+                
+                # The goal is to minimize the output of the combined_signal, aiming for silence
+                val_loss = loss_function(combined_signal, torch.zeros_like(combined_signal))
+                print(f"Epoch {epoch+1} Validation Loss: {loss}")
         
         avg_loss = total_loss / len(train_loader)
-        # print(f'Epoch {epoch+1}/{args.epoch}, Average Loss: {avg_loss:.6f}')    
-        # print("Would have saved the model here...")
+        print(f'Epoch {epoch+1}/{args.epoch}, Average Training Loss: {avg_loss:.6f}')    
+        print("Would have saved the model here...")
     #     if avg_loss < best_loss:
     #         best_loss = avg_loss
     #         torch.save(net.state_dict(), trained_folder + '/network.pt')
