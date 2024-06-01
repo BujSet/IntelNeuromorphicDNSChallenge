@@ -171,35 +171,6 @@ class Network(torch.nn.Module):
         mask = torch.relu(x + 1)
         return slayer.axon.delay(noisy, self.out_delay) * mask
 
-    # def grad_flow(self, path):
-    #     # helps monitor the gradient flow
-    #     grad = [b.synapse.grad_norm for b in self.blocks if hasattr(b, 'synapse')]
-
-    #     plt.figure()
-    #     plt.semilogy(grad)
-    #     plt.savefig(path + 'gradFlow.png')
-    #     plt.close()
-
-    #     return grad
-
-    # def validate_gradients(self):
-    #     valid_gradients = True
-    #     for name, param in self.named_parameters():
-    #         if param.grad is not None:
-    #             valid_gradients = not (torch.isnan(param.grad).any()
-    #                                    or torch.isinf(param.grad).any())
-    #             if not valid_gradients:
-    #                 break
-    #     if not valid_gradients:
-    #         self.zero_grad()
-
-    # def export_hdf5(self, filename):
-    #     # network export to hdf5 format
-    #     h = h5py.File(filename, 'w')
-    #     layer = h.create_group('layer')
-    #     for i, b in enumerate(self.blocks):
-    #         b.export_hdf5(layer.create_group(f'{i}'))
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-b',
@@ -409,9 +380,7 @@ if __name__ == '__main__':
             ssl_sum_clean += torch.sum(ssl_clean_abs, dim=0)
 
         num_iters += 1.0
-        # print(i)
-        # if (i == 10):
-        #     break
+
     sum_noise = min_max_rescale(sum_noise)
     sum_noisy = min_max_rescale(sum_noisy)
     sum_clean = min_max_rescale(sum_clean)
@@ -459,7 +428,7 @@ if __name__ == '__main__':
     axs[2,1].set_yticks(yticks)
     axs[2,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
     axs[2,1].set_xlabel("FFT Frame")
-    plt.savefig("training_fft.png", bbox_inches='tight')
+    plt.savefig("training_fft_" + str(speechFilterOrient) + "_" + str(speechFilterChannel) + "_" + str(noiseFilterOrient) + "_" + str(noiseFilterChannel) + ".png", bbox_inches='tight')
     plt.close()
     
     print("Finished training set, looking at validation now...")
@@ -571,7 +540,7 @@ if __name__ == '__main__':
     axs[2,1].set_yticks(yticks)
     axs[2,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
     axs[2,1].set_xlabel("FFT Frame")
-    plt.savefig("validation_fft.png", bbox_inches='tight')
+    plt.savefig("validation_fft_" + str(speechFilterOrient) + "_" + str(speechFilterChannel) + "_" + str(noiseFilterOrient) + "_" + str(noiseFilterChannel) + ".png", bbox_inches='tight')
     plt.close()
 
     
