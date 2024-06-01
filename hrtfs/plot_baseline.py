@@ -193,3 +193,5 @@ colorbar_axes = divider.append_axes("right",
                                     pad=0.1) 
 fig.colorbar(im, cax=colorbar_axes, label="SI-SNR (dB)", location='right')
 plt.savefig("sensitivity_baseline.png", bbox_inches="tight")
+print("Min:" + str(np.where(channel0 == np.min(channel0))))
+print("Max:" + str(np.where(channel0 == np.max(channel0))))
