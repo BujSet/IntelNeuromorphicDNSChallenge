@@ -318,8 +318,8 @@ if __name__ == '__main__':
     speechFilter  = speechFilter.to(device)
     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
     noiseFilter   = noiseFilter.to(device)
-    print("\tSet speech to " + args.speechFilterOrient + ":" + args.speechFilterChannel)
-    print("\tSet noise to " + args.noiseFilterOrient + ":" + args.noiseFilterChannel)
+    print("\tSet speech to " + str(args.speechFilterOrient) + ":" + str(args.speechFilterChannel))
+    print("\tSet noise to " + str(args.noiseFilterOrient) + ":" + str(args.noiseFilterChannel))
 
     freqs = librosa.fft_frequencies(sr=16000, n_fft=512)
     yticks = [i for i in range(0, 257, 16)]
