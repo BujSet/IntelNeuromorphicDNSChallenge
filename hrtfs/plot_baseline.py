@@ -1,76 +1,22 @@
-from os import listdir
-from os.path import isfile, join
 import numpy as np 
 import matplotlib.pyplot as plt
 import matplotlib
-from cipic_db import CipicDatabase 
+from collect_heatmap import getScores 
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-mypath = '/research/selagamsetty/private/baseline_ch0/'
-onlyfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
-print("Reading " + str(len(onlyfiles)) + " files")
-channel0 = np.empty([50, 50], dtype=float)
-channel1 = np.empty([50, 50], dtype=float)
-minScore = 1000.0
-maxScore = 0.0
-posits = CipicDatabase.subjects[12].getCartesianPositions()
-dists = np.zeros((len(onlyfiles),), dtype=float)
-ch0Scores = np.zeros((len(onlyfiles),), dtype=float)
-ch1Scores = np.zeros((len(onlyfiles),), dtype=float)
-
-def cartDist(origin, dest):
-    assert(origin.shape == dest.shape)
-    return np.sqrt(np.dot(origin, dest))
-
-for i in range(len(onlyfiles)):
-    filename = onlyfiles[i]
-    path = join(mypath, filename)
-    name_tokens = filename.replace('.txt', '').split('_')
-
-    # Make sure but speech and noise are from same channel
-    assert(int(name_tokens[-1]) == int(name_tokens[-3]))
-    channel = int(name_tokens[-1])
-
-    speech = int(name_tokens[-4])
-    noise = int(name_tokens[-2])
-    with open(path, 'r') as F:
-        lines = F.readlines()
-        foundLineWithInfo = False
-        for line in lines:
-            if "Valid" in line and "SI-SNR" in line and "dB" in line:
-                foundLineWithInfo = True
-                tokens = line.split()
-
-                score = float(tokens[-2])
-                dists[i] = ((speech - noise) * 5.625)
-
-                if (score > maxScore):
-                    maxScore = score
-                if (score < minScore):
-                    minScore = score
-
-                if (channel == 0):
-                    channel0[noise, speech] = score
-                    ch0Scores[i] = score
-                else:
-                    assert(channel == 1)
-                    channel1[noise, speech] = score
-                    ch1Scores[i] = score
-
-        if(not foundLineWithInfo):
-            print(path)
+(maxScore, minScore, channel0, dists, ch0Scores) = getScores('/research/selagamsetty/private/baseline_ch0/')
  
 trendline = dict()
 for n in range(50):
     for s in range(50):
         diff = (s - n) 
-        if channel0[n, s] < minScore or channel0[n, s] > maxScore:
+        if channel0[s, n] < minScore or channel0[s, n] > maxScore:
             continue
         if diff in trendline.keys():
-            trendline[diff].append(channel0[n,s])
+            trendline[diff].append(channel0[s,n])
         else:
-            trendline[diff] = [channel0[n,s]]
+            trendline[diff] = [channel0[s,n]]
 updated = dict()
 medians = dict()
 for k, v in trendline.items():
