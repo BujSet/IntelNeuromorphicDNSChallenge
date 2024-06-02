@@ -312,12 +312,14 @@ if __name__ == '__main__':
                                    num_workers=4,
                                    pin_memory=True)
 
-    print("About to load filters")
+    print("Loading CIPIC HRTF filters...")
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
     speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
     speechFilter  = speechFilter.to(device)
     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
     noiseFilter   = noiseFilter.to(device)
+    print("\tSet speech to " + str(args.speechFilterOrient) + ":" + str(args.speechFilterChannel))
+    print("\tSet noise to " + str(args.noiseFilterOrient) + ":" + str(args.noiseFilterChannel))
 
     freqs = librosa.fft_frequencies(sr=16000, n_fft=512)
     yticks = [i for i in range(0, 257, 16)]
@@ -428,7 +430,7 @@ if __name__ == '__main__':
     axs[2,1].set_yticks(yticks)
     axs[2,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
     axs[2,1].set_xlabel("FFT Frame")
-    plt.savefig("training_fft_" + str(speechFilterOrient) + "_" + str(speechFilterChannel) + "_" + str(noiseFilterOrient) + "_" + str(noiseFilterChannel) + ".png", bbox_inches='tight')
+    plt.savefig("training_fft_" + str(args.speechFilterOrient) + "_" + str(args.speechFilterChannel) + "_" + str(args.noiseFilterOrient) + "_" + str(args.noiseFilterChannel) + ".png", bbox_inches='tight')
     plt.close()
     
     print("Finished training set, looking at validation now...")
@@ -490,9 +492,6 @@ if __name__ == '__main__':
             ssl_sum_clean += torch.sum(ssl_clean_abs, dim=0)
 
         num_iters += 1.0
-        # print(i)
-        # if (i == 10):
-        #     break
     sum_noise = min_max_rescale(sum_noise)
     sum_noisy = min_max_rescale(sum_noisy)
     sum_clean = min_max_rescale(sum_clean)
@@ -540,7 +539,7 @@ if __name__ == '__main__':
     axs[2,1].set_yticks(yticks)
     axs[2,1].set_yticklabels([str(round(freqs[y] / 1000.0, 2)) for y in yticks])
     axs[2,1].set_xlabel("FFT Frame")
-    plt.savefig("validation_fft_" + str(speechFilterOrient) + "_" + str(speechFilterChannel) + "_" + str(noiseFilterOrient) + "_" + str(noiseFilterChannel) + ".png", bbox_inches='tight')
+    plt.savefig("validation_fft_" + str(args.speechFilterOrient) + "_" + str(args.speechFilterChannel) + "_" + str(args.noiseFilterOrient) + "_" + str(args.noiseFilterChannel) + ".png", bbox_inches='tight')
     plt.close()
 
     
