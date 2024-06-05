@@ -1,6 +1,7 @@
 from os import listdir
 from os.path import isfile, join
 import numpy as np 
+import sys
 
 def getScores(results_dir):
     files = [f for f in listdir(results_dir) if isfile(join(results_dir, f))]
@@ -17,8 +18,14 @@ def getScores(results_dir):
         # Make sure but speech and noise are from same channel
         assert(int(name_tokens[-1]) == int(name_tokens[-3]))
 
-        speech = int(name_tokens[-4])
-        noise = int(name_tokens[-2])
+        try:
+            speech = int(name_tokens[-4])
+            noise = int(name_tokens[-2])
+        except:
+            print("Error, standard format not met\n")
+            print(filename)
+            print(name_tokens)
+            sys.exit(1)
         with open(path, 'r') as F:
             lines = F.readlines()
             tokens = lines[-1].split()
