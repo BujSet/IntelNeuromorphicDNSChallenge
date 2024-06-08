@@ -214,20 +214,14 @@ if __name__ == '__main__':
                                        accuracy_unit='dB')
 
     print("Training for " + str(args.training_epoch) + " epochs")
-    print("Training Freq Mask Temporal for " + str(args.training_epoch) + " epochs")
+    print("Training Freq Mask for " + str(args.training_epoch) + " epochs")
     print("Parameters are initially:...")
     module.blocks[0].print_parameters()
     print("")
     print("")
     training_st = datetime.now()
     for epoch in range(args.training_epoch):
-        # t_st = datetime.now()
-        # batch_st = datetime.now()
-        # batch_tot = 0.0
-        # conv_tot = 0.0
-        # synth_tot = 0.0
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
-            # batch_tot += (datetime.now() - batch_st).total_seconds()
             net.train()
 
             noisy = noisy.to(device)
@@ -271,15 +265,6 @@ if __name__ == '__main__':
             stats.training.correct_samples += torch.sum(score).item()
             stats.training.loss_sum += loss.item()
             stats.training.num_samples += noisy.shape[0]
-
-            # processed = i * train_loader.batch_size
-            # total = len(train_loader.dataset)
-            # time_elapsed = (datetime.now() - t_st).total_seconds()
-            # samples_sec = time_elapsed / (i + 1) / train_loader.batch_size
-            # header_list = [f'Train: [{processed}/{total} '
-            #               f'({100.0 * processed / total:.0f}%)]']
-            # stats.print(epoch, i, samples_sec, header=header_list)
-            # batch_st = datetime.now()
 
         stats.update()
 
