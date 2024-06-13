@@ -66,13 +66,15 @@ class Network(torch.nn.Module):
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0):
+            out_delay=0,
+            hiddenLayerWidths=512):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
         self.stft_max = 140
         self.out_delay = out_delay
         self.EPS = 2.220446049250313e-16
+        self.hiddenLayerWidths = hiddenLayerWidths
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -90,9 +92,9 @@ class Network(torch.nn.Module):
 
         self.blocks = torch.nn.ModuleList([
             slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, 257, 512, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Dense(sdnn_params, 512, 512, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, 512, 257, weight_norm=False),
+            slayer.block.sigma_delta.Dense(sdnn_params, 257, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, 257, weight_norm=False),
         ])
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
@@ -298,6 +300,10 @@ if __name__ == '__main__':
                         type=int,
                         default=0,
                         help='Channel used for speech and noise separation')
+    parser.add_argument('-hiddenLayerWidths',
+                        type=int,
+                        default=512,
+                        help='# of nuerons in hidden layers')
 
     args = parser.parse_args()
 
@@ -326,12 +332,21 @@ if __name__ == '__main__':
 
     out_delay = args.out_delay
     print("Building GPU network")
+    # net = Network(
+    #             args.threshold,
+    #             args.tau_grad,
+    #             args.scale_grad,
+    #             args.dmax,
+    #             args.out_delay,
+    #             args.hiddenLayerWidths)
+    # print(net)
     net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
                 args.scale_grad,
                 args.dmax,
-                args.out_delay).to(device),
+                args.out_delay,
+                args.hiddenLayerWidths).to(device),
                     device_ids=args.gpu)
     module = net.module
     stft_transform =torchaudio.transforms.Spectrogram(
@@ -466,8 +481,15 @@ if __name__ == '__main__':
 
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
-            print("Train [" + str(epoch) + " | " + str(i) + "] (s,n)=(" + str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> " + str(torch.mean(score)) + " SI-SNR dB")
 
+            statString = "Train [" + str(epoch) + " | " + str(i) + "] (s,n)=("
+            statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
+            statString += str(loss.item()) + " " 
+            statString += str(torch.mean(score).item()) + " SI-SNR dB"
+            print(statString)
+#            print(loss.item())
+#            print("Train [" + str(epoch) + " | " + str(i) + "] (s,n)=(" + str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> " + str(torch.mean(score).item() + " SI-SNR dB")
+            # sys.exit(1)
     for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
         net.eval()
         speechFilterOrient = random.choice(orientList)
@@ -528,4 +550,13 @@ if __name__ == '__main__':
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
 
-            print("Valid [" + str(i) + "] (s,n)=(" + str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> " + str(torch.mean(score)) + " SI-SNR dB")
+            loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+            if torch.isnan(loss).any():
+                loss[torch.isnan(loss)] = 0
+
+            statString = "Valid [" + str(epoch) + " | " + str(i) + "] (s,n)=("
+            statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
+            statString += str(loss.item()) + " " 
+            statString += str(torch.mean(score).item()) + " SI-SNR dB"
+            print(statString)
+            # print("Valid [" + str(i) + "] (s,n)=(" + str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> " + str(torch.mean(score)) + " SI-SNR dB")
