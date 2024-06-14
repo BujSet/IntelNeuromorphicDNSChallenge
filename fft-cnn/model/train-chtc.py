@@ -23,6 +23,21 @@ from torch.utils.tensorboard import SummaryWriter
 from network import PhaseShiftCNN
 from datasetCHTC import NoiseDataset
 
+def custom_collate_fn(batch):
+    # Filter out data samples where tensors do not have the same size
+    filtered_batch = [item for item in batch if item[0].size(0) == item[1].size(0) == item[2].size(0)]
+    
+    if len(filtered_batch) == 0:
+        # Return None if all items are filtered out
+        return None
+
+    magnitudes, phases, original_signals = zip(*filtered_batch)
+    magnitudes = torch.stack(magnitudes)
+    phases = torch.stack(phases)
+    original_signals = torch.stack(original_signals)
+
+    return magnitudes, phases, original_signals
+
 if __name__ == '__main__':
     print("Entered train-chtc.py from NOISE CANCEL")
     parser = argparse.ArgumentParser()
@@ -89,7 +104,8 @@ if __name__ == '__main__':
                                    batch_size=args.b,
                                    shuffle=True,
                                    num_workers=4,
-                                   pin_memory=True)
+                                   pin_memory=True,
+                                   collate_fn = custom_collate_fn)
     
     net.train()
     best_loss = float('inf')
@@ -149,8 +165,30 @@ if __name__ == '__main__':
                 print(f"Epoch {epoch+1} Validation Loss: {loss}")
         
         avg_loss = total_loss / len(train_loader)
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            model_save_path = trained_folder + '/network.pt'
+            torch.save(net.state_dict(), model_save_path)
+            print(f"Model saved to {model_save_path}")
+
+            # Assuming you need to reload the model in the same script/session
+            # Make sure the model architecture is initialized as `module` or similar
+            # module.load_state_dict(torch.load(model_save_path))
+            # print(f"Model loaded from {model_save_path}")
+
+            # Example of exporting model weights to HDF5 (Requires custom implementation)
+            # This part needs to be implemented based on how you plan to use the model outside of PyTorch
+            # module.export_hdf5(trained_folder + '/network.h5')
+            # print(f"Model exported to HDF5 format at {trained_folder + '/network.h5'}")
+
+        # Save parameters or any other relevant configuration
+        params_dict = {}
+        for key, val in vars(args).items():
+            params_dict[key] = str(val)
+        with open(trained_folder + '/config_params.json', 'w') as f:
+            json.dump(params_dict, f)
+        print("Configuration parameters saved.")
         print(f'Epoch {epoch+1}/{args.epoch}, Average Training Loss: {avg_loss:.6f}')    
-        print("Would have saved the model here...")
     #     if avg_loss < best_loss:
     #         best_loss = avg_loss
     #         torch.save(net.state_dict(), trained_folder + '/network.pt')
