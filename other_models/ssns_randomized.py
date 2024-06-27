@@ -67,7 +67,8 @@ class Network(torch.nn.Module):
             scale_grad=0.8, 
             max_delay=64, 
             out_delay=0,
-            hiddenLayerWidths=512):
+            hiddenLayerWidths=512,
+            n_fft=512):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -92,9 +93,9 @@ class Network(torch.nn.Module):
 
         self.blocks = torch.nn.ModuleList([
             slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, 257, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+            slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
             slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, 257, weight_norm=False),
+            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, n_fft//2 + 1, weight_norm=False),
         ])
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
@@ -332,21 +333,14 @@ if __name__ == '__main__':
 
     out_delay = args.out_delay
     print("Building GPU network")
-    # net = Network(
-    #             args.threshold,
-    #             args.tau_grad,
-    #             args.scale_grad,
-    #             args.dmax,
-    #             args.out_delay,
-    #             args.hiddenLayerWidths)
-    # print(net)
     net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
                 args.scale_grad,
                 args.dmax,
                 args.out_delay,
-                args.hiddenLayerWidths).to(device),
+                args.hiddenLayerWidths,
+                args.n_fft).to(device),
                     device_ids=args.gpu)
     module = net.module
     stft_transform =torchaudio.transforms.Spectrogram(
@@ -487,9 +481,7 @@ if __name__ == '__main__':
             statString += str(loss.item()) + " " 
             statString += str(torch.mean(score).item()) + " SI-SNR dB"
             print(statString)
-#            print(loss.item())
-#            print("Train [" + str(epoch) + " | " + str(i) + "] (s,n)=(" + str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> " + str(torch.mean(score).item() + " SI-SNR dB")
-            # sys.exit(1)
+
     for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
         net.eval()
         speechFilterOrient = random.choice(orientList)
@@ -559,4 +551,3 @@ if __name__ == '__main__':
             statString += str(loss.item()) + " " 
             statString += str(torch.mean(score).item()) + " SI-SNR dB"
             print(statString)
-            # print("Valid [" + str(i) + "] (s,n)=(" + str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> " + str(torch.mean(score)) + " SI-SNR dB")
