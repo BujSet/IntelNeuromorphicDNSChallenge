@@ -305,6 +305,10 @@ if __name__ == '__main__':
                         type=int,
                         default=512,
                         help='# of nuerons in hidden layers')
+    parser.add_argument('-numOrients',
+                        type=int,
+                        default=8,
+                        help='Number of additional orientations')
 
     args = parser.parse_args()
 
@@ -402,6 +406,8 @@ if __name__ == '__main__':
     orientSet.add(900) # center of front bottom left  hemisphere
     orientSet.add(932) # center of back  upper  left  hemisphere
     orientSet.add(948) # center of back  bottom left  hemisphere
+    while len(orientSet) < args.numOrients:
+    	orientSet.add(random.randint(0,1250))
     orientList = list(orientSet)
 
     for epoch in range(args.epochs):
