@@ -172,17 +172,6 @@ class Network(torch.nn.Module):
         mask = torch.relu(x + 1)
         return slayer.axon.delay(noisy, self.out_delay) * mask
 
-    def grad_flow(self, path):
-        # helps monitor the gradient flow
-        grad = [b.synapse.grad_norm for b in self.blocks if hasattr(b, 'synapse')]
-
-        plt.figure()
-        plt.semilogy(grad)
-        plt.savefig(path + 'gradFlow.png')
-        plt.close()
-
-        return grad
-
     def validate_gradients(self):
         valid_gradients = True
         for name, param in self.named_parameters():
@@ -193,34 +182,6 @@ class Network(torch.nn.Module):
                     break
         if not valid_gradients:
             self.zero_grad()
-
-    def export_hdf5(self, filename):
-        # network export to hdf5 format
-        h = h5py.File(filename, 'w')
-        layer = h.create_group('layer')
-        for i, b in enumerate(self.blocks):
-            b.export_hdf5(layer.create_group(f'{i}'))
-
-        
-def nop_stats(dataloader, stats, sub_stats, print=True):
-    t_st = datetime.now()
-    for i, (noisy, clean, noise) in enumerate(dataloader):
-        with torch.no_grad():
-            noisy = noisy
-            clean = clean
-
-            score = si_snr(noisy, clean)
-            sub_stats.correct_samples += torch.sum(score).item()
-            sub_stats.num_samples += noisy.shape[0]
-
-            processed = i * dataloader.batch_size
-            total = len(dataloader.dataset)
-            time_elapsed = (datetime.now() - t_st).total_seconds()
-            samples_sec = time_elapsed / (i + 1) / dataloader.batch_size
-            header_list = [f'Train: [{processed}/{total} '
-                           f'({100.0 * processed / total:.0f}%)]']
-            if print:
-                stats.print(0, i, samples_sec, header=header_list)
 
 def run_training_loop(args, train_loader, orientList):
     for epoch in range(args.epochs):
