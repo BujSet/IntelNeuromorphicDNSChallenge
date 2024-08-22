@@ -594,7 +594,7 @@ if __name__ == '__main__':
         orientSet.add(932) # center of back  upper  left  hemisphere
         orientSet.add(948) # center of back  bottom left  hemisphere
         while len(orientSet) < args.numOrients:
-            orientSet.add(random.randint(0,1250))
+            orientSet.add(random.randint(0,1249))
         orientList = list(orientSet)
 
     run_training_loop(args, train_loader, orientList)
