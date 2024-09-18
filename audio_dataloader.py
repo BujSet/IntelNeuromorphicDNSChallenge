@@ -15,9 +15,17 @@ class DNSAudio:
     root : str, optional
         Path of the dataset location, by default './'.
     """
-    def __init__(self, root: str = './') -> None:
+    def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
         self.noisy_files = glob.glob(root + 'noisy/**.wav')
+        if (maxFiles > len(self.noisy_files)):
+            print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.noisy_files)))
+            assert(False)
+
+        if (maxFiles > 0):
+            self.noisy_files = self.noisy_files[0:maxFiles]
+            print("Dataset contains "+str(len(self.noisy_files)) + " after slice")
+
         self.file_id_from_name = re.compile('fileid_(\d+)')
         self.snr_from_name = re.compile('snr(-?\d+)')
         self.target_level_from_name = re.compile('tl(-?\d+)')

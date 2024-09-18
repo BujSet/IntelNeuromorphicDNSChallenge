@@ -189,8 +189,6 @@ def run_training_loop(args, train_loader, orientList):
         epoch_st = datetime.now()  
         train_st = datetime.now()
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
-            if (i > args.trainingIters):
-                return
             net.train()
             if (args.useCipic):
                 speechFilterOrient = random.choice(orientList)
@@ -222,7 +220,7 @@ def run_training_loop(args, train_loader, orientList):
                     -15)
             else:
                 ssl_noise = noise.to(device)
-                ssl_noisy = noise.to(device)
+                ssl_noisy = noisy.to(device)
                 ssl_clean = clean.to(device)
 
 
@@ -264,20 +262,19 @@ def run_training_loop(args, train_loader, orientList):
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
 
-            statString = "Train [" + str(epoch) + " | " + str(i) + "]"
-            if (args.useCipic):
-                statString += " (s,n)=("
-                statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
-            else:
-                statString += " -> "
-            statString += str(loss.item()) + " " 
-            statString += str(torch.mean(score).item()) + " SI-SNR dB"
-            print(statString)
+            if args.printOutputWhileTraining:
+                statString = "Train [" + str(epoch) + " | " + str(i) + "]"
+                if (args.useCipic):
+                    statString += " (s,n)=("
+                    statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
+                else:
+                    statString += " -> "
+                statString += str(loss.item()) + " " 
+                statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                print(statString)
 
 def run_validation_loop(args, validation_loader, orientList):
     for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
-        if (i > args.validationIters):
-            return
         net.eval()
         if (args.useCipic):
             speechFilterOrient = random.choice(orientList)
@@ -344,15 +341,16 @@ def run_validation_loop(args, validation_loader, orientList):
             if torch.isnan(loss).any():
                 loss[torch.isnan(loss)] = 0
 
-            statString = "Valid [" + str(i) + "]"
-            if (args.useCipic):
-                statString += " (s,n)=("
-                statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
-            else:
-                statString += " -> "
-            statString += str(loss.item()) + " " 
-            statString += str(torch.mean(score).item()) + " SI-SNR dB"
-            print(statString)
+            if args.printOutputWhileValidation:
+                statString = "Valid [" + str(i) + "]"
+                if (args.useCipic):
+                    statString += " (s,n)=("
+                    statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
+                else:
+                    statString += " -> "
+                statString += str(loss.item()) + " " 
+                statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                print(statString)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -412,14 +410,6 @@ if __name__ == '__main__':
                         type=int,
                         default=50,
                         help='number of epochs to run')
-    parser.add_argument('-trainingIters',
-                        type=int,
-                        default=60000,
-                        help='Number of samples training should use, supports early stopping')
-    parser.add_argument('-validationIters',
-                        type=int,
-                        default=60000,
-                        help='Number of samples validation should use, supports early stopping')
     parser.add_argument('-spectrogram',
                         type=int,
                         default=0,
@@ -428,6 +418,22 @@ if __name__ == '__main__':
                         type=str,
                         default='../../',
                         help='dataset path')
+    parser.add_argument('-training_samples',
+    	                type=int,
+    	                default=60000,
+    	                help='Number of samples training should use, supports small dataset subset')
+    parser.add_argument('-print_output_while_training',
+                        dest='printOutputWhileTraining', 
+                        action='store_true',
+                        help='Switch flag to print score after every mini-batch during training')
+    parser.add_argument('-validation_samples',
+                        type=int,
+                        default=60000,
+                        help='Number of samples validation should use, supports small dataset subset')
+    parser.add_argument('-print_output_while_validation',
+                        dest='printOutputWhileValidation', 
+                        action='store_true',
+                        help='Switch flag to print score after every mini-batch during validation')
     # CIPIC Filter Parameters
     # ID:21 ==> Mannequin with large pinna
     # ID 165 ==> Mannequin with small pinna
@@ -463,7 +469,6 @@ if __name__ == '__main__':
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
     trained_folder = 'Trained' + identifier
     logs_folder = 'Logs' + identifier
-    print(trained_folder)
     writer = SummaryWriter('runs/' + identifier)
 
     os.makedirs(trained_folder, exist_ok=True)
@@ -479,7 +484,6 @@ if __name__ == '__main__':
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
-    print("Building GPU network")
     net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
@@ -516,8 +520,8 @@ if __name__ == '__main__':
                                   lr=args.lr,
                                   weight_decay=1e-5)
 
-    train_set = DNSAudio(root=args.path + 'training_set/')
-    validation_set = DNSAudio(root=args.path + 'validation_set/')
+    train_set = DNSAudio(root=args.path + 'training_set/', maxFiles=args.training_samples)
+    validation_set = DNSAudio(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
 
     train_loader = DataLoader(train_set,
                               batch_size=args.b,
@@ -555,8 +559,10 @@ if __name__ == '__main__':
         orientSet.add(932) # center of back  upper  left  hemisphere
         orientSet.add(948) # center of back  bottom left  hemisphere
         while len(orientSet) < args.numOrients:
-            orientSet.add(random.randint(0,1249))
+            orientSet.add(random.randint(0,1249)) # randint is inclusive on both ends for some reason
         orientList = list(orientSet)
+
+    print("Orient list contains " + str(len(orientList)) + " orientations")
 
     run_training_loop(args, train_loader, orientList)
     print("Training done, running validation")
