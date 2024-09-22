@@ -274,6 +274,7 @@ def run_training_loop(args, train_loader, orientList):
                 print(statString)
 
 def run_validation_loop(args, validation_loader, orientList):
+    validationScores = []
     for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
         net.eval()
         if (args.useCipic):
@@ -341,6 +342,7 @@ def run_validation_loop(args, validation_loader, orientList):
             if torch.isnan(loss).any():
                 loss[torch.isnan(loss)] = 0
 
+            validationScores.append(torch.mean(score).item())
             if args.printOutputWhileValidation:
                 statString = "Valid [" + str(i) + "]"
                 if (args.useCipic):
@@ -351,6 +353,8 @@ def run_validation_loop(args, validation_loader, orientList):
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+    averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
+    return averageValidationScore
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -457,7 +461,7 @@ if __name__ == '__main__':
     parser.add_argument('-numOrients',
                         type=int,
                         default=8,
-                        help='Number of additional orientations')
+                        help='Number of additional orientations, must be >= 8')
 
     args = parser.parse_args()
 
@@ -558,8 +562,13 @@ if __name__ == '__main__':
         orientSet.add(900) # center of front bottom left  hemisphere
         orientSet.add(932) # center of back  upper  left  hemisphere
         orientSet.add(948) # center of back  bottom left  hemisphere
-        while len(orientSet) < args.numOrients:
-            orientSet.add(random.randint(0,1249)) # randint is inclusive on both ends for some reason
+        allPossibleOrients = set(range(0, 1250)).difference(orientSet)
+        for _ in range(8, args.numOrients):
+            randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
+            orientSet.add(randOrient)
+            allPossibleOrients.remove(randOrient)
+        #while len(orientSet) < args.numOrients:
+        #    orientSet.add(random.randint(0,1249)) # randint is inclusive on both ends for some reason
         orientList = list(orientSet)
 
     print("Orient list contains " + str(len(orientList)) + " orientations")
@@ -567,5 +576,5 @@ if __name__ == '__main__':
     run_training_loop(args, train_loader, orientList)
     print("Training done, running validation")
 
-    run_validation_loop(args, validation_loader, orientList)
-    print("Validation done")
+    finalValidationScore = run_validation_loop(args, validation_loader, orientList)
+    print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
