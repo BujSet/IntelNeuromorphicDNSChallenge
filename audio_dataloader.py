@@ -5,7 +5,7 @@ import numpy as np
 import re
 import soundfile as sf
 from typing import Tuple, Dict, Any
-
+import random
 
 class DNSAudio:
     """Aduio dataset loader for DNS.
@@ -23,8 +23,10 @@ class DNSAudio:
             assert(False)
 
         if (maxFiles > 0):
-            self.noisy_files = self.noisy_files[0:maxFiles]
-            print("Dataset contains "+str(len(self.noisy_files)) + " after slice")
+            randStart = random.randint(0, len(self.noisy_files) - maxFiles - 1)
+            assert(randStart + maxFiles <= len(self.noisy_files))
+            self.noisy_files = self.noisy_files[randStart:randStart+maxFiles]
+            print("Using slice dataset[" + str(randStart) + ":" + str(randStart+maxFiles) + "] with "+str(len(self.noisy_files)) + " samples")
 
         self.file_id_from_name = re.compile('fileid_(\d+)')
         self.snr_from_name = re.compile('snr(-?\d+)')
