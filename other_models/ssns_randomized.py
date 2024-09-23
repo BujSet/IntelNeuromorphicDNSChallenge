@@ -567,8 +567,6 @@ if __name__ == '__main__':
             randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
             orientSet.add(randOrient)
             allPossibleOrients.remove(randOrient)
-        #while len(orientSet) < args.numOrients:
-        #    orientSet.add(random.randint(0,1249)) # randint is inclusive on both ends for some reason
         orientList = list(orientSet)
 
     print("Orient list contains " + str(len(orientList)) + " orientations")

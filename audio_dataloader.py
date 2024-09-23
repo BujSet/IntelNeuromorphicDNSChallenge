@@ -22,7 +22,8 @@ class DNSAudio:
             print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.noisy_files)))
             assert(False)
 
-        if (maxFiles > 0):
+        # Don't do anything if param isnt set or if we're using the entire dataset
+        if (maxFiles > 0 and maxFiles != len(self.noisy_files)):
             randStart = random.randint(0, len(self.noisy_files) - maxFiles - 1)
             assert(randStart + maxFiles <= len(self.noisy_files))
             self.noisy_files = self.noisy_files[randStart:randStart+maxFiles]
