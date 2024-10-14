@@ -7,6 +7,92 @@ import soundfile as sf
 from typing import Tuple, Dict, Any
 import random
 
+class DNSAudioNoNoisy:
+    """Aduio dataset loader for DNS to only return clean and noise samples.
+
+    Parameters
+    ----------
+    root : str, optional
+        Path of the dataset location, by default './'.
+    """
+    def __init__(self, root: str = './', maxFiles: int = -1) -> None:
+        self.root = root
+        self.noisy_files = glob.glob(root + 'noisy/**.wav')
+        if (maxFiles > len(self.noisy_files)):
+            print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.noisy_files)))
+            assert(False)
+
+        # Don't do anything if param isnt set or if we're using the entire dataset
+        if (maxFiles > 0 and maxFiles != len(self.noisy_files)):
+            randStart = random.randint(0, len(self.noisy_files) - maxFiles - 1)
+            assert(randStart + maxFiles <= len(self.noisy_files))
+            self.noisy_files = self.noisy_files[randStart:randStart+maxFiles]
+            print("Using slice dataset[" + str(randStart) + ":" + str(randStart+maxFiles) + "] with "+str(len(self.noisy_files)) + " samples")
+
+        self.file_id_from_name = re.compile('fileid_(\d+)')
+        self.snr_from_name = re.compile('snr(-?\d+)')
+        self.target_level_from_name = re.compile('tl(-?\d+)')
+        self.source_info_from_name = re.compile('^(.*?)_snr')
+
+    def _get_filenames(self, n: int) -> Tuple[str, str, Dict[str, Any]]:
+        noisy_file = self.noisy_files[n % self.__len__()]
+        filename = noisy_file.split(os.sep)[-1]
+        file_id = int(self.file_id_from_name.findall(filename)[0])
+        clean_file = self.root + f'clean/clean_fileid_{file_id}.wav'
+        noise_file = self.root + f'noise/noise_fileid_{file_id}.wav'
+        snr = int(self.snr_from_name.findall(filename)[0])
+        target_level = int(self.target_level_from_name.findall(filename)[0])
+        source_info = self.source_info_from_name.findall(filename)[0]
+        metadata = {'snr': snr,
+                    'target_level': target_level,
+                    'source_info': source_info}
+        return clean_file, noise_file, metadata
+
+    def __getitem__(self, n: int) -> Tuple[np.ndarray,
+                                           np.ndarray,
+                                           Dict[str, Any],
+                                           int]:
+        """Gets the nth sample from the dataset.
+
+        Parameters
+        ----------
+        n : int
+            Index of the dataset sample.
+
+        Returns
+        -------
+        np.ndarray
+            Clean audio sample.
+        np.ndarray
+            Noise audio sample.
+        Dict
+            Sample metadata.
+        """
+        clean_file, noise_file, metadata = self._get_filenames(n)
+        clean_audio, sampling_frequency = sf.read(clean_file)
+        noise_audio, _ = sf.read(noise_file)
+        num_samples = 30 * sampling_frequency  # 30 sec data
+        metadata['fs'] = sampling_frequency
+
+        if len(clean_audio) > num_samples:
+            clean_audio = clean_audio[:num_samples]
+        else:
+            clean_audio = np.concatenate([clean_audio,
+                                          np.zeros(num_samples
+                                                   - len(clean_audio))])
+        if len(noise_audio) > num_samples:
+            noise_audio = noise_audio[:num_samples]
+        else:
+            noise_audio = np.concatenate([noise_audio,
+                                          np.zeros(num_samples
+                                                   - len(noise_audio))])
+        return clean_audio, noise_audio, metadata, n
+
+    def __len__(self) -> int:
+        """Length of the dataset.
+        """
+        return len(self.noisy_files)
+
 class DNSAudio:
     """Aduio dataset loader for DNS.
 

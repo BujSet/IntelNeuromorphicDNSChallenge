@@ -18,6 +18,7 @@ from lava.lib.dl import slayer
 import sys
 sys.path.append('./')
 from audio_dataloader import DNSAudio
+from audio_dataloader import DNSAudioNoNoisy
 from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
 import torchaudio
@@ -36,6 +37,16 @@ def collate_fn(batch):
 
     return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 
+def collate_fn_no_noisy(batch):
+    clean, noise = [], []
+
+    indices = torch.IntTensor([s[3] for s in batch])
+
+    for sample in batch:
+        clean += [torch.FloatTensor(sample[0])]
+        noise += [torch.FloatTensor(sample[1])]
+
+    return torch.stack(clean), torch.stack(noise), indices
 
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
@@ -47,7 +58,6 @@ def stft_splitter(audio, n_fft=512, method=None):
             return audio_stft.abs(), audio_stft.angle()
         spec = method(audio)
         return spec.abs(), spec.angle()    
-
 
 def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
     spec = torch.complex(stft_abs * torch.cos(stft_angle),
@@ -183,45 +193,38 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-def run_training_loop(args, train_loader, orientList):
+def run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList):
+    assert(args.useCipic)
     for epoch in range(args.epochs):
-        t_st = datetime.now()
-        epoch_st = datetime.now()  
-        train_st = datetime.now()
-        for i, (noisy, clean, noise, idx) in enumerate(train_loader):
+        for i, (clean, noise, idx) in enumerate(train_loader):
             net.train()
-            if (args.useCipic):
-                speechFilterOrient = random.choice(orientList)
-                noiseFilterOrient = random.choice(orientList)
-                speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
-                speechFilter  = speechFilter.to(device)
-                noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
-                noiseFilter   = noiseFilter.to(device)
-                noise = noise.to(device)
-                clean = clean.to(device)
-                ssl_noise = torch.zeros(args.b, 480000).to(device)
-                ssl_clean = torch.zeros(args.b, 480000).to(device)
-                ssl_snrs  = torch.zeros(args.b, 1).to(device)
-                ssl_targlvls= torch.zeros(args.b, 1).to(device)
-                for batch_idx in range(args.b):
-                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
-                    noisy_file, clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
-                    ssl_snrs[batch_idx] = metadata['snr']
-                    ssl_targlvls[batch_idx] = metadata['target_level']
+            speechFilterOrient = random.choice(orientList)
+            noiseFilterOrient = random.choice(orientList)
+            speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
+            speechFilter  = speechFilter.to(device)
+            noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
+            noiseFilter   = noiseFilter.to(device)
+            noise = noise.to(device)
+            clean = clean.to(device)
+            ssl_noise = torch.zeros(args.b, 480000).to(device)
+            ssl_clean = torch.zeros(args.b, 480000).to(device)
+            ssl_snrs  = torch.zeros(args.b, 1).to(device)
+            ssl_targlvls= torch.zeros(args.b, 1).to(device)
+            for batch_idx in range(args.b):
+                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+                clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+                ssl_snrs[batch_idx] = metadata['snr']
+                ssl_targlvls[batch_idx] = metadata['target_level']
 
-                ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                    ssl_clean, 
-                    ssl_noise, 
-                    args.b, 
-                    ssl_snrs,
-                    ssl_targlvls,
-                    -35,
-                    -15)
-            else:
-                ssl_noise = noise.to(device)
-                ssl_noisy = noisy.to(device)
-                ssl_clean = clean.to(device)
+            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+                ssl_clean, 
+                ssl_noise, 
+                args.b, 
+                ssl_snrs,
+                ssl_targlvls,
+                -35,
+                -15)
 
 
             if (args.spectrogram == 0):
@@ -273,43 +276,151 @@ def run_training_loop(args, train_loader, orientList):
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
 
-def run_validation_loop(args, validation_loader, orientList):
-    validationScores = []
-    for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
-        net.eval()
-        if (args.useCipic):
-            speechFilterOrient = random.choice(orientList)
-            noiseFilterOrient = random.choice(orientList)
-            speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
-            speechFilter  = speechFilter.to(device)
-            noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
-            noiseFilter   = noiseFilter.to(device)
-
-            noise = noise.to(device)
-            clean = clean.to(device)
-            ssl_noise = torch.zeros(args.b, 480000).to(device)
-            ssl_clean = torch.zeros(args.b, 480000).to(device)
-            ssl_snrs  = torch.zeros(args.b, 1).to(device)
-            ssl_targlvls= torch.zeros(args.b, 1).to(device)
-            for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
-                noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
-                ssl_snrs[batch_idx] = metadata['snr']
-                ssl_targlvls[batch_idx] = metadata['target_level']
-            
-            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                ssl_clean, 
-                ssl_noise, 
-                args.b, 
-                ssl_snrs,
-                ssl_targlvls,
-                -35,
-                -15)
-        else: 
+def run_training_loop(args, net, optimizer, train_loader):
+    net.train()
+    assert(not args.useCipic)
+    for epoch in range(args.epochs):
+        for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             ssl_noise = noise.to(device)
-            ssl_clean = clean.to(device)
             ssl_noisy = noisy.to(device)
+            ssl_clean = clean.to(device)
+
+            if (args.spectrogram == 0):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+            elif(args.spectrogram == 1):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
+            else:
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+
+            denoised_abs = net(noisy_abs)
+            noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
+            clean_abs = slayer.axon.delay(clean_abs, out_delay)
+            clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
+
+            if (args.spectrogram == 0):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+            elif (args.spectrogram == 1):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+            else:
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
+
+            score = si_snr(clean_rec, clean)
+            loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+
+            if torch.isnan(loss).any():
+                loss[torch.isnan(loss)] = 0
+            assert torch.isnan(loss) == False
+
+            optimizer.zero_grad()
+            loss.backward()
+            module.validate_gradients()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
+            optimizer.step()
+
+            if torch.isnan(score).any():
+                score[torch.isnan(score)] = 0
+
+            if args.printOutputWhileTraining:
+                statString = "Train [" + str(epoch) + " | " + str(i) + "]"
+                if (args.useCipic):
+                    statString += " (s,n)=("
+                    statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
+                else:
+                    statString += " -> "
+                statString += str(loss.item()) + " " 
+                statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                print(statString)
+
+def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
+    assert(args.useCipic)
+    net.eval()
+    validationScores = []
+    for i, (clean, noise, idx) in enumerate(validation_loader):
+        speechFilterOrient = random.choice(orientList)
+        noiseFilterOrient = random.choice(orientList)
+        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
+        speechFilter  = speechFilter.to(device)
+        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
+        noiseFilter   = noiseFilter.to(device)
+
+        noise = noise.to(device)
+        clean = clean.to(device)
+        ssl_noise = torch.zeros(args.b, 480000).to(device)
+        ssl_clean = torch.zeros(args.b, 480000).to(device)
+        ssl_snrs  = torch.zeros(args.b, 1).to(device)
+        ssl_targlvls= torch.zeros(args.b, 1).to(device)
+        for batch_idx in range(args.b):
+            ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+            ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+            clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
+            ssl_snrs[batch_idx] = metadata['snr']
+            ssl_targlvls[batch_idx] = metadata['target_level']
+        
+        ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+            ssl_clean, 
+            ssl_noise, 
+            args.b, 
+            ssl_snrs,
+            ssl_targlvls,
+            -35,
+            -15)
+
+        with torch.no_grad():
+            
+            if (args.spectrogram == 0):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+            elif(args.spectrogram == 1):
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
+            else:
+                noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+
+            denoised_abs = net(noisy_abs)
+            noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
+            clean_abs = slayer.axon.delay(clean_abs, out_delay)
+            clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
+            if (args.spectrogram == 0):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+            elif(args.spectrogram == 1):
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, inv_stft_transform)
+            else:
+                clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, 2)
+
+            score = si_snr(clean_rec, clean)
+            if torch.isnan(score).any():
+                score[torch.isnan(score)] = 0
+
+            loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+            if torch.isnan(loss).any():
+                loss[torch.isnan(loss)] = 0
+
+            validationScores.append(torch.mean(score).item())
+            if args.printOutputWhileValidation:
+                statString = "Valid [" + str(i) + "]"
+                if (args.useCipic):
+                    statString += " (s,n)=("
+                    statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
+                else:
+                    statString += " -> "
+                statString += str(loss.item()) + " " 
+                statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                print(statString)
+    averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
+    return averageValidationScore
+
+def run_validation_loop(args, net, validation_loader):
+    assert(not args.useCipic)
+    validationScores = []
+    net.eval()
+    for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
+        ssl_noise = noise.to(device)
+        ssl_clean = clean.to(device)
+        ssl_noisy = noisy.to(device)
 
         with torch.no_grad():
             
@@ -423,9 +534,9 @@ if __name__ == '__main__':
                         default='../../',
                         help='dataset path')
     parser.add_argument('-training_samples',
-    	                type=int,
-    	                default=60000,
-    	                help='Number of samples training should use, supports small dataset subset')
+                        type=int,
+                        default=60000,
+                        help='Number of samples training should use, supports small dataset subset')
     parser.add_argument('-print_output_while_training',
                         dest='printOutputWhileTraining', 
                         action='store_true',
@@ -524,28 +635,6 @@ if __name__ == '__main__':
                                   lr=args.lr,
                                   weight_decay=1e-5)
 
-    train_set = DNSAudio(root=args.path + 'training_set/', maxFiles=args.training_samples)
-    validation_set = DNSAudio(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
-
-    train_loader = DataLoader(train_set,
-                              batch_size=args.b,
-                              shuffle=True,
-                              collate_fn=collate_fn,
-                              num_workers=4,
-                              pin_memory=True)
-    validation_loader = DataLoader(validation_set,
-                                   batch_size=args.b,
-                                   shuffle=True,
-                                   collate_fn=collate_fn,
-                                   num_workers=4,
-                                   pin_memory=True)
-
-    base_stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
-                                            accuracy_unit='dB')
-
-    stats = slayer.utils.LearningStats(accuracy_str='SI-SNR',
-                                       accuracy_unit='dB')
-
     if (not args.useCipic):
         print("NOT using CIPIC subject to preprocess audio")
 
@@ -571,8 +660,50 @@ if __name__ == '__main__':
 
     print("Orient list contains " + str(len(orientList)) + " orientations")
 
-    run_training_loop(args, train_loader, orientList)
+    if (args.useCipic):
+        train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
+        train_loader = DataLoader(train_set,
+                              batch_size=args.b,
+                              shuffle=True,
+                              collate_fn=collate_fn_no_noisy,
+                              num_workers=4,
+                              pin_memory=True)
+    else:
+        train_set = DNSAudio(root=args.path + 'training_set/', maxFiles=args.training_samples)
+    
+        train_loader = DataLoader(train_set,
+                              batch_size=args.b,
+                              shuffle=True,
+                              collate_fn=collate_fn,
+                              num_workers=4,
+                              pin_memory=True)
+
+    if (args.useCipic):
+        delay_weights = run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList)
+    else:
+        delay_weights = run_training_loop(args, net, optimizer, train_loader)
+
     print("Training done, running validation")
 
-    finalValidationScore = run_validation_loop(args, validation_loader, orientList)
+    if (args.useCipic):
+        validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
+        validation_loader = DataLoader(validation_set,
+                                   batch_size=args.b,
+                                   shuffle=True,
+                                   collate_fn=collate_fn_no_noisy,
+                                   num_workers=4,
+                                   pin_memory=True)
+    else:
+        validation_set = DNSAudio(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
+    
+        validation_loader = DataLoader(validation_set,
+                                   batch_size=args.b,
+                                   shuffle=True,
+                                   collate_fn=collate_fn,
+                                   num_workers=4,
+                                   pin_memory=True)
+    if (args.useCipic):
+        finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader, orientList)
+    else:
+        finalValidationScore = run_validation_loop(args, net, validation_loader)
     print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
