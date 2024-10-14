@@ -193,8 +193,21 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
+def plot_weights(data):
+    for name in data.keys():
+        num_epochs = max(data[name].keys()) + 1
+        num_neurons = data[name][0].size()[0]
+        matrix = np.zeros(shape=(num_epochs, num_neurons))
+        for i in range(num_epochs):
+            for j in range(num_neurons):
+                matrix[i,j] = data[name][i][j]
+        plt.imshow(matrix, cmap='hot', interpolation='nearest')
+        plt.savefig(name + ".png")
+        plt.close()
+
 def run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList):
     assert(args.useCipic)
+    delay_weights = dict()
     for epoch in range(args.epochs):
         for i, (clean, noise, idx) in enumerate(train_loader):
             net.train()
@@ -275,6 +288,14 @@ def run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList)
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+        if args.trackDelayWhileTraining:
+            for param_tensor in net.state_dict():
+                if ("delay.delay" in param_tensor):
+                    if not param_tensor in delay_weights.keys():
+                        delay_weights[param_tensor] = dict()
+                    delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
+                    #print(param_tensor + "," + str(epoch) + "," + str(delay_weights[param_tensor][epoch]))
+    return delay_weights
 
 def run_training_loop(args, net, optimizer, train_loader):
     net.train()
@@ -549,6 +570,10 @@ if __name__ == '__main__':
                         dest='printOutputWhileValidation', 
                         action='store_true',
                         help='Switch flag to print score after every mini-batch during validation')
+    parser.add_argument('-trackDelayWhileTraining',
+                        dest='trackDelayWhileTraining', 
+                        action='store_true',
+                        help='Switch flag to track updates to delay weights while training')
     # CIPIC Filter Parameters
     # ID:21 ==> Mannequin with large pinna
     # ID 165 ==> Mannequin with small pinna
