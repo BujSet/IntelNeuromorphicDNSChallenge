@@ -205,7 +205,7 @@ def plot_weights(data):
         plt.savefig(name + ".png")
         plt.close()
 
-def run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList):
+def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList):
     assert(args.useCipic)
     delay_weights = dict()
     for epoch in range(args.epochs):
@@ -288,6 +288,7 @@ def run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList)
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+        scheduler.step()
         if args.trackDelayWhileTraining:
             for param_tensor in net.state_dict():
                 if ("delay.delay" in param_tensor):
@@ -297,7 +298,7 @@ def run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList)
                     #print(param_tensor + "," + str(epoch) + "," + str(delay_weights[param_tensor][epoch]))
     return delay_weights
 
-def run_training_loop(args, net, optimizer, train_loader):
+def run_training_loop(args, net, optimizer, scheduler, train_loader):
     net.train()
     assert(not args.useCipic)
     for epoch in range(args.epochs):
@@ -354,6 +355,7 @@ def run_training_loop(args, net, optimizer, train_loader):
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+        scheduler.step()
 
 def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
     assert(args.useCipic)
@@ -659,6 +661,10 @@ if __name__ == '__main__':
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
                                   weight_decay=1e-5)
+    # lr = 0.001     if epoch < 20
+    # lr = 0.0001    if 20 <= epoch < 80
+    # lr = 0.00001   if epoch >= 80
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,80], gamma=0.1)
 
     if (not args.useCipic):
         print("NOT using CIPIC subject to preprocess audio")
@@ -704,9 +710,9 @@ if __name__ == '__main__':
                               pin_memory=True)
 
     if (args.useCipic):
-        delay_weights = run_training_loop_with_cipic(args, net, optimizer, train_loader, orientList)
+        delay_weights = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList)
     else:
-        delay_weights = run_training_loop(args, net, optimizer, train_loader)
+        delay_weights = run_training_loop(args, net, optimizer, scheduler, train_loader)
 
     print("Training done, running validation")
 
