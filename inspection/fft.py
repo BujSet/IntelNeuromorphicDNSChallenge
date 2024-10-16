@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import sys
 import numpy as np
 
-def plot_waveform(waveform, sr, title="Waveform", ax=None):
+def plot_waveform(waveform, sr, title="Waveform", ax=None, ylabel=None):
     waveform = waveform.numpy()
 
     num_channels, num_frames = waveform.shape
@@ -16,6 +16,29 @@ def plot_waveform(waveform, sr, title="Waveform", ax=None):
     if ax is None:
         _, ax = plt.subplots(num_channels, 1)
     ax.plot(time_axis, waveform[0], linewidth=1)
+    ax.grid(True)
+    ax.set_xlim([0, time_axis[-1]])
+    ax.set_title(title)
+    if (ylabel != None):
+        ax.set_ylabel(ylabel)
+    ax.set_xlabel("Time (sec)")
+
+def plot_pitch(waveform, pitch, sr, title="Waveform", ax=None):
+    waveform = waveform.numpy()
+
+    num_channels, num_frames = waveform.shape
+    time_axis = torch.arange(0, num_frames) / sr
+
+    if ax is None:
+        _, ax = plt.subplots(num_channels, 1)
+    ax.plot(time_axis, waveform[0], linewidth=1)
+
+    axis2 = ax.twinx()
+    pitch = pitch.numpy()
+    num_vals, num_time_steps = pitch.shape
+    time_axis = torch.arange(0, num_time_steps) / sr
+    axis2.plot(time_axis, pitch[0], linewidth=2, label="Pitch", color="green")
+    axis2.legend(loc=0)
     ax.grid(True)
     ax.set_xlim([0, time_axis[-1]])
     ax.set_title(title)
@@ -61,36 +84,66 @@ spectrogram = T.Spectrogram(
         n_fft=512,
         power=None)
 
+mel_spectrogram = T.MelSpectrogram(
+    sample_rate=44100,
+    n_fft=512,
+    win_length=None,
+    hop_length=256,
+    center=True,
+    pad_mode="reflect",
+    power=2.0,
+    norm="slaney",
+    n_mels=64,
+    mel_scale="htk",
+)
+
 # Perform transform
 spec_noisy = spectrogram(noisy).squeeze()
-print(spec_noisy.shape)
 spec_clean = spectrogram(clean)
 spec_noise = spectrogram(noise)
+
+mel_spec_noisy = mel_spectrogram(noisy).squeeze()
+mel_spec_clean = mel_spectrogram(clean).squeeze()
+mel_spec_noise = mel_spectrogram(noise).squeeze()
+
+pitch_noisy = F.detect_pitch_frequency(noisy, 44100)
+pitch_clean = F.detect_pitch_frequency(clean, 44100)
+pitch_noise = F.detect_pitch_frequency(noise, 44100)
 
 freq_map = librosa.fft_frequencies(sr=44100, n_fft=512)
 yticks = [i for i in range(0, len(freq_map), int(len(freq_map)/5))]
 yticklabels = [round(freq_map[i]/1000.0, 2) for i in yticks]
 
-fig, axs = plt.subplots(2, 1)
-plot_waveform(noisy, nysr, title="Original waveform", ax=axs[0])
-plot_spectrogram(spec_noisy, title="Power Spectrogram", ax=axs[1], yticks=yticks, yticklabels=yticklabels)
+mel_map = librosa.mel_frequencies(n_mels=64, htk=True)
+mel_yticks = [i for i in range(0, len(mel_map), int(len(mel_map)/5))]
+mel_yticklabels = [round(mel_map[i]/1000.0, 2) for i in mel_yticks]
+
+fig, axs = plt.subplots(2, 2, figsize=(30,30))
+plot_waveform(noisy, nysr, title="Original waveform", ax=axs[0, 0])
+plot_waveform(pitch_noisy, nysr, title="Pitch", ax=axs[1, 0], ylabel="Frequency (Hz)")
+plot_spectrogram(spec_noisy, title="Power Spectrogram", ax=axs[0, 1], yticks=yticks, yticklabels=yticklabels)
+plot_spectrogram(mel_spec_noisy, title="Power Mel Spectrogram", ax=axs[1, 1], yticks=mel_yticks, yticklabels=mel_yticklabels)
 fig.tight_layout()
 plt.savefig("spec_noisy.png")
 plt.close()
-plot_phase(spec_noisy, title="Phase Spectrogram", yticks=yticks, yticklabels=yticklabels, filename="spec_noisy_phase.png")
+#plot_phase(spec_noisy, title="Phase Spectrogram", yticks=yticks, yticklabels=yticklabels, filename="spec_noisy_phase.png")
 
-fig, axs = plt.subplots(2, 1)
-plot_waveform(clean, clsr, title="Original waveform", ax=axs[0])
-plot_spectrogram(spec_clean[0], title="spectrogram", ax=axs[1], yticks=yticks, yticklabels=yticklabels)
+fig, axs = plt.subplots(2, 2, figsize=(30,30))
+plot_waveform(clean, clsr, title="Original waveform", ax=axs[0, 0])
+plot_waveform(pitch_clean, clsr, title="Original waveform", ax=axs[1, 0], ylabel="Frequency (Hz)")
+plot_spectrogram(spec_clean[0], title="spectrogram", ax=axs[0,1], yticks=yticks, yticklabels=yticklabels)
+plot_spectrogram(mel_spec_clean, title="Power Mel Spectrogram", ax=axs[1, 1], yticks=mel_yticks, yticklabels=mel_yticklabels)
 fig.tight_layout()
 plt.savefig("spec_clean.png")
 plt.close()
-plot_phase(spec_clean, title="Phase Spectrogram", yticks=yticks, yticklabels=yticklabels, filename="spec_clean_phase.png")
+#plot_phase(spec_clean, title="Phase Spectrogram", yticks=yticks, yticklabels=yticklabels, filename="spec_clean_phase.png")
 
-fig, axs = plt.subplots(2, 1)
-plot_waveform(noise, nesr, title="Original waveform", ax=axs[0])
-plot_spectrogram(spec_noise[0], title="spectrogram", ax=axs[1], yticks=yticks, yticklabels=yticklabels)
+fig, axs = plt.subplots(2, 2, figsize=(30,30))
+plot_waveform(noise, nesr, title="Original waveform", ax=axs[0, 0])
+plot_waveform(pitch_noise, nesr, title="Original waveform", ax=axs[1, 0], ylabel="Frequency (Hz)")
+plot_spectrogram(spec_noise[0], title="spectrogram", ax=axs[0,1], yticks=yticks, yticklabels=yticklabels)
+plot_spectrogram(mel_spec_noise, title="Power Mel Spectrogram", ax=axs[1,1], yticks=mel_yticks, yticklabels=mel_yticklabels)
 fig.tight_layout()
 plt.savefig("spec_noise.png")
 plt.close()
-plot_phase(spec_noise, title="Phase Spectrogram", yticks=yticks, yticklabels=yticklabels, filename="spec_noise_phase.png")
+#plot_phase(spec_noise, title="Phase Spectrogram", yticks=yticks, yticklabels=yticklabels, filename="spec_noise_phase.png")
