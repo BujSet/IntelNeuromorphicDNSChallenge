@@ -205,10 +205,71 @@ def plot_weights(data):
         plt.savefig(name + ".png")
         plt.close()
 
+def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList):
+
+    for i, (clean, noise, idx) in enumerate(train_loader):
+        net.train()
+        speechFilterOrient, noiseFilterOrient = random.choice(orientList)
+        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
+        speechFilter  = speechFilter.to(device)
+        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
+        noiseFilter   = noiseFilter.to(device)
+        noise = noise.to(device)
+        clean = clean.to(device)
+        ssl_noise = torch.zeros(args.b, 480000).to(device)
+        ssl_clean = torch.zeros(args.b, 480000).to(device)
+        ssl_snrs  = torch.zeros(args.b, 1).to(device)
+        ssl_targlvls= torch.zeros(args.b, 1).to(device)
+        for batch_idx in range(args.b):
+            ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
+            ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+            clean_file, noise_file, metadata = train_set._get_filenames(idx[batch_idx])
+            ssl_snrs[batch_idx] = metadata['snr']
+            ssl_targlvls[batch_idx] = metadata['target_level']
+
+        ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+            ssl_clean, 
+            ssl_noise, 
+            args.b, 
+            ssl_snrs,
+            ssl_targlvls,
+            -35,
+            -15)
+
+        noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+        clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+
+        denoised_abs = net(noisy_abs)
+        noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
+        clean_abs = slayer.axon.delay(clean_abs, out_delay)
+        clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
+
+        clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+
+        score = si_snr(clean_rec, clean)
+        loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+
+        if torch.isnan(loss).any():
+            loss[torch.isnan(loss)] = 0
+        assert torch.isnan(loss) == False
+
+        optimizer.zero_grad()
+        loss.backward()
+        module.validate_gradients()
+        torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
+        optimizer.step()
+        if torch.isnan(score).any():
+            score[torch.isnan(score)] = 0
+    scheduler.step()
+
 def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList):
     assert(args.useCipic)
     delay_weights = dict()
+    averageTrainingLoss = 0
+    averageTrainingScore = 0
     for epoch in range(args.epochs):
+        trainingLosses = []
+        trainingScores = []
         for i, (clean, noise, idx) in enumerate(train_loader):
             net.train()
             speechFilterOrient, noiseFilterOrient = random.choice(orientList)
@@ -277,6 +338,8 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
 
+            trainingLosses.append(torch.mean(loss).item())
+            trainingScores.append(torch.mean(score).item())
             if args.printOutputWhileTraining:
                 statString = "Train [" + str(epoch) + " | " + str(i) + "]"
                 if (args.useCipic):
@@ -295,12 +358,51 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
                         delay_weights[param_tensor] = dict()
                     delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
                     #print(param_tensor + "," + str(epoch) + "," + str(delay_weights[param_tensor][epoch]))
-    return delay_weights
+        # Updates only the last training epoch's loss is kept
+        averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
+        averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
+    return delay_weights, averageTrainingLoss, averageTrainingScore
+
+def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
+    net.train()
+    # Run single epoch just to set the network dimensions (Weird that this is necessary)?
+    for i, (noisy, clean, noise, idx) in enumerate(train_loader):
+        ssl_noise = noise.to(device)
+        ssl_noisy = noisy.to(device)
+        ssl_clean = clean.to(device)
+
+        noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, None)
+        clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+
+        denoised_abs = net(noisy_abs)
+        noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
+        clean_abs = slayer.axon.delay(clean_abs, out_delay)
+        clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
+
+        clean_rec = stft_mixer(denoised_abs, noisy_arg, args.n_fft, None)
+
+        score = si_snr(clean_rec, clean)
+        loss = lam * F.mse_loss(denoised_abs, clean_abs) + (100 - torch.mean(score))
+
+        if torch.isnan(loss).any():
+            loss[torch.isnan(loss)] = 0
+        assert torch.isnan(loss) == False
+
+        optimizer.zero_grad()
+        loss.backward()
+        module.validate_gradients()
+        torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
+        optimizer.step()
+    scheduler.step()
 
 def run_training_loop(args, net, optimizer, scheduler, train_loader):
     net.train()
     assert(not args.useCipic)
+    averageTrainingLoss = 0
+    averageTrainingScore = 0
     for epoch in range(args.epochs):
+        trainingLosses = []
+        trainingScores = []
         for i, (noisy, clean, noise, idx) in enumerate(train_loader):
             ssl_noise = noise.to(device)
             ssl_noisy = noisy.to(device)
@@ -344,6 +446,8 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
 
+            trainingLosses.append(torch.mean(loss).item())
+            trainingScores.append(torch.mean(score).item())
             if args.printOutputWhileTraining:
                 statString = "Train [" + str(epoch) + " | " + str(i) + "]"
                 if (args.useCipic):
@@ -355,6 +459,16 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
         scheduler.step()
+        if args.trackDelayWhileTraining:
+            for param_tensor in net.state_dict():
+                if ("delay.delay" in param_tensor):
+                    if not param_tensor in delay_weights.keys():
+                        delay_weights[param_tensor] = dict()
+                    delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
+        # Updates only the last training epoch's loss is kept
+        averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
+        averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
+    return delay_weights, averageTrainingLoss, averageTrainingScore
 
 def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
     assert(args.useCipic)
@@ -545,7 +659,7 @@ if __name__ == '__main__':
     parser.add_argument('-epochs',
                         type=int,
                         default=50,
-                        help='number of epochs to run')
+                        help='Number of training epochs to run')
     parser.add_argument('-spectrogram',
                         type=int,
                         default=0,
@@ -574,6 +688,14 @@ if __name__ == '__main__':
                         dest='trackDelayWhileTraining', 
                         action='store_true',
                         help='Switch flag to track updates to delay weights while training')
+    parser.add_argument('-useCheckpoint',
+                        type=str,
+                        default='',
+                        help='Checkpoint to continue training from')
+    parser.add_argument('-saveCheckpoint',
+                        dest='saveCheckpoint', 
+                        action='store_true',
+                        help='Switch flag to enable saving a chekpoint after training')
 
     # CIPIC Filter Parameters
     # ID:21 ==> Mannequin with large pinna
@@ -668,10 +790,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
                                   weight_decay=1e-5)
-    # lr = 0.001     if epoch < 20
-    # lr = 0.0001    if 20 <= epoch < 80
-    # lr = 0.00001   if epoch >= 80
-    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,80], gamma=0.1)
+    
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
     if (not args.useCipic):
@@ -730,12 +849,39 @@ if __name__ == '__main__':
                               num_workers=4,
                               pin_memory=True)
 
-    if (args.useCipic):
-        delay_weights = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList)
-    else:
-        delay_weights = run_training_loop(args, net, optimizer, scheduler, train_loader)
+    startingEpoch = 0
+    startingLoss = 0
+    startingScore = 0
+    if args.useCheckpoint != "":
+        if args.useCipic:
+            run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList)
+        else:
+            run_warm_up_training(args, net, optimizer, scheduler, train_loader)
+        checkpoint = torch.load(args.useCheckpoint, weights_only=True)
+        module.load_state_dict(checkpoint['module_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        startingEpoch = checkpoint['epoch']
+        startingLoss = checkpoint['loss']
+        startingScore = checkpoint['score']
+        print("Resuming from checkpoint [epochs_completed:" + str(startingEpoch) + ", loss=" + str(startingLoss) + ", si-snr:" + str(startingScore) + "]")
 
-    print("Training done, running validation")
+    if (args.useCipic):
+        delay_weights, lastLoss, lastScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList)
+    else:
+        delay_weights, lastLoss, lastScore = run_training_loop(args, net, optimizer, scheduler, train_loader)
+
+    if (args.saveCheckpoint):
+        torch.save({
+                'epoch': startingEpoch + args.epochs,
+                'module_state_dict': module.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'loss': lastLoss,
+                'score': lastScore,
+                }, trained_folder + '/network.pt')
+
+    print("Completed training loop [epochs_completed:" + str(args.epochs) + ", loss=" + str(lastLoss) + ", si-snr:" + str(lastScore) + "]")
 
     if (args.useCipic):
         validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
