@@ -664,7 +664,8 @@ if __name__ == '__main__':
     # lr = 0.001     if epoch < 20
     # lr = 0.0001    if 20 <= epoch < 80
     # lr = 0.00001   if epoch >= 80
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,80], gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,80], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
     if (not args.useCipic):
         print("NOT using CIPIC subject to preprocess audio")
