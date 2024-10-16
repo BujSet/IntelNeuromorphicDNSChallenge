@@ -211,8 +211,7 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
     for epoch in range(args.epochs):
         for i, (clean, noise, idx) in enumerate(train_loader):
             net.train()
-            speechFilterOrient = random.choice(orientList)
-            noiseFilterOrient = random.choice(orientList)
+            speechFilterOrient, noiseFilterOrient = random.choice(orientList)
             speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
             speechFilter  = speechFilter.to(device)
             noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
@@ -362,8 +361,7 @@ def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
     net.eval()
     validationScores = []
     for i, (clean, noise, idx) in enumerate(validation_loader):
-        speechFilterOrient = random.choice(orientList)
-        noiseFilterOrient = random.choice(orientList)
+        speechFilterOrient, noiseFilterOrient = random.choice(orientList)
         speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
         speechFilter  = speechFilter.to(device)
         noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
@@ -576,6 +574,7 @@ if __name__ == '__main__':
                         dest='trackDelayWhileTraining', 
                         action='store_true',
                         help='Switch flag to track updates to delay weights while training')
+
     # CIPIC Filter Parameters
     # ID:21 ==> Mannequin with large pinna
     # ID 165 ==> Mannequin with small pinna
@@ -584,6 +583,14 @@ if __name__ == '__main__':
                         dest='useCipic', 
                         action='store_true',
                         help='Switch flag to toggle using the CIPIC pre-filter')
+    parser.add_argument('-fixedOrients',
+                        dest='fixedOrients', 
+                        action='store_true',
+                        help='Switch flag to manually configure which orients will be selected')
+    parser.add_argument('-numFixedOrients',
+                        type=int,
+                        default=1,
+                        help='Number of manually set orientation pairs to use if fixedOrients switch is set')
     parser.add_argument('-cipicSubject',
                         type=int,
                         default=12,
@@ -674,23 +681,36 @@ if __name__ == '__main__':
     if (args.useCipic):
         CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
         print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-        orientSet = set()
-        orientSet.add(316) # center of front upper  right hemisphere
-        orientSet.add(300) # center of front bottom right hemisphere
-        orientSet.add(332) # center of back  upper  right hemisphere
-        orientSet.add(348) # center of back  bottom right hemisphere
-        orientSet.add(916) # center of front upper  left  hemisphere
-        orientSet.add(900) # center of front bottom left  hemisphere
-        orientSet.add(932) # center of back  upper  left  hemisphere
-        orientSet.add(948) # center of back  bottom left  hemisphere
-        allPossibleOrients = set(range(0, 1250)).difference(orientSet)
-        for _ in range(8, args.numOrients):
-            randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
-            orientSet.add(randOrient)
-            allPossibleOrients.remove(randOrient)
-        orientList = list(orientSet)
+        if not args.fixedOrients:
+            orientSet = set()
+            orientSet.add(316) # center of front upper  right hemisphere
+            orientSet.add(300) # center of front bottom right hemisphere
+            orientSet.add(332) # center of back  upper  right hemisphere
+            orientSet.add(348) # center of back  bottom right hemisphere
+            orientSet.add(916) # center of front upper  left  hemisphere
+            orientSet.add(900) # center of front bottom left  hemisphere
+            orientSet.add(932) # center of back  upper  left  hemisphere
+            orientSet.add(948) # center of back  bottom left  hemisphere
+            allPossibleOrients = set(range(0, 1250)).difference(orientSet)
+            for _ in range(8, args.numOrients):
+                randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
+                orientSet.add(randOrient)
+                allPossibleOrients.remove(randOrient)
+            selectedOrients = list(orientSet)
+            orientPairSet = set()
+            for o1 in selectedOrients:
+                for o2 in selectedOrients:
+                    orientPairSet.add( (o1, o2) )
+            orientList = list(orientPairSet)
+        else:
+            assert(args.fixedOrients and args.numFixedOrients >= 1)
+            if args.numFixedOrients >= 1:
+                orientList.append( (608, 640) ) # speech in front, noise in back, medial plane
+            if args.numFixedOrients >= 2:
+                orientList.append( (640, 608) ) # speech in back, noise in front, medial plane
 
-    print("Orient list contains " + str(len(orientList)) + " orientations")
+    print("Orient list contains " + str(len(orientList)) + " orientation pairs")
+    print(orientList)
 
     if (args.useCipic):
         train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
