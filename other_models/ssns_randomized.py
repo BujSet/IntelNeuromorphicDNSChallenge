@@ -201,8 +201,12 @@ def plot_weights(data):
         for i in range(num_epochs):
             for j in range(num_neurons):
                 matrix[i,j] = data[name][i][j]
-        plt.imshow(matrix, cmap='hot', interpolation='nearest')
-        plt.savefig(name + ".png")
+
+        plt.figure(figsize=(20,20))
+        plt.imshow(np.transpose(matrix), cmap='hot', interpolation='nearest')
+        plt.xlabel("Training Epochs")
+        plt.ylabel("Axons")
+        plt.savefig(name + ".png", bbox_inches="tight")
         plt.close()
 
 def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList):
@@ -829,7 +833,6 @@ if __name__ == '__main__':
                 orientList.append( (640, 608) ) # speech in back, noise in front, medial plane
 
     print("Orient list contains " + str(len(orientList)) + " orientation pairs")
-    print(orientList)
 
     if (args.useCipic):
         train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
@@ -870,6 +873,9 @@ if __name__ == '__main__':
         delay_weights, lastLoss, lastScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList)
     else:
         delay_weights, lastLoss, lastScore = run_training_loop(args, net, optimizer, scheduler, train_loader)
+    
+    if args.trackDelayWhileTraining:
+    	plot_weights(delay_weights)
 
     if (args.saveCheckpoint):
         torch.save({
