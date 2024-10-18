@@ -115,7 +115,7 @@ class CIPIC_DB():
         self.cwd = os.path.join(self.cwd, "cipic")
         self.subjects = dict()
         self.anthroData = scipy.io.loadmat('hrtfs/cipic/anthro.mat')
-        print(self.anthroData.keys())
+        # print(self.anthroData.keys())
 
         # TODO, really we should should just read the directory and see what
         # sofa files have been downloaded, but for now we'll just hardcode 

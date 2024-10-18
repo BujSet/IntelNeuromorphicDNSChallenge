@@ -18,6 +18,7 @@ from lava.lib.dl import slayer
 import sys
 sys.path.append('./')
 from audio_dataloader import DNSAudio
+from audio_dataloader import DNSAudioNoNoisy
 from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
 import torchaudio
@@ -37,6 +38,16 @@ def collate_fn(batch):
 
     return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 
+def collate_fn_no_noisy(batch):
+    clean, noise = [], []
+
+    indices = torch.IntTensor([s[3] for s in batch])
+
+    for sample in batch:
+        clean += [torch.FloatTensor(sample[0])]
+        noise += [torch.FloatTensor(sample[1])]
+
+    return torch.stack(clean), torch.stack(noise), indices
 
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
@@ -61,19 +72,24 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
 
     return method(spec)
 
+# Ugh, need this solely to do the clean + noise synthesis on the fly, should 
+# look into making it a standalone function...
 class Network(torch.nn.Module):
     def __init__(self, 
             threshold=0.1, 
             tau_grad=0.1, 
             scale_grad=0.8, 
             max_delay=64, 
-            out_delay=0):
+            out_delay=0,
+            hiddenLayerWidths=512,
+            n_fft=512):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
         self.stft_max = 140
         self.out_delay = out_delay
         self.EPS = 2.220446049250313e-16
+        self.hiddenLayerWidths = hiddenLayerWidths
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -91,9 +107,9 @@ class Network(torch.nn.Module):
 
         self.blocks = torch.nn.ModuleList([
             slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, 257, 512, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Dense(sdnn_params, 512, 512, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, 512, 257, weight_norm=False),
+            slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, n_fft//2 + 1, weight_norm=False),
         ])
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
@@ -168,8 +184,7 @@ class Network(torch.nn.Module):
             x = block(x)
 
         mask = torch.relu(x + 1)
-        return slayer.axon.delay(x, self.out_delay) * mask
-
+        return slayer.axon.delay(noisy, self.out_delay) * mask
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -225,6 +240,18 @@ if __name__ == '__main__':
                         type=str,
                         default='./',
                         help='dataset path')
+    parser.add_argument('-validation_samples',
+                        type=int,
+                        default=60000,
+                        help='Number of samples validation should use, supports small dataset subset')
+    parser.add_argument('-print_output_while_validation',
+                        dest='printOutputWhileValidation', 
+                        action='store_true',
+                        help='Switch flag to print score after every mini-batch during validation')
+    parser.add_argument('-hiddenLayerWidths',
+                        type=int,
+                        default=512,
+                        help='# of nuerons in hidden layers')
     # CIPIC Filter Parameters
 
     # ID:21 ==> Mannequin with large pinna
@@ -254,34 +281,27 @@ if __name__ == '__main__':
                         default=608,
                         help='Index into CIPIC source directions to orient the noise to ')
 
+    parser.add_argument('-print_validation_results_header',
+                        dest='printValidationResultsHeader', 
+                        action='store_true',
+                        help='Switch flag to print validation results header (useful for CHTC)')
+
     args = parser.parse_args()
 
-    identifier = args.exp
     if args.seed is not None:
         torch.manual_seed(args.seed)
-        identifier += '_{}{}'.format(args.optim, args.seed)
 
-    trained_folder = 'Trained' + identifier
-    logs_folder = 'Logs' + identifier
-
-    os.makedirs(trained_folder, exist_ok=True)
-    os.makedirs(logs_folder, exist_ok=True)
-
-    with open(trained_folder + '/args.txt', 'wt') as f:
-        for arg, value in sorted(vars(args).items()):
-            f.write('{} : {}\n'.format(arg, value))
-
-    lam = args.lam
     device = torch.device('cuda:0')
-
     out_delay = args.out_delay
-    net = Network(
+    net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
                 args.scale_grad,
                 args.dmax,
-                args.out_delay)
-    net = torch.nn.DataParallel(net.to(device), device_ids=[0])
+                args.out_delay,
+                args.hiddenLayerWidths,
+                args.n_fft).to(device),
+                    device_ids=[0])
     module = net.module
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
@@ -289,34 +309,21 @@ if __name__ == '__main__':
     # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
     downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
 
-    # Define optimizer module.
-    optimizer = torch.optim.RAdam(net.parameters(),
-                                  lr=args.lr,
-                                  weight_decay=1e-5)
-
-    validation_set = DNSAudio(root=args.path + 'validation_set/')
-
+    validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     validation_loader = DataLoader(validation_set,
-                                   batch_size=args.b,
-                                   shuffle=True,
-                                   collate_fn=collate_fn,
-                                   num_workers=4,
-                                   pin_memory=True)
-
+                               batch_size=args.b,
+                               shuffle=True,
+                               collate_fn=collate_fn_no_noisy,
+                               num_workers=4,
+                               pin_memory=True)
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
     speechFilter = CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.cipicChannel)
     speechFilter  = torch.from_numpy(speechFilter).float().to(device)
     noiseFilter = CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.cipicChannel)
     noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
-    print("Using Subject " + str(args.cipicSubject) + " with channel " + str(args.cipicChannel) + " for spatial sound separation...")
-    print("\tPlacing speech at orient " + str(args.speechFilterOrient))
-    print("\tPlacing noise at  orient " + str(args.noiseFilterOrient))
-    
-    running_score_total = 0.0
-    running_score_samples = 0
-    running_score_avg = 0.0
-    for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
-        net.eval()
+ 
+    validationScores = []
+    for i, (clean, noise, idx) in enumerate(validation_loader):
         with torch.no_grad():
             noise = noise.to(device)
             clean = clean.to(device)
@@ -329,7 +336,7 @@ if __name__ == '__main__':
             for batch_idx in range(args.b):
                 ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
                 ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
-                noisy_file, clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
+                clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                 ssl_snrs[batch_idx] = metadata['snr']
                 ssl_targlvls[batch_idx] = metadata['target_level']
         
@@ -345,9 +352,17 @@ if __name__ == '__main__':
             score = si_snr(ssl_noisy, ssl_clean)
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
+            validationScores.append(torch.mean(score).item())
+            if args.printOutputWhileValidation:
+                statString = "Valid [" + str(i) + "] -> "
+                statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                print(statString)
 
-            running_score_total += torch.sum(score).item()
-            running_score_samples += noisy.shape[0]
-    running_score_avg = running_score_total / running_score_samples
-    print("Valid SI-SNR: " + str(round(running_score_avg,5)) + " dB")
+    averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
+    if args.printValidationResultsHeader:
+        print("Subject, Channel, Speech Orient, Noise Orient, Final Validation Score SI-SNR (dB)")
+    resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
+    resultString += str(args.speechFilterOrient) + "," + str(args.noiseFilterOrient) + "," 
+    resultString += str(averageValidationScore)
+    print(resultString)
 
