@@ -117,10 +117,15 @@ class CIPIC_DB():
         self.anthroData = scipy.io.loadmat('hrtfs/cipic/anthro.mat')
         # print(self.anthroData.keys())
 
-        # TODO, really we should should just read the directory and see what
-        # sofa files have been downloaded, but for now we'll just hardcode 
-        # these
-        subjectIDs = ["003", "008", "009", "010", "012", "017", "018", "021", "148", "165"]
+        subjectIDs = ["003","008","009","010","011",
+                      "012","015","017","018","019",
+                      "020","021","027","028","033",
+                      "040","044","048","050","051",
+                      "058","059","060","061","065",
+                      "119","124","126","127","131",
+                      "133","134","135","137","147",
+                      "148","152","153","154","155",
+                      "156","158","162","163","165"]
         for subID in subjectIDs:
             filePath = os.path.join(self.cwd, "subject_" + subID + ".sofa")
             self.subjects[int(subID)] = CIPIC_Subject(
