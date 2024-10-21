@@ -402,6 +402,7 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
 def run_training_loop(args, net, optimizer, scheduler, train_loader):
     net.train()
     assert(not args.useCipic)
+    delay_weights = dict()
     averageTrainingLoss = 0
     averageTrainingScore = 0
     for epoch in range(args.epochs):
