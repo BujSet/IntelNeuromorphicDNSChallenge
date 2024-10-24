@@ -3,6 +3,10 @@
 # See: https://spdx.org/licenses/
 
 import os, sys, math
+sys.path.append('./')
+from audio_dataloader import DNSAudio
+from audio_dataloader import DNSAudioNoNoisy
+from hrtfs.cipic_db import CipicDatabase 
 import h5py
 import argparse
 import numpy as np
@@ -15,11 +19,6 @@ from torch.utils.tensorboard import SummaryWriter
 import soundfile as sf
 
 from lava.lib.dl import slayer
-import sys
-sys.path.append('./')
-from audio_dataloader import DNSAudio
-from audio_dataloader import DNSAudioNoNoisy
-from hrtfs.cipic_db import CipicDatabase 
 from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer

@@ -110,7 +110,7 @@ mel_spectrogram = T.MelSpectrogram(
     mel_scale="htk",
 ).to(device)
 
-melscale = transforms.MelScale(sample_rate=16000, 
+melscale = T.MelScale(sample_rate=16000, 
         n_stft=257).to(device)
 
 
@@ -154,9 +154,9 @@ noisy = ssl_noisy.cpu()
 clean = ssl_clean.cpu()
 noise = ssl_noise.cpu()
 
-fig  = plt.figure()
-gs = fig.add_gridspec(5,2)
-#fig, axs = plt.subplots(3, 1)
+#fig  = plt.figure()
+#gs = fig.add_gridspec(5,2)
+fig, axs = plt.subplots(3, 1)
 plot_waveform(noisy, nysr, title="Noisy", ax=axs[0])
 plot_spectrogram(spec_noisy[0], title="Spectrogram", ax=axs[1])
 plot_spectrogram(mel_spec_noisy[0], title="Mel Spectrogram", ax=axs[2], ylabel='mel freq')
