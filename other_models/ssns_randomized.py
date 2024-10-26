@@ -263,7 +263,7 @@ def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, or
         optimizer.step()
         return
 
-def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList):
+def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList, startingEpoch=0):
     assert(args.useCipic)
     delay_weights = dict()
     averageTrainingLoss = 0
@@ -342,7 +342,7 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
             trainingLosses.append(torch.mean(loss).item())
             trainingScores.append(torch.mean(score).item())
             if args.printOutputWhileTraining:
-                statString = "Train [" + str(epoch) + " | " + str(i) + "]"
+                statString = "Train [" + str(epoch + startingEpoch + 1) + " | " + str(i) + "]"
                 if (args.useCipic):
                     statString += " (s,n)=("
                     statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
@@ -396,7 +396,7 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
         optimizer.step()
         return
 
-def run_training_loop(args, net, optimizer, scheduler, train_loader):
+def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     net.train()
     assert(not args.useCipic)
     delay_weights = dict()
@@ -451,7 +451,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
             trainingLosses.append(torch.mean(loss).item())
             trainingScores.append(torch.mean(score).item())
             if args.printOutputWhileTraining:
-                statString = "Train [" + str(epoch) + " | " + str(i) + "]"
+                statString = "Train [" + str(epoch+startingEpoch+1) + " | " + str(i) + "]"
                 if (args.useCipic):
                     statString += " (s,n)=("
                     statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
@@ -475,6 +475,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
 def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
     assert(args.useCipic)
     net.eval()
+    validationLosses = []
     validationScores = []
     for i, (clean, noise, idx) in enumerate(validation_loader):
         speechFilterOrient, noiseFilterOrient = random.choice(orientList)
@@ -537,6 +538,7 @@ def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
                 loss[torch.isnan(loss)] = 0
 
             validationScores.append(torch.mean(score).item())
+            validationLosses.append(torch.mean(loss).item())
             if args.printOutputWhileValidation:
                 statString = "Valid [" + str(i) + "]"
                 if (args.useCipic):
@@ -547,12 +549,14 @@ def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+    averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
     averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
-    return averageValidationScore
+    return averageValidationLoss, averageValidationScore
 
 def run_validation_loop(args, net, validation_loader):
     assert(not args.useCipic)
     validationScores = []
+    validationLosses = []
     net.eval()
     for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
         ssl_noise = noise.to(device)
@@ -591,6 +595,7 @@ def run_validation_loop(args, net, validation_loader):
                 loss[torch.isnan(loss)] = 0
 
             validationScores.append(torch.mean(score).item())
+            validationLosses.append(torch.mean(loss).item())
             if args.printOutputWhileValidation:
                 statString = "Valid [" + str(i) + "]"
                 if (args.useCipic):
@@ -601,8 +606,9 @@ def run_validation_loop(args, net, validation_loader):
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+    averageValidationLosse = sum(validationLosses) / (1.0 * len(validationLosses))
     averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
-    return averageValidationScore
+    return averageValidationLosses, averageValidationScore
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -825,10 +831,16 @@ if __name__ == '__main__':
             orientList = list(orientPairSet)
         else:
             assert(args.fixedOrients and args.numFixedOrients >= 1)
-            if args.numFixedOrients >= 1:
+            if args.numFixedOrients == 1:
                 orientList.append( (608, 640) ) # speech in front, noise in back, medial plane
-            if args.numFixedOrients >= 2:
+            if args.numFixedOrients == 2:
+                orientList.append( (608, 640) ) # speech in front, noise in back, medial plane
                 orientList.append( (640, 608) ) # speech in back, noise in front, medial plane
+            if args.numFixedOrients == 4:
+                orientList.append( (316, 948) )
+                orientList.append( (300, 932) )
+                orientList.append( (916, 348) )
+                orientList.append( (900, 332) )
 
     print("Orient list contains " + str(len(orientList)) + " orientation pairs")
 
@@ -851,8 +863,7 @@ if __name__ == '__main__':
                               pin_memory=True)
 
     startingEpoch = 0
-    startingLoss = 0
-    startingScore = 0
+    trackingInfo = dict()
     if args.useCheckpoint != "":
         if args.useCipic:
             run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList)
@@ -862,30 +873,42 @@ if __name__ == '__main__':
         module.load_state_dict(checkpoint['module_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        startingEpoch = checkpoint['epoch']
-        startingLoss = checkpoint['loss']
-        startingScore = checkpoint['score']
-        print("Resuming from checkpoint [epochs_completed:" + str(startingEpoch) + ", loss=" + str(startingLoss) + ", si-snr:" + str(startingScore) + "]")
+        startingEpoch = checkpoint['epochs_completed']
+        trackingInfo = checkpoint['tracking_info']
+        print("Current Tracking info:")
+        print("Epoch | Training Loss | Training Score (dB) | Validation Loss | Validation Score (dB)")
+        for i in range(0, startingEpoch+1):
+            if i in trackingInfo.keys():
+                tloss = trackingInfo[i]['training_loss']
+                tScore = trackingInfo[i]['training_score']
+                vLoss = trackingInfo[i]['validation_loss']
+                vScore = trackingInfo[i]['validation_score']
+                checkpointStr  = str(i) + " | "
+                checkpointStr += str(tloss) + " | " + str(tScore) + " | "
+                checkpointStr += str(vLoss) + " | " + str(vScore)
+                print(checkpointStr)
+        startingTrainingLoss = trackingInfo[startingEpoch]['training_loss']
+        startingTrainingScore = trackingInfo[startingEpoch]['training_score']
+        startingValidationLoss = trackingInfo[startingEpoch]['validation_loss']
+        startingValidationScore = trackingInfo[startingEpoch]['validation_score']
+        statusString  = "Resuming from checkpoint [epochs_completed:" 
+        statusString += str(startingEpoch) + ", training loss=" 
+        statusString += str(startingTrainingLoss) + ", training si-snr:" 
+        statusString += str(startingTrainingScore) + ", validation loss="
+        statusString += str(startingValidationLoss) + ", validation si-snr:" 
+        statusString += str(startingValidationScore) + "]"
+        print(statusString)
 
     if (args.useCipic):
-        delay_weights, lastLoss, lastScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList)
+        delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList, startingEpoch)
     else:
-        delay_weights, lastLoss, lastScore = run_training_loop(args, net, optimizer, scheduler, train_loader)
+        delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch)
     
     if args.trackDelayWhileTraining:
     	plot_weights(delay_weights)
 
-    if (args.saveCheckpoint):
-        torch.save({
-                'epoch': startingEpoch + args.epochs,
-                'module_state_dict': module.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'loss': lastLoss,
-                'score': lastScore,
-                }, trained_folder + '/network.pt')
 
-    print("Completed training loop [epochs_completed:" + str(args.epochs) + ", loss=" + str(lastLoss) + ", si-snr:" + str(lastScore) + "]")
+    print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
 
     if (args.useCipic):
         validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
@@ -905,7 +928,28 @@ if __name__ == '__main__':
                                    num_workers=4,
                                    pin_memory=True)
     if (args.useCipic):
-        finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader, orientList)
+        finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader, orientList)
     else:
-        finalValidationScore = run_validation_loop(args, net, validation_loader)
+        finalValidationLoss, finalValidationScore = run_validation_loop(args, net, validation_loader)
+    statusString  = "Completed training and validation [epochs_completed:" 
+    statusString += str(startingEpoch+args.epochs) + ", training loss=" 
+    statusString += str(lastTrainingLoss) + ", training si-snr:" 
+    statusString += str(lastTrainingScore) + ", validation loss="
+    statusString += str(finalValidationLoss) + ", validation si-snr:" 
+    statusString += str(finalValidationScore) + "]"
+    print(statusString)
+    if (args.saveCheckpoint):
+        trackingInfo[startingEpoch+args.epochs] = dict()
+        currEpochStats = trackingInfo[startingEpoch+args.epochs]
+        currEpochStats['training_loss'] = lastTrainingLoss
+        currEpochStats['training_score'] = lastTrainingScore
+        currEpochStats['validation_loss'] = finalValidationLoss
+        currEpochStats['validation_score'] = finalValidationScore
+        torch.save({
+                'epochs_completed': startingEpoch + args.epochs,
+                'module_state_dict': module.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'tracking_info': trackingInfo,
+                }, trained_folder + '/network.pt')
     print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
