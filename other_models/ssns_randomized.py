@@ -261,9 +261,7 @@ def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, or
         module.validate_gradients()
         torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         optimizer.step()
-        if torch.isnan(score).any():
-            score[torch.isnan(score)] = 0
-    scheduler.step()
+        return
 
 def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList):
     assert(args.useCipic)
@@ -396,7 +394,7 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
         module.validate_gradients()
         torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         optimizer.step()
-    scheduler.step()
+        return
 
 def run_training_loop(args, net, optimizer, scheduler, train_loader):
     net.train()
