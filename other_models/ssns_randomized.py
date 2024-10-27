@@ -606,9 +606,9 @@ def run_validation_loop(args, net, validation_loader):
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
-    averageValidationLosse = sum(validationLosses) / (1.0 * len(validationLosses))
+    averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
     averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
-    return averageValidationLosses, averageValidationScore
+    return averageValidationLoss, averageValidationScore
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
