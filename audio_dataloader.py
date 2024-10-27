@@ -46,6 +46,7 @@ class DNSAudioNoNoise:
         filename = noisy_file.split(os.sep)[-1]
         file_id = int(self.file_id_from_name.findall(filename)[0])
         clean_file = self.root + f'clean/clean_fileid_{file_id}.wav'
+        noisy_file = self.root + 'noisy/' + noisy_file
         snr = int(self.snr_from_name.findall(filename)[0])
         target_level = int(self.target_level_from_name.findall(filename)[0])
         source_info = self.source_info_from_name.findall(filename)[0]
