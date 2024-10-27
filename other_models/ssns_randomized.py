@@ -462,12 +462,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
             trainingLosses.append(torch.mean(loss).item())
             trainingScores.append(torch.mean(score).item())
             if args.printOutputWhileTraining:
-                statString = "Train [" + str(epoch+startingEpoch+1) + " | " + str(i) + "]"
-                if (args.useCipic):
-                    statString += " (s,n)=("
-                    statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
-                else:
-                    statString += " -> "
+                statString = "Train [" + str(epoch+startingEpoch+1) + " | " + str(i) + "] -> "
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
@@ -607,12 +602,7 @@ def run_validation_loop(args, net, validation_loader):
             validationScores.append(torch.mean(score).item())
             validationLosses.append(torch.mean(loss).item())
             if args.printOutputWhileValidation:
-                statString = "Valid [" + str(i) + "]"
-                if (args.useCipic):
-                    statString += " (s,n)=("
-                    statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
-                else:
-                    statString += " -> "
+                statString = "Valid [" + str(i) + "] -> "
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
