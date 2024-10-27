@@ -6,6 +6,7 @@ import os, sys, math
 sys.path.append('./')
 from audio_dataloader import DNSAudio
 from audio_dataloader import DNSAudioNoNoisy
+from audio_dataloader import DNSAudioNoNoise
 from hrtfs.cipic_db import CipicDatabase 
 import h5py
 import argparse
@@ -46,6 +47,17 @@ def collate_fn_no_noisy(batch):
         noise += [torch.FloatTensor(sample[1])]
 
     return torch.stack(clean), torch.stack(noise), indices
+
+def collate_fn_no_noise(batch):
+    clean, noisy = [], []
+
+    indices = torch.IntTensor([s[3] for s in batch])
+
+    for sample in batch:
+        clean += [torch.FloatTensor(sample[0])]
+        noisy += [torch.FloatTensor(sample[1])]
+
+    return torch.stack(clean), torch.stack(noisy), indices
 
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
@@ -405,8 +417,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
     for epoch in range(args.epochs):
         trainingLosses = []
         trainingScores = []
-        for i, (noisy, clean, noise, idx) in enumerate(train_loader):
-            ssl_noise = noise.to(device)
+        for i, (clean, noisy, idx) in enumerate(train_loader):
             ssl_noisy = noisy.to(device)
             ssl_clean = clean.to(device)
 
@@ -558,8 +569,7 @@ def run_validation_loop(args, net, validation_loader):
     validationScores = []
     validationLosses = []
     net.eval()
-    for i, (noisy, clean, noise, idx) in enumerate(validation_loader):
-        ssl_noise = noise.to(device)
+    for i, (clean, noisy, idx) in enumerate(validation_loader):
         ssl_clean = clean.to(device)
         ssl_noisy = noisy.to(device)
 
@@ -853,12 +863,12 @@ if __name__ == '__main__':
                               num_workers=4,
                               pin_memory=True)
     else:
-        train_set = DNSAudio(root=args.path + 'training_set/', maxFiles=args.training_samples)
+        train_set = DNSAudioNoNoise(root=args.path + 'training_set/', maxFiles=args.training_samples)
     
         train_loader = DataLoader(train_set,
                               batch_size=args.b,
                               shuffle=True,
-                              collate_fn=collate_fn,
+                              collate_fn=collate_fn_no_noise,
                               num_workers=4,
                               pin_memory=True)
 
@@ -919,12 +929,12 @@ if __name__ == '__main__':
                                    num_workers=4,
                                    pin_memory=True)
     else:
-        validation_set = DNSAudio(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
+        validation_set = DNSAudioNoNoise(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     
         validation_loader = DataLoader(validation_set,
                                    batch_size=args.b,
                                    shuffle=True,
-                                   collate_fn=collate_fn,
+                                   collate_fn=collate_fn_no_noise,
                                    num_workers=4,
                                    pin_memory=True)
     if (args.useCipic):

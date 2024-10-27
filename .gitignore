@@ -5,8 +5,12 @@ hrtfs/*.png
 *.png
 *.gif
 __pycache__/
-training_set/
-validation_set/
+training_set/clean/*.wav
+training_set/noise/*.wav
+training_set/noisy/*.wav
+validation_set/clean/*.wav
+validation_set/noise/*.wav
+validation_set/noisy/*.wav
 training_orients.txt
 validation_orients.txt
 Trained/
