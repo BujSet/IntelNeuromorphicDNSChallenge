@@ -379,8 +379,7 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
 def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
     net.train()
     # Run single epoch just to set the network dimensions (Weird that this is necessary)?
-    for i, (noisy, clean, noise, idx) in enumerate(train_loader):
-        ssl_noise = noise.to(device)
+    for i, (clean, noisy, idx) in enumerate(train_loader):
         ssl_noisy = noisy.to(device)
         ssl_clean = clean.to(device)
 

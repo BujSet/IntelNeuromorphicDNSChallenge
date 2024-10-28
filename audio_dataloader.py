@@ -17,14 +17,11 @@ class DNSAudioNoNoise:
     """
     def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
-        self.noisy_files = None
-        roster = os.path.join(root, "noisy")
-        roster = os.path.join(roster, "noisy_file_names.txt")
-        with open(roster, "r") as fp:
-            self.noisy_files = [line.rstrip('\n') for line in fp.readlines()]
-        assert(self.noisy_files != None)
-        if ("noisy_file_names.txt" in self.noisy_files):
-            self.noisy_files.remove("noisy_file_names.txt")
+        # Some of the noisy files has a non-standard character in the name:
+        # 2
+        # So when we do need to use the noisy dataset, it's better to just read 
+        # the files names directly with glob.glob
+        self.noisy_files = glob.glob(root + 'noisy/**.wav')
         if (maxFiles > len(self.noisy_files)):
             print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.noisy_files)))
             assert(False)
@@ -46,7 +43,6 @@ class DNSAudioNoNoise:
         filename = noisy_file.split(os.sep)[-1]
         file_id = int(self.file_id_from_name.findall(filename)[0])
         clean_file = self.root + f'clean/clean_fileid_{file_id}.wav'
-        noisy_file = self.root + 'noisy/' + noisy_file
         snr = int(self.snr_from_name.findall(filename)[0])
         target_level = int(self.target_level_from_name.findall(filename)[0])
         source_info = self.source_info_from_name.findall(filename)[0]
@@ -99,7 +95,7 @@ class DNSAudioNoNoise:
         """Length of the dataset.
         """
         return len(self.noisy_files)
-
+    
 class DNSAudioNoNoisy:
     """Audio dataset loader for DNS to only return clean and noise samples.
 
@@ -110,6 +106,13 @@ class DNSAudioNoNoisy:
     """
     def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
+        # Some of the noisy files has a non-standard character in the name:
+        # 2
+        # However, when we don't need to use the noisy dataset, we can rely 
+        # on a raw text file that has all the  noisy file names. This works
+        # because we don't need to actuall load the noisy files with the 
+        # soundfile package, just extract information from the file name. So,
+        # in this way, the noisy wav can be safely ignored.
         self.noisy_files = None
         roster = os.path.join(root, "noisy")
         roster = os.path.join(roster, "noisy_file_names.txt")
@@ -203,14 +206,7 @@ class DNSAudio:
     """
     def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
-        self.noisy_files = None
-        roster = os.path.join(root, "noisy")
-        roster = os.path.join(roster, "noisy_file_names.txt")
-        with open(roster, "r") as fp:
-            self.noisy_files = [line.rstrip('\n') for line in fp.readlines()]
-        assert(self.noisy_files != None)
-        if ("noisy_file_names.txt" in self.noisy_files):
-            self.noisy_files.remove("noisy_file_names.txt")
+        self.noisy_files = glob.glob(root + 'noisy/**.wav')
         if (maxFiles > len(self.noisy_files)):
             print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.noisy_files)))
             assert(False)
