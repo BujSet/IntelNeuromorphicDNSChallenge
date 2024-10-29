@@ -25,40 +25,6 @@ import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
 import random
 
-def collate_fn(batch):
-    noisy, clean, noise = [], [], []
-
-    indices = torch.IntTensor([s[4] for s in batch])
-
-    for sample in batch:
-        noisy += [torch.FloatTensor(sample[0])]
-        clean += [torch.FloatTensor(sample[1])]
-        noise += [torch.FloatTensor(sample[2])]
-
-    return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
-
-def collate_fn_no_noisy(batch):
-    clean, noise = [], []
-
-    indices = torch.IntTensor([s[3] for s in batch])
-
-    for sample in batch:
-        clean += [torch.FloatTensor(sample[0])]
-        noise += [torch.FloatTensor(sample[1])]
-
-    return torch.stack(clean), torch.stack(noise), indices
-
-def collate_fn_no_noise(batch):
-    clean, noisy = [], []
-
-    indices = torch.IntTensor([s[3] for s in batch])
-
-    for sample in batch:
-        clean += [torch.FloatTensor(sample[0])]
-        noisy += [torch.FloatTensor(sample[1])]
-
-    return torch.stack(clean), torch.stack(noisy), indices
-
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
         if (method == None):
@@ -845,21 +811,15 @@ if __name__ == '__main__':
 
     if (args.useCipic):
         train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
-        train_loader = DataLoader(train_set,
-                              batch_size=args.b,
-                              shuffle=True,
-                              collate_fn=collate_fn_no_noisy,
-                              num_workers=4,
-                              pin_memory=True)
     else:
         train_set = DNSAudioNoNoise(root=args.path + 'training_set/', maxFiles=args.training_samples)
     
-        train_loader = DataLoader(train_set,
-                              batch_size=args.b,
-                              shuffle=True,
-                              collate_fn=collate_fn_no_noise,
-                              num_workers=4,
-                              pin_memory=True)
+    train_loader = DataLoader(train_set,
+                          batch_size=args.b,
+                          shuffle=True,
+                          collate_fn=train_set.collate_fn,
+                          num_workers=4,
+                          pin_memory=True)
 
     startingEpoch = 0
     trackingInfo = dict()
@@ -906,26 +866,19 @@ if __name__ == '__main__':
     if args.trackDelayWhileTraining:
     	plot_weights(delay_weights)
 
-
     print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
 
     if (args.useCipic):
         validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
-        validation_loader = DataLoader(validation_set,
-                                   batch_size=args.b,
-                                   shuffle=True,
-                                   collate_fn=collate_fn_no_noisy,
-                                   num_workers=4,
-                                   pin_memory=True)
     else:
         validation_set = DNSAudioNoNoise(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     
-        validation_loader = DataLoader(validation_set,
-                                   batch_size=args.b,
-                                   shuffle=True,
-                                   collate_fn=collate_fn_no_noise,
-                                   num_workers=4,
-                                   pin_memory=True)
+    validation_loader = DataLoader(validation_set,
+                               batch_size=args.b,
+                               shuffle=True,
+                               collate_fn=validation_set.collate_fn,
+                               num_workers=4,
+                               pin_memory=True)
     if (args.useCipic):
         finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader, orientList)
     else:

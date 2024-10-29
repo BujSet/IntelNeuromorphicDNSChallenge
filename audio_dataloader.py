@@ -95,6 +95,17 @@ class DNSAudioNoNoise:
         """Length of the dataset.
         """
         return len(self.noisy_files)
+
+    def collate_fn(self, batch):
+        clean, noisy = [], []
+
+        indices = torch.IntTensor([s[3] for s in batch])
+
+        for sample in batch:
+            clean += [torch.FloatTensor(sample[0])]
+            noisy += [torch.FloatTensor(sample[1])]
+
+        return torch.stack(clean), torch.stack(noisy), indices
     
 class DNSAudioNoNoisy:
     """Audio dataset loader for DNS to only return clean and noise samples.
@@ -196,6 +207,17 @@ class DNSAudioNoNoisy:
         """
         return len(self.noisy_files)
 
+    def collate_fn(self, batch):
+        clean, noise = [], []
+
+        indices = torch.IntTensor([s[3] for s in batch])
+
+        for sample in batch:
+            clean += [torch.FloatTensor(sample[0])]
+            noise += [torch.FloatTensor(sample[1])]
+
+        return torch.stack(clean), torch.stack(noise), indices
+
 class DNSAudio:
     """Audio dataset loader for DNS.
 
@@ -291,6 +313,18 @@ class DNSAudio:
         """Length of the dataset.
         """
         return len(self.noisy_files)
+
+    def collate_fn(self, batch):
+        noisy, clean, noise = [], [], []
+
+        indices = torch.IntTensor([s[4] for s in batch])
+
+        for sample in batch:
+            noisy += [torch.FloatTensor(sample[0])]
+            clean += [torch.FloatTensor(sample[1])]
+            noise += [torch.FloatTensor(sample[2])]
+
+        return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 
 if __name__ == '__main__':
     train_set = DNSAudio(
