@@ -44,13 +44,6 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
 
     return method(spec)
 
-def freq_to_one_hot(value, freq_bins):
-    one_hot = torch.zeros(len(freq_bins))
-    abs_diff = torch.abs(freq_bins - value)
-    min_index = torch.argmin(abs_diff)
-    one_hot[min_index] = 1.0
-    return one_hot
-
 class Network(torch.nn.Module):
     def __init__(self, 
             threshold=0.1, 
@@ -86,7 +79,7 @@ class Network(torch.nn.Module):
             slayer.block.sigma_delta.Input(sdnn_params),
             slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
             slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, n_fft//2 + 1, weight_norm=False),
+            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, 1, weight_norm=False),
         ])
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
@@ -95,13 +88,10 @@ class Network(torch.nn.Module):
         self.blocks[2].delay.max_delay = max_delay
 
     def forward(self, speech):
-        x = speech - self.stft_mean
-
+        x = speech
         for block in self.blocks:
             x = block(x)
-
-        mask = torch.relu(x + 1)
-        return slayer.axon.delay(speech, self.out_delay) * mask
+        return x
 
     def validate_gradients(self):
         valid_gradients = True
@@ -133,7 +123,6 @@ def plot_weights(data):
 def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=[], startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
-    freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
     if len(orientList) == 0:
         assert(not args.useCipic)
 
@@ -163,7 +152,8 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=
 
             pitch_prediction = net(clean_abs)
 
-            ssl_clean_pitch = torch.zeros(clean_abs.size()).to(device)
+            ssl_clean_pitch = torch.zeros(pitch_prediction.size()).to(device)
+            
             num_fft_frames = ssl_clean_pitch.size()[-1]
             period = (480000.0 / num_fft_frames) / 16000.0
             for batch_idx in range(args.b):
@@ -174,9 +164,8 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
                 if torch.isnan(clean_pitch_freq).any():
                     clean_pitch_freq[torch.isnan(clean_pitch_freq)] = 0
-                for frame in range(num_fft_frames):
-                    ssl_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map)  
-            ssl_clean_pitch.to(device)    
+                ssl_clean_pitch[batch_idx,:] = clean_pitch_freq
+            ssl_clean_pitch.to(device)  
             
             loss = F.mse_loss(pitch_prediction, ssl_clean_pitch)
              
@@ -233,8 +222,7 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
             clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
             if torch.isnan(clean_pitch_freq).any():
                 clean_pitch_freq[torch.isnan(clean_pitch_freq)] = 0
-            for frame in range(num_fft_frames):
-                ssl_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map)  
+            ssl_clean_pitch[batch_idx,:] = clean_pitch_freq
         ssl_clean_pitch.to(device) 
         
         loss = F.mse_loss(pitch_prediction, ssl_clean_pitch)
@@ -253,7 +241,6 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
 def run_validation_loop(args, net, validation_loader, orientList=[]):
     net.eval()
     validationLosses = []
-    freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
     if len(orientList) == 0:
         assert(not args.useCipic)
     for i, (clean, idx) in enumerate(validation_loader):
@@ -278,7 +265,7 @@ def run_validation_loop(args, net, validation_loader, orientList=[]):
 
             pitch_prediction = net(clean_abs)
 
-            ssl_clean_pitch = torch.zeros(clean_abs.size()).to(device)
+            ssl_clean_pitch = torch.zeros(pitch_prediction.size()).to(device)
             num_fft_frames = ssl_clean_pitch.size()[-1]
             period = (480000.0 / num_fft_frames) / 16000.0
             for batch_idx in range(args.b):
@@ -289,9 +276,8 @@ def run_validation_loop(args, net, validation_loader, orientList=[]):
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
                 if torch.isnan(clean_pitch_freq).any():
                     clean_pitch_freq[torch.isnan(clean_pitch_freq)] = 0
-                for frame in range(num_fft_frames):
-                    ssl_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map)  
-            ssl_clean_pitch.to(device)    
+                ssl_clean_pitch[batch_idx,:] = clean_pitch_freq 
+            ssl_clean_pitch.to(device)
             
             loss = F.mse_loss(pitch_prediction, ssl_clean_pitch)
              
