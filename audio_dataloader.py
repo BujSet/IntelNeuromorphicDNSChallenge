@@ -7,6 +7,79 @@ import soundfile as sf
 from typing import Tuple, Dict, Any
 import random
 
+class DNSAudioCleanOnly:
+    """Audio dataset loader for DNS to only return clean speech samples.
+
+    Parameters
+    ----------
+    root : str, optional
+        Path of the dataset location, by default './'.
+    """
+    def __init__(self, root: str = './', maxFiles: int = -1) -> None:
+        self.root = root
+        self.clean_files = glob.glob(root + 'clean/**.wav')
+        if (maxFiles > len(self.clean_files)):
+            print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.clean_files)))
+            assert(False)
+
+        # Don't do anything if param isnt set or if we're using the entire dataset
+        if (maxFiles > 0 and maxFiles != len(self.clean_files)):
+            randStart = random.randint(0, len(self.clean_files) - maxFiles - 1)
+            assert(randStart + maxFiles <= len(self.clean_files))
+            self.clean_files = self.clean_files[randStart:randStart+maxFiles]
+            print("Using slice dataset[" + str(randStart) + ":" + str(randStart+maxFiles) + "] with "+str(len(self.clean_files)) + " samples")
+
+    def _get_filenames(self, n: int) -> Tuple[str]:
+        clean_file = self.clean_files[n % self.__len__()]
+        return clean_file
+
+    def __getitem__(self, n: int) -> Tuple[np.ndarray,
+                                           Dict[str, Any],
+                                           int]:
+        """Gets the nth sample from the dataset.
+
+        Parameters
+        ----------
+        n : int
+            Index of the dataset sample.
+
+        Returns
+        -------
+        np.ndarray
+            Clean audio sample.
+        np.ndarray
+            Noisy audio sample.
+        Dict
+            Sample metadata.
+        """
+        clean_file= self._get_filenames(n)
+        clean_audio, sampling_frequency = sf.read(clean_file)
+        num_samples = 30 * sampling_frequency  # 30 sec data
+        metadata = {'fs': sampling_frequency}
+
+        if len(clean_audio) > num_samples:
+            clean_audio = clean_audio[:num_samples]
+        else:
+            clean_audio = np.concatenate([clean_audio,
+                                          np.zeros(num_samples
+                                                   - len(clean_audio))])
+        return clean_audio, metadata, n
+
+    def __len__(self) -> int:
+        """Length of the dataset.
+        """
+        return len(self.clean_files)
+
+    def collate_fn(self, batch):
+        clean = []
+
+        indices = torch.IntTensor([s[2] for s in batch])
+
+        for sample in batch:
+            clean += [torch.FloatTensor(sample[0])]
+
+        return torch.stack(clean), indices
+
 class DNSAudioNoNoise:
     """Audio dataset loader for DNS to only return clean and noisy samples.
 
