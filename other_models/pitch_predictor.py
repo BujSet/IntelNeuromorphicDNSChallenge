@@ -14,7 +14,6 @@ from datetime import datetime
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 import soundfile as sf
 
 from lava.lib.dl import slayer
@@ -209,9 +208,9 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
 
         clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
 
-        predicted_pitch = net(clean_abs)
+        pitch_prediction = net(clean_abs)
 
-        ssl_clean_pitch = torch.zeros(clean_abs.size()).to(device)
+        ssl_clean_pitch = torch.zeros(pitch_prediction.size()).to(device)
         num_fft_frames = ssl_clean_pitch.size()[-1]
         period = (480000.0 / num_fft_frames) / 16000.0
         for batch_idx in range(args.b):
@@ -300,6 +299,10 @@ def run_validation_loop(args, net, validation_loader, orientList=[]):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('-script_name',
+                        type=str,
+                        default='other_models/pitch_predictor',
+                        help='name of this file')
     parser.add_argument('-gpu',
                         type=int,
                         default=[0],
@@ -420,7 +423,7 @@ if __name__ == '__main__':
     parser.add_argument('-numOrients',
                         type=int,
                         default=8,
-                        help='Number of additional orientations, must be >= 8')
+                        help='When using randomized orients, number of additional orientations, must be >= 8')
 
     args = parser.parse_args()
 
@@ -432,7 +435,6 @@ if __name__ == '__main__':
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
     trained_folder = 'Trained' + identifier
     logs_folder = 'Logs' + identifier
-    writer = SummaryWriter('runs/' + identifier)
 
     os.makedirs(trained_folder, exist_ok=True)
     os.makedirs(logs_folder, exist_ok=True)
