@@ -110,40 +110,21 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-def plot_weights(data):
-    for name in data.keys():
-        num_epochs = max(data[name].keys()) + 1
-        num_neurons = data[name][0].size()[0]
-        matrix = np.zeros(shape=(num_epochs, num_neurons))
-        for i in range(num_epochs):
-            for j in range(num_neurons):
-                matrix[i,j] = data[name][i][j]
-
-        plt.figure(figsize=(20,20))
-        plt.imshow(np.transpose(matrix), cmap='hot', interpolation='nearest')
-        plt.xlabel("Training Epochs")
-        plt.ylabel("Axons")
-        plt.savefig(name + ".png", bbox_inches="tight")
-        plt.close()
-
 def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=[], startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
     if len(orientList) == 0:
         assert(not args.useCipic)
-
+    net.train()
     for epoch in range(args.epochs):
         trainingLosses = []
-        for i, (clean, idx) in enumerate(train_loader):
-            net.train()
+        for i, (clean, idx) in enumerate(train_loader):        
             if (len(orientList) > 0):
                 clean = clean.to(device)
-
                 speechFilterOrient = random.choice(orientList)
                 speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
                 speechFilter  = speechFilter.to(device)
-                
                 ssl_clean = torch.zeros(args.b, 480000).to(device)
                 for batch_idx in range(args.b):
                     ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
@@ -196,14 +177,6 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=
                 statString += str(loss.item())
                 print(statString)
         scheduler.step()
-        if args.trackDelayWhileTraining:
-            for param_tensor in net.state_dict():
-                if ("delay.delay" in param_tensor):
-                    if not param_tensor in delay_weights.keys():
-                        delay_weights[param_tensor] = dict()
-                    delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
-                    #print(param_tensor + "," + str(epoch) + "," + str(delay_weights[param_tensor][epoch]))
-        # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
     return delay_weights, averageTrainingLoss
 
@@ -213,11 +186,8 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
     for i, (clean, idx) in enumerate(train_loader):
         ssl_clean = clean.to(device)
-
         clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
-
         pitch_prediction = net(clean_abs)
-
         ssl_clean_pitch = torch.zeros(pitch_prediction.size()).to(device)
         num_fft_frames = ssl_clean_pitch.size()[-1]
         period = (480000.0 / num_fft_frames) / 16000.0
@@ -233,7 +203,7 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
                 ssl_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map)
         ssl_clean_pitch.to(device) 
         
-        loss = F.mse_loss(pitch_prediction, ssl_clean_pitch)
+        loss = F.cross_entropy(pitch_prediction, ssl_clean_pitch)
 
         if torch.isnan(loss).any():
             loss[torch.isnan(loss)] = 0
@@ -289,7 +259,7 @@ def run_validation_loop(args, net, validation_loader, orientList=[]):
                     ssl_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
             ssl_clean_pitch.to(device)
             
-            loss = F.mse_loss(pitch_prediction, ssl_clean_pitch)
+            loss = F.cross_entropy(pitch_prediction, ssl_clean_pitch)
              
             if torch.isnan(loss).any():
                 loss[torch.isnan(loss)] = 0
@@ -390,10 +360,6 @@ if __name__ == '__main__':
                         dest='printOutputWhileValidation', 
                         action='store_true',
                         help='Switch flag to print score after every mini-batch during validation')
-    parser.add_argument('-trackDelayWhileTraining',
-                        dest='trackDelayWhileTraining', 
-                        action='store_true',
-                        help='Switch flag to track updates to delay weights while training')
     parser.add_argument('-useCheckpoint',
                         type=str,
                         default='',
@@ -571,8 +537,6 @@ if __name__ == '__main__':
         print(statusString)
 
     delay_weights, lastTrainingLoss = run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=orientList, startingEpoch=startingEpoch)
-    if args.trackDelayWhileTraining:
-    	plot_weights(delay_weights)
 
     print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + "]")
 
