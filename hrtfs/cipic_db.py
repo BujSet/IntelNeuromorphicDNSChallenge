@@ -2,6 +2,7 @@ import sofa, os
 import scipy.io
 import math
 import numpy as np
+import sys
 
 class CIPIC_Subject():
     def __init__(self, 
@@ -34,6 +35,9 @@ class CIPIC_Subject():
         if math.isnan(self._weight):
             self._anthroDataIsComplete = False
 
+        # Based on https://github.com/amini-allight/cipic-hrtf-database/blob/master/anthropometry/read_me.txt
+        # lower indices are for left ear, upper are for right
+
         self._rotationAngleL = float(theta[0])
         self._flareAngleL = float(theta[1])
         self._rotationAngleR = float(theta[2])
@@ -45,12 +49,11 @@ class CIPIC_Subject():
         for i in range(17):
             if (math.isnan(float(X[i]))):
                 self._anthroDataIsComplete = False
-        self._DL = D[0:7]
-        self._DR = D[8:15]
+        self._DL = D[0:8]
+        self._DR = D[8:16]
         for i in range(7):
             if (math.isnan(float(D[i]))):
                 self._anthroDataIsComplete = False
-
 
     def __hash__(self):
         return hash(self._id)
@@ -65,37 +68,39 @@ class CIPIC_Subject():
     def getCartesianPositions(self):
         return  self._sofa.Source.Position.get_values(system="cartesian")
 
+    def getSphericalPositionsFromIndex(self, index):
+        sph_positions = self._sofa.Source.Position.get_values(system="spherical")
+
+        # Only need azimuth and elevation
+        sph_positions = np.delete(sph_positions, -1, 1)
+        assert(0 <= index and index < 1250)
+        pos = sph_positions[index]
+        return  pos
+
     def getHRIRFromIndex(self, index, channel):
         vals = self._sofa.Data.IR.get_values()
         vals = vals[index]
         vals = vals[channel]
         return vals
 
-    def collateAnthroData(self):
-        data = np.array(self._X)
-        data = np.append(data, self._age)
-        data = np.append(data, [self._sex])
-        data = np.append(data, [self._weight])
-        data = np.append(data, self._DR)
-        data = np.append(data, self._rotationAngleR)
-        data = np.append(data, self._flareAngleR)
-
-        sph_positions = self._sofa.Source.Position.get_values(system="spherical")
-        sph_positions = np.delete(sph_positions, -1, 1)
-
-        print(data)
-        print(data.shape)
-        print(sph_positions)
-        print(sph_positions.shape)
-        # self.printPositions()
+    def collateAnthroData(self, ear="Right"):
+        if ear =="Right":
+            data = np.array(self._DR)
+            data = np.append(data, self._rotationAngleR)
+            data = np.append(data, self._flareAngleR)
+        else:
+            assert ear == "Left"
+            data = np.array(self._DL)
+            data = np.append(data, self._rotationAngleL)
+            data = np.append(data, self._flareAngleL)
         return data
 
     def printAnthroData(self):
         string = "Subject " + str(self._id) + ":{\n"
         string += "\tAge:" + str(self._age) + "\n"
-        if (abs(self._sex) - 1.0 < 0.0001):
+        if (abs(self._sex - 1.0) < 0.0001):
             string += "\tSex:M\n"
-        elif(abs(self._sex) - 2.0 < 0.0001):
+        elif(abs(self._sex - 2.0) < 0.0001):
             string += "\tSex:F\n"
         else:
             string += "\tSex:-\n"
@@ -108,6 +113,18 @@ class CIPIC_Subject():
         string += "}\n"
         print(string)
 
+    def __str__(self):
+        string = "CipicSubject(sofaID=" + str(self._id)
+        if (self._anthroDataIsComplete):
+            string += ", Age=" + str(self._age)
+            if (abs(self._sex - 1.0) < 0.0001):
+                string += ", Sex=M"
+            else:
+                assert((abs(self._sex - 2.0) < 0.0001))
+                string += ", Sex=F"
+            string += ", Weight=" + str(self._weight)
+            string += ")"
+        return string
 
 class CIPIC_DB():
     def __init__(self):
@@ -115,7 +132,6 @@ class CIPIC_DB():
         self.cwd = os.path.join(self.cwd, "cipic")
         self.subjects = dict()
         self.anthroData = scipy.io.loadmat('hrtfs/cipic/anthro.mat')
-        # print(self.anthroData.keys())
 
         subjectIDs = ["003","008","009","010","011",
                       "012","015","017","018","019",
@@ -137,7 +153,6 @@ class CIPIC_DB():
                 self._getAnthroDataFromSubID(int(subID), 'theta'),
                 self._getAnthroDataFromSubID(int(subID), 'X'),
                 self._getAnthroDataFromSubID(int(subID), 'D'))
-            # self.subjects[int(subID)].printAnthroData()
 
     def _getAnthroDataFromSubID(self, subID, field):
         # First we need to get the right Anthro ID, may be different from the 
@@ -145,15 +160,12 @@ class CIPIC_DB():
         idx = 0
         for i in range(len(self.anthroData['id'])):
             sofaSub = int(self.anthroData['id'][i][0])
-            # print(sofaSub)
             if (sofaSub == subID):
                 break
             idx += 1
 
-        # print(self.anthroData["age"])
         # Now we can read the important field
         fieldValue = self.anthroData[field][idx]
-        # print(fieldValue)
         if (len(fieldValue) == 0):
             return "NaN"
         elif (len(fieldValue) == 1):
@@ -161,6 +173,4 @@ class CIPIC_DB():
         else:
             return fieldValue
 
-
-
-CipicDatabase = CIPIC_DB();
+CipicDatabase = CIPIC_DB()
