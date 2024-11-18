@@ -52,40 +52,36 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-
-def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
+def run_epoch(args, net, optimizer, scheduler, train_loader, validation_loader, startingEpoch=0):
     net.train()
     averageTrainingLoss = 0
-    for epoch in range(args.epochs):
-        trainingLosses = []
-        for i, (x, y, idx) in enumerate(train_loader):
-            x = x.to(device)
-            y = y.to(device)
+    trainingLosses = []
+    for i, (x, y, idx) in enumerate(train_loader):
+        x = x.to(device)
+        y = y.to(device)
 
-            pred_y = net(x)
+        pred_y = net(x)
 
-            loss = F.mse_loss(y, pred_y)
+        loss = F.mse_loss(y, pred_y)
 
-            if torch.isnan(loss).any():
-                loss[torch.isnan(loss)] = 0
-            assert torch.isnan(loss) == False
+        if torch.isnan(loss).any():
+            loss[torch.isnan(loss)] = 0
+        assert torch.isnan(loss) == False
 
-            optimizer.zero_grad()
-            loss.backward()
-            module.validate_gradients()
-            torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
-            optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        module.validate_gradients()
+        torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
+        optimizer.step()
 
-            trainingLosses.append(torch.mean(loss).item())
-            if args.printOutputWhileTraining:
-                statString = "Train [" + str(epoch+startingEpoch+1) + " | " + str(i) + "] -> "
-                statString += str(loss.item())
-                print(statString)
-        scheduler.step()
-        averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
-    return averageTrainingLoss
+        trainingLosses.append(torch.mean(loss).item())
+        if args.printOutputWhileTraining:
+            statString = "Train [" + str(startingEpoch+1) + " | " + str(i) + "] -> "
+            statString += str(loss.item())
+            print(statString)
+    scheduler.step()
+    averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
 
-def run_validation_loop(args, net, validation_loader):
     validationLosses = []
     net.eval()
     for i, (x, y, idx) in enumerate(validation_loader):
@@ -93,10 +89,7 @@ def run_validation_loop(args, net, validation_loader):
         y = y.to(device)
 
         with torch.no_grad():
-
             pred_y = net(x)
-            
-
             loss = F.mse_loss(y, pred_y)
             if torch.isnan(loss).any():
                 loss[torch.isnan(loss)] = 0
@@ -107,7 +100,7 @@ def run_validation_loop(args, net, validation_loader):
                 statString += str(loss.item())
                 print(statString)
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
-    return averageValidationLoss
+    return averageTrainingLoss, averageValidationLoss
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -249,13 +242,18 @@ if __name__ == '__main__':
                           num_workers=4,
                           pin_memory=True)
 
+    validation_set = CipicHRTFs(RightEarDataset, ValidationSetIndices)
+    
+    validation_loader = DataLoader(validation_set,
+                               batch_size=args.b,
+                               shuffle=True,
+                               collate_fn=validation_set.collate_fn,
+                               num_workers=4,
+                               pin_memory=True)
+
     startingEpoch = 0
     trackingInfo = dict()
     if args.useCheckpoint != "":
-        if args.useCipic:
-            run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList)
-        else:
-            run_warm_up_training(args, net, optimizer, scheduler, train_loader)
         checkpoint = torch.load(args.useCheckpoint, weights_only=True)
         module.load_state_dict(checkpoint['module_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -280,30 +278,19 @@ if __name__ == '__main__':
         statusString += str(startingValidationLoss) + "]"
         print(statusString)
 
-    lastTrainingLoss = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch)
+    for i in range(args.epochs):
+        lastTLoss, lastVLoss = run_epoch(args, net, optimizer, scheduler, train_loader, validation_loader, startingEpoch+i+1)
+        trackingInfo[startingEpoch + i + 1] = dict()
+        currEpochStats = trackingInfo[startingEpoch+i+1]
+        currEpochStats['training_loss'] = lastTLoss
+        currEpochStats['validation_loss'] = lastVLoss
 
-
-    print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + "]")
-
-    validation_set = CipicHRTFs(RightEarDataset, ValidationSetIndices)
-    
-    validation_loader = DataLoader(validation_set,
-                               batch_size=args.b,
-                               shuffle=True,
-                               collate_fn=validation_set.collate_fn,
-                               num_workers=4,
-                               pin_memory=True)
-    finalValidationLoss = run_validation_loop(args, net, validation_loader)
     statusString  = "Completed training and validation [epochs_completed:" 
     statusString += str(startingEpoch+args.epochs) + ", training loss=" 
-    statusString += str(lastTrainingLoss) + ", validation loss="
-    statusString += str(finalValidationLoss) + "]"
+    statusString += str(lastTLoss) + ", validation loss="
+    statusString += str(lastVLoss) + "]"
     print(statusString)
     if (args.saveCheckpoint):
-        trackingInfo[startingEpoch+args.epochs] = dict()
-        currEpochStats = trackingInfo[startingEpoch+args.epochs]
-        currEpochStats['training_loss'] = lastTrainingLoss
-        currEpochStats['validation_loss'] = finalValidationLoss
         torch.save({
                 'epochs_completed': startingEpoch + args.epochs,
                 'module_state_dict': module.state_dict(),
@@ -311,4 +298,3 @@ if __name__ == '__main__':
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
                 }, trained_folder + '/network.pt')
-    print("Final validation loss: " + str(finalValidationLoss))
