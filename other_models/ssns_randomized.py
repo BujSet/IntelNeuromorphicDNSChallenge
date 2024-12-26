@@ -802,10 +802,35 @@ if __name__ == '__main__':
                 orientList.append( (608, 640) ) # speech in front, noise in back, medial plane
                 orientList.append( (640, 608) ) # speech in back, noise in front, medial plane
             if args.numFixedOrients == 4:
+                # Speech constrained to frontal hemisphere, noise to back
                 orientList.append( (316, 948) )
                 orientList.append( (300, 932) )
                 orientList.append( (916, 348) )
                 orientList.append( (900, 332) )
+            if args.numFixedOrients == 5:
+                # Speech constrained to dorsal hemisphere, noise to front
+                orientList.append( (948, 316) )
+                orientList.append( (932, 300) )
+                orientList.append( (348, 916) )
+                orientList.append( (332, 900) )
+            if args.numFixedOrients == 6:
+                # Speech constrained to frontal, right hemisphere, noise to back
+                orientList.append( (316, 948) )
+                orientList.append( (300, 932) )
+            if args.numFixedOrients == 7:
+                # Speech constrained to frontal, upper hemisphere, noise to back
+                orientList.append( (316, 948) )
+                orientList.append( (916, 348) )
+            if args.numFixedOrients == 8:
+                # Speech constrained to upper, right hemisphere, noise to back
+                orientList.append( (316, 948) )
+                orientList.append( (332, 900) )
+            if args.numFixedOrients == 9:
+                # Speech constrained to right hemisphere
+                orientList.append( (316, 948) )
+                orientList.append( (300, 932) )
+                orientList.append( (332, 900) )
+                orientList.append( (348, 916) )
 
     print("Orient list contains " + str(len(orientList)) + " orientation pairs")
 
