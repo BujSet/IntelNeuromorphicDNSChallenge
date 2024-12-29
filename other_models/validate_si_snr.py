@@ -125,10 +125,15 @@ class Network(torch.nn.Module):
                         clipping_threshold=0.99,
                         ):
         '''Function to mix clean speech and noise at various segmental SNR levels'''
-        clean_div = torch.max(torch.abs(clean)) + self.EPS
-        noise_div = torch.max(torch.abs(noise)) + self.EPS
-        ssl_clean = torch.div(clean, clean_div.item())
-        ssl_noise = torch.div(noise, noise_div.item())
+        epsT = torch.tensor([self.EPS], device="cuda")
+        #clean_div = torch.max(torch.abs(clean)) + self.EPS
+        clean_div = torch.add(torch.max(torch.abs(clean)), epsT) 
+        #noise_div = torch.max(torch.abs(noise)) + self.EPS
+        noise_div = torch.add(torch.max(torch.abs(noise)), epsT) 
+        #ssl_clean = torch.div(clean, clean_div.item())
+        ssl_clean = torch.div(clean, clean_div)
+        #ssl_noise = torch.div(noise, noise_div.item())
+        ssl_noise = torch.div(noise, noise_div)
         # TODO should only calculate the RMS of the 'active' windows, but
         # for now we just use the whole audio sample
         clean_rms = torch.sqrt(torch.mean(torch.square(ssl_clean))).item()
