@@ -24,7 +24,8 @@ from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
 import random
-
+import time
+from torch.profiler import profile, record_function, ProfilerActivity
 
 def collate_fn(batch):
     noisy, clean, noise = [], [], []
@@ -192,6 +193,10 @@ if __name__ == '__main__':
                         type=int,
                         default=32,
                         help='batch size for dataloader')
+    parser.add_argument('-dataloader_workers',
+                        type=int,
+                        default=4,
+                        help='batch size for dataloader')
     parser.add_argument('-lr',
                         type=float,
                         default=0.001,
@@ -312,57 +317,83 @@ if __name__ == '__main__':
     validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     validation_loader = DataLoader(validation_set,
                                batch_size=args.b,
-                               shuffle=True,
+                               shuffle=False,
                                collate_fn=collate_fn_no_noisy,
-                               num_workers=4,
+                               num_workers=args.dataloader_workers,
                                pin_memory=True)
+    numIters = round(args.validation_samples / args.b)
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
-    speechFilter = CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.cipicChannel)
-    speechFilter  = torch.from_numpy(speechFilter).float().to(device)
-    noiseFilter = CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.cipicChannel)
-    noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
+    with torch.no_grad():
+        speechFilter = CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.cipicChannel)
+        speechFilter = torch.from_numpy(speechFilter).float().to(device)
+        speechFilter = downsampler(speechFilter) 
+        noiseFilter = CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.cipicChannel)
+        noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
+        noiseFilter = downsampler(noiseFilter) 
+        ssl_noise = torch.zeros(args.b, 480000, device="cuda")
+        ssl_clean = torch.zeros(args.b, 480000, device="cuda")
+        ssl_snrs  = torch.zeros(args.b, 1, device="cuda")
+        ssl_targlvls= torch.zeros(args.b, 1, device="cuda")
+        runningScore = torch.zeros(1, device="cuda")
  
-    validationScores = []
+    #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    #sort_by_keyword = "cuda_time_total"
+    net.eval()
+#    opt_synth = torch.compile(module.synthesizeNoisySpeech)
+    start_time = time.time()
+    #with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
+    #    with record_function("passive_pinna_validation_score"):
     for i, (clean, noise, idx) in enumerate(validation_loader):
         with torch.no_grad():
             noise = noise.to(device)
             clean = clean.to(device)
-            ssl_noise = torch.zeros(args.b, 480000).to(device)
-            ssl_clean = torch.zeros(args.b, 480000).to(device)
-            ssl_snrs  = torch.zeros(args.b, 1).to(device)
-            ssl_targlvls= torch.zeros(args.b, 1).to(device)
-            speechOrients = torch.zeros(args.b, 1)
-            noiseOrients = torch.zeros(args.b, 1)
+
             for batch_idx in range(args.b):
-                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], downsampler(noiseFilter))
-                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
+                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
                 clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                 ssl_snrs[batch_idx] = metadata['snr']
                 ssl_targlvls[batch_idx] = metadata['target_level']
-        
-            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
-                ssl_clean, 
-                ssl_noise, 
-                args.b, 
-                ssl_snrs,
-                ssl_targlvls,
-                -35,
-                -15)
+                
+#            ssl_noisy, ssl_clean, ssl_noise = opt_synth(
+#                        ssl_clean, 
+#                        ssl_noise, 
+#                        args.b, 
+#                        ssl_snrs,
+#                        ssl_targlvls,
+#                        -35,
+#                        -15)
 
+            ssl_noisy, ssl_clean, ssl_noise = module.synthesizeNoisySpeech(
+                        ssl_clean, 
+                        ssl_noise, 
+                        args.b, 
+                        ssl_snrs,
+                        ssl_targlvls,
+                        -35,
+                        -15)
+        
             score = si_snr(ssl_noisy, ssl_clean)
-            if torch.isnan(score).any():
-                score[torch.isnan(score)] = 0
-            validationScores.append(torch.mean(score).item())
+            score = torch.nan_to_num(score, nan=0.0)
+            runningScore = torch.add(runningScore, torch.mean(score), alpha=1.0/float(numIters))
             if args.printOutputWhileValidation:
                 statString = "Valid [" + str(i) + "] -> "
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
 
-    averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
+    end_time = time.time()
+    #print(prof.key_averages().table(sort_by=sort_by_keyword, row_limit=100))
+    averageValidationScore = runningScore.item()
     if args.printValidationResultsHeader:
-        print("Subject, Channel, Speech Orient, Noise Orient, Final Validation Score SI-SNR (dB)")
+        headerString = "Subject, Channel, Speech Orient, "
+        headerString += "Noise Orient, "
+        headerString += "Final Validation Score SI-SNR (dB), "
+        headerString += "ExecTime, "
+        headerString += "BatchSize, "
+        headerString += "Dataloader Num Workers"
+        print(headerString)
     resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
     resultString += str(args.speechFilterOrient) + "," + str(args.noiseFilterOrient) + "," 
-    resultString += str(averageValidationScore)
+    resultString += str(averageValidationScore) + "," + str(end_time - start_time) + ","
+    resultString += str(args.b) + "," + str(args.dataloader_workers)
     print(resultString)
-
