@@ -106,7 +106,7 @@ axs[1,2].set_xlabel("Vertical Elevation (°)", fontweight="bold", fontsize=16, y
 axs[0,0].set_ylabel("Channel 1\nInput Frequency (kHz)", fontweight="bold", fontsize=16)
 axs[1,0].set_ylabel("Channel 0\nInput Frequency (kHz)", fontweight="bold", fontsize=16)
 axs[1,0].set_xticks([0,8,16,24,32,40,48]) #,49])
-axs[1,0].set_xticklabels(["-45°","0°","45°", "90°","45°","0°","-45°"])#, "-50.625"])
+axs[1,0].set_xticklabels(["-45°\nFront","0°","45°", "90°","45°","0°","-45°\nBack"])#, "-50.625"])
 myxticks = list(range(0, len(tones), len(tones)//4))
 axs[1,0].set_yticks(myxticks)
 axs[1,0].set_yticklabels([str(round(tones[i]/1000.0, 1)) for i in myxticks])
