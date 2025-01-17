@@ -280,7 +280,7 @@ if __name__ == '__main__':
         repeat=1)
     if args.isCHTCJob:
         infoString = "Detected that this instance in running in a CHTC Job "
-        infoString += " with " + CurrentJob.get_gpu_job_time_remainig()
+        infoString += " with " + CurrentJob.get_gpu_job_time_remaining()
         infoString += " time remaining."
         print(infoString)
     iterationLatencies = []
