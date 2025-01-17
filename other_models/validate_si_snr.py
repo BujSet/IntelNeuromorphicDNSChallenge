@@ -204,7 +204,7 @@ if __name__ == '__main__':
                         help='First index (inclusive) into CIPIC source directions to orient the noise to ')
     parser.add_argument('-noiseFilterOrientEnd',
                         type=int,
-                        default=608,
+                        default=1250,
                         help='Last index (exclusive) into CIPIC source directions to orient the noise to ')
 
     parser.add_argument('-print_validation_results_header',
@@ -378,16 +378,12 @@ if __name__ == '__main__':
                 noiseOrient = noiseOrient + 1 
                 # For now, we only vary the noise orient in jobs, its too
                 # compilcated to deal with speech also
-                if (noiseOrient >= 1250):
+                if (noiseOrient >= 1250 or noiseOrient >= args.noiseFilterOrientEnd):
                     enoughTimeForMoreWork = False
                 if args.isCHTCJob:
                     avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
                     timeLeft = 1.0 *CurrentJob.get_gpu_job_time_remaining(rawValue=True)
                     # Add a buffer of ten iterations before job end
                     if timeLeft / avgIterationLatency < 10:
-                        enoughTimeForMoreWork = False
-                else:
-                    # On chechil, we run a fixed number of iterations
-                    if noiseOrient >= args.noiseFilterOrientEnd:
                         enoughTimeForMoreWork = False
 
