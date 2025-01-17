@@ -53,6 +53,4 @@ class JobAd(object):
             return remaining
         return str(datetime.timedelta(seconds=remaining))
 
-home_dir = os.environ.get("HOME")
-CurrentJob = JobAd(home_dir)
-print(CurrentJob.get_gpu_job_time_remaining())
+CurrentJob = JobAd(os.environ.get("HOME"))

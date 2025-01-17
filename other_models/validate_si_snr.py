@@ -26,6 +26,39 @@ from noisyspeech_synthesizer import segmental_snr_mixer
 import random
 import time
 from torch.profiler import profile, record_function, ProfilerActivity
+from chtc_files.read_job_attributes import CurrentJob 
+
+class MyTraceHandler(object):
+    def __init__(self, speechOrient, noiseOrient, batchSize, 
+            numWorkers, prefetchFactor, isCHTCJob):
+        self.speechOrient = speechOrient
+        self.noiseOrient = noiseOrient
+        self.batchSize = batchSize
+        self.numWorkers = numWorkers
+        self.prefetchFactor = prefetchFactor
+        self.isCHTCJob = isCHTCJob
+
+    def getString(self):
+        if self.isCHTCJob:
+            # If a CHTC job, move the trace file to top level dir so that it is 
+            # copied back to access point.
+            dir_path = "../"
+        else:
+            dir_path = "./proflog"
+        file_name = "passive_pinna_so" + str(self.speechOrient)
+        file_name += "_no" + str(self.noiseOrient)
+        file_name += "_b" + str(self.batchSize)
+        file_name += "_w" + str(self.numWorkers)
+        file_name += "_pf" + str(self.prefetchFactor)
+        return os.path.join(dir_path, file_name)
+
+def trace_handler(p, save_string, saveOutput):
+    print("Writing jsonn output")
+    if saveOutput:
+        p.export_chrome_trace(save_string + "_trace.json")
+        #p.export_stacks(save_string + "_cpu_stacks.json", metric="self_cpu_time_total")
+        #p.export_stacks(save_string + "_gpu_stacks.json", metric="self_cuda_time_total")
+        p.export_memory_timeline(save_string + "_memory.html")
 
 def calc_rms(x):
     return torch.sqrt(torch.mean(torch.square(x)))
@@ -113,6 +146,10 @@ if __name__ == '__main__':
                         type=int,
                         default=4,
                         help='batch size for dataloader')
+    parser.add_argument('-dataloader_prefetch_factor',
+                        type=int,
+                        default=2,
+                        help='prefetch factor for dataloader')
     parser.add_argument('-exp',
                         type=str,
                         default='',
@@ -161,22 +198,50 @@ if __name__ == '__main__':
                         type=int,
                         default=608,
                         help='Index into CIPIC source directions to orient the speech to ')
-    parser.add_argument('-noiseFilterOrient',
+    parser.add_argument('-noiseFilterOrientStart',
                         type=int,
                         default=608,
-                        help='Index into CIPIC source directions to orient the noise to ')
+                        help='First index (inclusive) into CIPIC source directions to orient the noise to ')
+    parser.add_argument('-noiseFilterOrientEnd',
+                        type=int,
+                        default=608,
+                        help='Last index (exclusive) into CIPIC source directions to orient the noise to ')
 
     parser.add_argument('-print_validation_results_header',
                         dest='printValidationResultsHeader', 
                         action='store_true',
                         help='Switch flag to print validation results header (useful for CHTC)')
+    parser.add_argument('-save_profile_trace',
+                        dest='saveProfileTrace', 
+                        action='store_true',
+                        help='Switch flag to save profiling trace output')
+    parser.add_argument('-is_CHTC_job',
+                        dest='isCHTCJob', 
+                        action='store_true',
+                        help='Switch flag to indicate if this job was run on CHTC')
 
     args = parser.parse_args()
 
     if args.seed is not None:
         torch.manual_seed(args.seed)
 
+    assert(torch.cuda.is_available())
     device = torch.device('cuda:0')
+    # Get CUDA capability
+    device_cap = torch.cuda.get_device_capability()
+    torch_compile_capable = False
+    if device_cap in ((7, 0), (8, 0), (9, 0)):
+        torch_compile_capable = True
+        print("Detected device capable of using torch.compile, will attempt to use for torch operations")
+        optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
+
+    TraceHandler = MyTraceHandler(
+            args.speechFilterOrient,
+            args.noiseFilterOrientStart,
+            args.b,
+            args.dataloader_workers,
+            args.dataloader_prefetch_factor,
+            args.isCHTCJob)
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
@@ -189,6 +254,7 @@ if __name__ == '__main__':
                                shuffle=False,
                                collate_fn=validation_set.collate_fn,
                                num_workers=args.dataloader_workers,
+                               prefetch_factor=args.dataloader_prefetch_factor,
                                pin_memory=True)
     numIters = round(args.validation_samples / args.b)
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
@@ -196,9 +262,6 @@ if __name__ == '__main__':
         speechFilter = CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.cipicChannel)
         speechFilter = torch.from_numpy(speechFilter).float().to(device)
         speechFilter = downsampler(speechFilter) 
-        noiseFilter = CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.cipicChannel)
-        noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
-        noiseFilter = downsampler(noiseFilter) 
         ssl_noise = torch.zeros(args.b, 480000, device="cuda")
         ssl_clean = torch.zeros(args.b, 480000, device="cuda")
         ssl_noisy = torch.zeros(args.b, 480000, device="cuda")
@@ -209,76 +272,122 @@ if __name__ == '__main__':
     activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
     noise_stream = torch.cuda.Stream()
     clean_stream = torch.cuda.Stream()
-    synth_time = 0
-    score_time = 0
-    load_time = 0
-    start_time = time.time()
-#    with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
-#        with record_function("passive_pinna_validation_score"):
-    with torch.no_grad():
-        for i, (clean, noise, idx) in enumerate(validation_loader):
-            load_start_time = time.time()
-            with torch.cuda.stream(noise_stream):
-                noise = noise.to(device, non_blocking=True)
-                for batch_idx in range(args.b):
-                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-            with torch.cuda.stream(clean_stream):
-                clean = clean.to(device, non_blocking=True)
-                for batch_idx in range(args.b):
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-       
-            for batch_idx in range(args.b):
-                clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
-                ssl_snrs[batch_idx] = metadata['snr']
-                ssl_targlvls[batch_idx] = metadata['target_level']
-                       
-            torch.cuda.synchronize()
-            load_end_time = time.time()
-       
-            synth_start_time = time.time()
-            synthesizeNoisySpeech(
-                               ssl_clean, 
-                               ssl_noise, 
-                               ssl_noisy,
-                               args.b, 
-                               ssl_snrs,
-                               ssl_targlvls,
-                               noise_stream,
-                               clean_stream
-                               )
-            synth_end_time = time.time()
-               
-            score_start_time = time.time()
-            score = si_snr(ssl_noisy, ssl_clean)
-            score = torch.nan_to_num(score, nan=0.0)
-            runningScore = torch.add(runningScore, torch.mean(score), alpha=1.0/float(numIters))
-            if args.printOutputWhileValidation:
-                statString = "Valid [" + str(i) + "] -> "
-                statString += str(torch.mean(score).item()) + " SI-SNR dB"
-                print(statString)
-            score_end_time = time.time()
-       
-            synth_time += synth_end_time - synth_start_time
-            score_time += score_end_time - score_start_time
-            load_time += load_end_time - load_start_time
+    my_schedule = torch.profiler.schedule(
+        skip_first= numIters-20,
+        wait=5,
+        warmup=5,
+        active=10,
+        repeat=1)
+    if args.isCHTCJob:
+        infoString = "Detected that this instance in running in a CHTC Job "
+        infoString += " with " + CurrentJob.get_gpu_job_time_remainig()
+        infoString += " time remaining."
+        print(infoString)
+    iterationLatencies = []
+    enoughTimeForMoreWork = True
+    noiseOrient = args.noiseFilterOrientStart
+    with profile(activities=activities, schedule=my_schedule,
+            record_shapes=True, profile_memory=True, with_stack=True, with_flops=True,
+            on_trace_ready=lambda profiler: trace_handler(profiler, TraceHandler.getString() , args.saveProfileTrace)) as prof: 
+        with torch.no_grad():
+            while enoughTimeForMoreWork:
+#            for noiseOrient in range(args.noiseFilterOrientStart, args.noiseFilterOrientEnd):
+                start_time = time.time()
+                with record_function("load_noise_filter"):
+                    with torch.cuda.stream(noise_stream):
+                        noiseFilter = CIPICSubject.getHRIRFromIndex(noiseOrient, args.cipicChannel)
+                        noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
+                        noiseFilter = downsampler(noiseFilter) 
+                for i, (clean, noise, idx) in enumerate(validation_loader):
+                    with record_function("load_mini_batch"):
+                        with torch.cuda.stream(noise_stream):
+                            noise = noise.to(device, non_blocking=True)
+                            for batch_idx in range(args.b):
+                                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                        with torch.cuda.stream(clean_stream):
+                            clean = clean.to(device, non_blocking=True)
+                            for batch_idx in range(args.b):
+                                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                           
+                        for batch_idx in range(args.b):
+                            clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
+                            ssl_snrs[batch_idx] = metadata['snr']
+                            ssl_targlvls[batch_idx] = metadata['target_level']
+                                           
+                        torch.cuda.synchronize()
+                   
+                    with record_function("synth_noisy_speech"):
+                        if torch_compile_capable: 
+                            optSynthesizeNoisySpeech(
+                                ssl_clean, 
+                                ssl_noise, 
+                                ssl_noisy,
+                                args.b, 
+                                ssl_snrs,
+                                ssl_targlvls,
+                                noise_stream,
+                                clean_stream
+                            )
+                        else: 
+                            synthesizeNoisySpeech(
+                                ssl_clean, 
+                                ssl_noise, 
+                                ssl_noisy,
+                                args.b, 
+                                ssl_snrs,
+                                ssl_targlvls,
+                                noise_stream,
+                                clean_stream
+                            )
+                           
+                    with record_function("calculate_score"):
+                        score = si_snr(ssl_noisy, ssl_clean)
+                        score = torch.nan_to_num(score, nan=0.0)
+                        runningScore = torch.add(runningScore, torch.mean(score), alpha=1.0/float(numIters))
+                        if args.printOutputWhileValidation:
+                            statString = "Valid [" + str(i) + "] -> "
+                            statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                            print(statString)
+                   
+                    prof.step()
 
-    end_time = time.time()
-#    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=-1))
-    averageValidationScore = runningScore.item()
-    if args.printValidationResultsHeader:
-        headerString = "Subject, Channel, Speech Orient, "
-        headerString += "Noise Orient, "
-        headerString += "Final Validation Score SI-SNR (dB), "
-        headerString += "ExecTime, "
-        headerString += "BatchSize, "
-        headerString += "Dataloader Num Workers, "
-        headerString += "Synthesis Time, "
-        headerString += "Score Compute Time, "
-        headerString += "Batch Load Time"
-        print(headerString)
-    resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
-    resultString += str(args.speechFilterOrient) + "," + str(args.noiseFilterOrient) + "," 
-    resultString += str(averageValidationScore) + "," + str(end_time - start_time) + ","
-    resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
-    resultString += str(synth_time) + "," + str(score_time) + "," + str(load_time)
-    print(resultString)
+                end_time = time.time()
+                exec_time = end_time - start_time
+                iterationLatencies.append(exec_time)
+                # only keep track of the last iteration for accurate runtime estimate
+                if len(iterationLatencies) > 10:
+                    iterationLatencies = iterationLatencies[1:]
+                averageValidationScore = runningScore.item()
+                if args.printValidationResultsHeader and noiseOrient == args.noiseFilterOrientStart:
+                    headerString = "Subject, Channel, Speech Orient, "
+                    headerString += "Noise Orient, "
+                    headerString += "Final Validation Score SI-SNR (dB), "
+                    headerString += "ExecTime, "
+                    headerString += "BatchSize, "
+                    headerString += "Dataloader Num Workers, "
+                    headerString += "Dataloader Prefetch Factor"
+                    print(headerString)
+                resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
+                resultString += str(args.speechFilterOrient) + "," + str(noiseOrient) + "," 
+                resultString += str(averageValidationScore) + "," + str(exec_time) + ","
+                resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
+                resultString += str(args.dataloader_prefetch_factor)
+                print(resultString)
+                
+                # Determine if ending condition is met
+                noiseOrient = noiseOrient + 1 
+                # For now, we only vary the noise orient in jobs, its too
+                # compilcated to deal with speech also
+                if (noiseOrient >= 1250):
+                    enoughTimeForMoreWork = False
+                if args.isCHTCJob:
+                    avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
+                    timeLeft = 1.0 *CurrentJob.get_gpu_job_time_remaining(rawValue=True)
+                    # Add a buffer of ten iterations before job end
+                    if timeLeft / avgIterationLatency < 10:
+                        enoughTimeForMoreWork = False
+                else:
+                    # On chechil, we run a fixed number of iterations
+                    if noiseOrient >= args.noiseFilterOrientEnd:
+                        enoughTimeForMoreWork = False
+
