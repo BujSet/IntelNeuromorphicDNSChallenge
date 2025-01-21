@@ -15,6 +15,8 @@ class JobAd(object):
             lines = f.readlines()
             for line in lines:
                 tokens = line.split(" = ")
+                if (len(tokens) != 2):
+                    print(tokens)
                 assert(len(tokens) == 2)
                 key = tokens[0].strip()
                 value = tokens[1].strip()

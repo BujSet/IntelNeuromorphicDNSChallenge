@@ -383,7 +383,7 @@ if __name__ == '__main__':
                 if args.isCHTCJob:
                     avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
                     timeLeft = 1.0 *CurrentJob.get_gpu_job_time_remaining(rawValue=True)
-                    # Add a buffer of ten iterations before job end
-                    if timeLeft / avgIterationLatency < 10:
+                    # Add a buffer of three iterations before job end
+                    if timeLeft / avgIterationLatency < 3:
                         enoughTimeForMoreWork = False
 
