@@ -28,6 +28,9 @@ import time
 from torch.profiler import profile, record_function, ProfilerActivity
 from chtc_files.read_job_attributes import CurrentJob 
 
+# Suppress unneeded output from pytorch profiler scheduler
+os.environ.update({'KINETO_LOG_LEVEL' : '3'})
+
 class MyTraceHandler(object):
     def __init__(self, speechOrient, noiseOrient, batchSize, 
             numWorkers, prefetchFactor, isCHTCJob):
@@ -53,11 +56,9 @@ class MyTraceHandler(object):
         return os.path.join(dir_path, file_name)
 
 def trace_handler(p, save_string, saveOutput):
-    print("Writing jsonn output")
+    print("Writing json output")
     if saveOutput:
         p.export_chrome_trace(save_string + "_trace.json")
-        #p.export_stacks(save_string + "_cpu_stacks.json", metric="self_cpu_time_total")
-        #p.export_stacks(save_string + "_gpu_stacks.json", metric="self_cuda_time_total")
         p.export_memory_timeline(save_string + "_memory.html")
 
 def calc_rms(x):
@@ -291,7 +292,8 @@ if __name__ == '__main__':
             on_trace_ready=lambda profiler: trace_handler(profiler, TraceHandler.getString() , args.saveProfileTrace)) as prof: 
         with torch.no_grad():
             while enoughTimeForMoreWork:
-#            for noiseOrient in range(args.noiseFilterOrientStart, args.noiseFilterOrientEnd):
+                # Reset running score for current iteration
+                runningScore.fill_(0)
                 start_time = time.time()
                 with record_function("load_noise_filter"):
                     with torch.cuda.stream(noise_stream):
