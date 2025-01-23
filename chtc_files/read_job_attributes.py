@@ -55,4 +55,8 @@ class JobAd(object):
             return remaining
         return str(datetime.timedelta(seconds=remaining))
 
+#from htcondor.htchirp import HTChirp
+#with HTChirp() as chirp:
+#   print(chirp.get_job_attr("JobCurrentStartDate"))
 CurrentJob = JobAd(os.environ.get("HOME"))
+#print(CurrentJob.get_job_start_time())
