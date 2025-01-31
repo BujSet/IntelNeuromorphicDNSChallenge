@@ -16,5 +16,5 @@ RUN python -m pip install pyroomacoustics
 RUN python -m pip install -U pip
 RUN python -m pip install https://github.com/lava-nc/lava-dl/releases/download/v0.5.0/lava_dl-0.5.0.tar.gz
 RUN python -m pip install praat-parselmouth
-RUN python -m pip install --upgrade torch==2.1.0 --index-url https://download.pytorch.org/whl/cu121
+RUN python -m pip install --upgrade torch==2.4.1 --index-url https://download.pytorch.org/whl/cu124
 RUN python -m pip install speechbrain
