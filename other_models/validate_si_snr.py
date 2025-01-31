@@ -286,8 +286,7 @@ if __name__ == '__main__':
         repeat=1)
     if args.isCHTCJob:
         infoString = "Detected that this instance in running in a CHTC Job "
-        # infoString += " with " + CurrentJob.get_gpu_job_time_remaining()
-        infoString += " with " + get_gpu_job_time_remaining()
+        infoString += " with " + get_gpu_time_remaining()
         infoString += " time remaining."
         print(infoString)
     iterationLatencies = []
@@ -390,8 +389,7 @@ if __name__ == '__main__':
                     enoughTimeForMoreWork = False
                 if args.isCHTCJob:
                     avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
-                    #timeLeft = 1.0 *CurrentJob.get_gpu_job_time_remaining(rawValue=True)
-                    timeLeft = 1.0 * get_gpu_job_time_remaining(rawValue=True)
+                    timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
                     # Add a buffer of three iterations before job end
                     if timeLeft / avgIterationLatency < 3:
                         enoughTimeForMoreWork = False

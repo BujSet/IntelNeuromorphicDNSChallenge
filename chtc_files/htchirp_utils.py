@@ -22,7 +22,7 @@ def get_gpu_job_length():
             print("Unable to parse GPU job length:" + lengthStr)
             sys.exit(1)
 
-def get_gpu_time_reamining(rawValue=False):
+def get_gpu_time_remaining(rawValue=False):
     elapsed = time.time() - get_job_start()
     remaining = get_gpu_job_length() - elapsed
     if rawValue == True:
