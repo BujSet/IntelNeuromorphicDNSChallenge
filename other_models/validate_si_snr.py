@@ -56,8 +56,8 @@ class MyTraceHandler(object):
         return os.path.join(dir_path, file_name)
 
 def trace_handler(p, save_string, saveOutput):
-    print("Writing json output")
     if saveOutput:
+        print("Writing json output")
         p.export_chrome_trace(save_string + "_trace.json")
         p.export_memory_timeline(save_string + "_memory.html")
 
@@ -202,6 +202,10 @@ if __name__ == '__main__':
     parser.add_argument('-noiseFilterOrientStart',
                         type=int,
                         default=608,
+                        help='First index (inclusive) into CIPIC source directions to orient the noise to ')
+    parser.add_argument('-noiseFilterOrientStep',
+                        type=int,
+                        default=1,
                         help='First index (inclusive) into CIPIC source directions to orient the noise to ')
     parser.add_argument('-noiseFilterOrientEnd',
                         type=int,
@@ -377,7 +381,7 @@ if __name__ == '__main__':
                 print(resultString)
                 
                 # Determine if ending condition is met
-                noiseOrient = noiseOrient + 1 
+                noiseOrient = noiseOrient + args.noiseFilterOrientStep
                 # For now, we only vary the noise orient in jobs, its too
                 # compilcated to deal with speech also
                 if (noiseOrient >= 1250 or noiseOrient >= args.noiseFilterOrientEnd):
