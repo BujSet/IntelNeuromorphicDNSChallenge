@@ -18,3 +18,11 @@ RUN python -m pip install https://github.com/lava-nc/lava-dl/releases/download/v
 RUN python -m pip install praat-parselmouth
 RUN python -m pip install --upgrade torch==2.4.1 --index-url https://download.pytorch.org/whl/cu124
 RUN python -m pip install speechbrain
+RUN python -m pip install torch_tb_profiler
+# Should change the following to allow for collaborator to use profiling
+# RUN useradd -u 23568 chtc_selagamsetty
+# USER chtc_selagamsetty
+#
+# E.g. for setting user Elise Song, we can do the following
+# RUN useradd -u 26504 chtc_esong32
+# USER chtc_esong32
