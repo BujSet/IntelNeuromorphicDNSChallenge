@@ -3,6 +3,7 @@ hrtfs/__pycache__/
 hrtfs/*.pyc
 hrtfs/*.png
 hrtfs/*.tar.gz
+magnitude.pdf
 *.png
 *.gif
 __pycache__/
