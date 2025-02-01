@@ -6,6 +6,9 @@ hrtfs/*.tar.gz
 magnitude.pdf
 *.png
 *.gif
+*.out
+*.err
+*.log
 __pycache__/
 training_set/clean/*.wav
 training_set/noise/*.wav
