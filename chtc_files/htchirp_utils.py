@@ -7,10 +7,9 @@ def send_log_msg(message):
 
 def get_job_start():
     with HTChirp() as chirp:
-        datestr = chirp.get_job_attr("JobCurrentStartDate")
-        print(datestr)
-        dateobj = datetime.strptime(datestr, "%b %d %Y %I:%Mp")
-        return dateobj.time()
+        starttime = float(chirp.get_job_attr("JobCurrentStartDate"))
+        print(starttime)
+        return starttime
 
 def get_gpu_job_length():
     with HTChirp() as chirp:
