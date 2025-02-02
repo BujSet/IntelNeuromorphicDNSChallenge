@@ -1,4 +1,4 @@
-from chtc_files.htchirp_utils import *
+from htchirp_utils import *
 import argparse
 
 if __name__ == '__main__':

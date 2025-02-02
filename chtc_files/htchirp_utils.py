@@ -7,9 +7,7 @@ def send_log_msg(message):
 
 def get_job_start():
     with HTChirp() as chirp:
-        starttime = float(chirp.get_job_attr("JobCurrentStartDate"))
-        print(starttime)
-        return starttime
+        return float(chirp.get_job_attr("JobCurrentStartDate"))
 
 def get_gpu_job_length():
     with HTChirp() as chirp:
@@ -26,7 +24,6 @@ def get_gpu_job_length():
 
 def get_gpu_time_remaining(rawValue=False):
     elapsed = time.time() - get_job_start()
-    print(elapsed)
     remaining = get_gpu_job_length() - elapsed
     if rawValue == True:
         return remaining
