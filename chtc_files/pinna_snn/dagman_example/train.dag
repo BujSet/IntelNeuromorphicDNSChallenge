@@ -1,0 +1,12 @@
+JOB job185 train_dag.sub
+JOB job190 train_dag.sub
+JOB job195 train_dag.sub
+
+VARS ALL_NODES epoch="5"
+
+VARS job185 loadnet="185" savenet="190"
+VARS job190 loadnet="190" savenet="195"
+VARS job195 loadnet="195" savenet="200"
+
+PARENT job185 CHILD job190
+PARENT job190 CHILD job195

@@ -1,0 +1,64 @@
+#!/bin/bash
+export TORCH_EXTENSIONS_DIR=$(pwd)
+export HOME=$(pwd)
+git clone https://github.com/BujSet/IntelNeuromorphicDNSChallenge.git -q
+cd IntelNeuromorphicDNSChallenge/
+git switch develop -q
+git submodule init -q
+git submodule update -q
+mkdir -p training_set/
+mkdir -p validation_set/
+cd training_set/
+echo "$(date '+%Y-%m-%d %H:%M:%S')"
+echo "[Train Clean] Initiating tarball copy" \
+	&& cp /staging/groups/lipasti_pharm_group/training_set/training_set_clean.tar.gz . \
+	&& echo "[Train Clean] Tarball copy success... Initiating tarball unpack" \
+	&& tar -xzf training_set_clean.tar.gz \
+	&& echo "[Train Clean] Tarball unpack success... Initiating tarball removal" \
+	&& rm -f training_set_clean.tar.gz \
+	&& echo "[Train Clean] Tarball removal success" &
+TCLEAN=$!
+echo "[Train Noise] Initiating tarball copy" \
+	&& cp /staging/groups/lipasti_pharm_group/training_set/training_set_noise.tar.gz . \
+	&& echo "[Train Noise] Tarball copy success... Initiating tarball unpack" \
+	&& tar -xzf training_set_noise.tar.gz \
+	&& echo "[Train Noise] Tarball unpack success... Initiating tarball removal" \
+	&& rm -f training_set_noise.tar.gz \
+	&& echo "[Train Noise] Tarball removal success" &
+TNOISE=$!
+cd ../validation_set/
+echo "[Valid Clean] Initiating tarball copy" \
+        && cp /staging/groups/lipasti_pharm_group/validation_set/validation_set_clean.tar.gz . \
+	&& echo "[Valid Clean] Tarball copy success... Initiating tarball unpack" \
+        && tar -xzf validation_set_clean.tar.gz \
+	&& echo "[Valid Clean] Tarball unpack success... Initiating tarball removal" \
+        && rm -f validation_set_clean.tar.gz \
+	&& echo "[Valid Clean] Tarball removal success" &
+VCLEAN=$!
+echo "[Valid Noise] Initiating tarball copy" \
+        && cp /staging/groups/lipasti_pharm_group/validation_set/validation_set_noise.tar.gz . \
+	&& echo "[Valid Noise] Tarball copy success... Initiating tarball unpack" \
+        && tar -xzf validation_set_noise.tar.gz \
+	&& echo "[Valid Noise] Tarball unpack success... Initiating tarball removal" \
+        && rm -f validation_set_noise.tar.gz \
+	&& echo "[Valid Noise] Tarball removal success" &
+VNOISE=$!
+wait $TCLEAN $TNOISE $VCLEAN $VNOISE
+cd ../hrtfs/cipic/
+echo "[CIPIC] Initiating tarball copy" \
+        && cp /staging/groups/lipasti_pharm_group/cipic.tar.gz . \
+	&& echo "[CIPIC] Tarball copy success.. Initiating tarball unpack" \
+        && tar -xzf cipic.tar.gz \
+	&& echo "[CIPIC] Tarball unpack success... Initiating tarball removal" \
+        && rm -f cipic.tar.gz \
+	&& echo "[CIPIC] Tarball removal success" \
+        && mv cipic/*.sofa . \
+        && rm -rf cipic/ &
+CIPIC_COPY=$!
+wait $CIPIC_COPY
+echo "$(date '+%Y-%m-%d %H:%M:%S')"
+cd ../../
+mkdir -p Trained/
+mv ../network_$2.pt Trained/
+python3 other_models/ssns_randomized.py -path ./ -epochs $1 -training_samples 8192 -validation_samples 8192 -useCipic -fixedOrients -numFixedOrients 2 -useCheckpoint ./Trained/network_$2.pt -saveCheckpoint
+mv Trained/network.pt ~/network_$3.pt

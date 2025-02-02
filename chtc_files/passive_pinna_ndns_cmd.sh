@@ -3,6 +3,7 @@ export TORCH_EXTENSIONS_DIR=$(pwd)
 export HOME=$(pwd)
 git clone https://github.com/BujSet/IntelNeuromorphicDNSChallenge.git -q
 cd IntelNeuromorphicDNSChallenge/
+python3 chtc_files/ulog_script.py -msg "Test Message"
 export INTEL_NDNS_HOME=$(pwd)
 git switch develop -q
 git submodule init -q
@@ -10,6 +11,9 @@ git submodule update -q
 mkdir -p validation_set/
 echo "$(date '+%Y-%m-%d %H:%M:%S')"
 cd validation_set/
+condor_chirp ulog "Default condor_chirp command"
+/usr/libexec/condor_chirp ulog "condor_chirp command from /usr dir"
+python3 ../chtc_files/ulog_script.py -msg "Initiating dataset copy from staging to execution point"
 echo "[Valid Clean] Initiating tarball copy" \
         && cp /staging/groups/san_miguel_stacs_group/intel_speech_ndns_dataset/validation_set/validation_clean.tar.gz . \
 	&& echo "[Valid Clean] Tarball copy success... Initiating tarball unpack" \
@@ -27,6 +31,9 @@ echo "[Valid Noise] Initiating tarball copy" \
 	&& echo "[Valid Noise] Tarball removal success" &
 VNOISE=$!
 wait $VCLEAN $VNOISE
+pushd $INTEL_NDNS_HOME
+python3 chtc_files/ulog_script.py -msg "Completed dataset copy from staging to execution point"
+popd
 cd ../hrtfs/cipic/
 echo "[CIPIC] Initiating tarball copy" \
         && cp /staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz . \

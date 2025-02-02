@@ -1,6 +1,6 @@
 # train.sub
-container_image = docker://rselagam/ndns:v45
-universe = container
+docker_image = rselagam/ndns:v51_cuda12.4.0_selagamsetty
+universe = docker
 
 # Specify your executable (single binary or a script that runs several
 #  commands), arguments, and a files for HTCondor to store standard

@@ -1,0 +1,35 @@
+# train_L40_medium.sub
+#
+# Provide HTCondor with the name of the Docker container
+docker_image = rselagam/ndns:v51_cuda12.4.0_selagamsetty
+universe = docker
+
+executable = ndns_cmd.sh
+log = L40L_$(subject)_$(channel)_$(speech)_$(noiseStartIdx)_$(noiseEndIdx)_$(Cluster).log
+output = L40L_$(subject)_$(channel)_$(speech)_$(noiseStartIdx)_$(noiseEndIdx)_$(Cluster).out
+error = L40L_$(subject)_$(channel)_$(speech)_$(noiseStartIdx)_$(noiseEndIdx)_$(Cluster).err
+
+# Specify that HTCondor should transfer files to and from the
+#  computer where each job runs. The last of these lines *would* be
+#  used if there were any other files needed for the executable to use.
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT_OR_EVICT
+arguments = $(subject) $(channel) $(speech) $(noiseStartIdx) $(noiseEndIdx) $(batchSize) $(workers) $(prefetchFactor) $(saveProfile)
+max_idle = 10
+want_io_proxy = true
+#TODO should change back to -15 when done with testing
+priority = -15
+batch_name = "L40_long_101_105"
+
++WantGPULab = true
++GPUJobLength = "long"
+
+request_gpus = 1
+request_cpus = 4
+request_memory = 16GB
+request_disk = 190GB
+require_gpus = (Capability == 8.9) && (DriverVersion == 12.4)
+requirements = (HasCHTCStaging == True)
+
+# Tell HTCondor to run 1 instances of our job:
+queue subject,channel,speech,noiseStartIdx,noiseEndIdx,batchSize,workers,prefetchFactor,saveProfile from configs_L40_long.txt 

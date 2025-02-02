@@ -1,0 +1,41 @@
+# train_dag.sub
+#
+# Provide HTCondor with the name of the Docker container
+docker_image = rselagam/ndns:v51_cuda12.4.0_selagamsetty
+universe = docker
+
+# Specify your executable (single binary or a script that runs several
+#  commands), arguments, and a files for HTCondor to store standard
+#  output (or "screen output").
+#  $(Process) will be a integer number for each job, starting with "0"
+#  and increasing for the relevant number of jobs.
+executable = ndns_cmd.sh
+log = $(Cluster)_$(epoch)_$(loadnet)_$(savenet).log
+output = $(Cluster)_$(epoch)_$(loadnet)_$(savenet).out
+error = $(Cluster)_$(epoch)_$(loadnet)_$(savenet).err
+#
+# Specify that HTCondor should transfer files to and from the
+#  computer where each job runs. The last of these lines *would* be
+#  used if there were any other files needed for the executable to use.
+transfer_input_files = /home/selagamsetty/ndns/sweep_epochs/cosine_annealing_LR/fixed_orients_2/ndns_cmd.sh, /home/selagamsetty/ndns/sweep_epochs/cosine_annealing_LR/fixed_orients_2/network_$(loadnet).pt
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT_OR_EVICT
+arguments = $(epoch) $(loadnet) $(savenet)
+max_idle = 1
+want_io_proxy = true
+priority = -10
+
++WantGPULab = true
++GPUJobLength = "short"
+
+request_gpus = 1
+# Tell HTCondor what amount of compute resources
+#  each job will need on the computer where it runs.
+request_cpus = 1
+request_memory = 16GB
+request_disk = 350GB
+require_gpus = (Capability >= 8.0)  && (DriverVersion >= 12.4)
+requirements = (HasCHTCStaging == True) && (Machine != "gpu2003.chtc.wisc.edu") && (Machine != "gpu4001.chtc.wisc.edu")
+
+# Tell HTCondor to run 1 instances of our job:
+queue 1
