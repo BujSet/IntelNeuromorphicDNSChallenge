@@ -491,7 +491,7 @@ if __name__ == '__main__':
     trackingInfo = dict()
     if args.useCheckpoint != "":
         run_warm_up_training(args, net, optimizer, scheduler, train_loader)
-        checkpoint = torch.load(args.useCheckpoint, weights_only=True)
+        checkpoint = torch.load(args.useCheckpoint, weights_only=False)
         module.load_state_dict(checkpoint['module_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
