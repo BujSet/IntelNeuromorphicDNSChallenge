@@ -5,7 +5,6 @@
 import os, sys, math
 sys.path.append('./')
 from audio_dataloader import DNSAudioCleanOnly
-from hrtfs.cipic_db import CipicDatabase 
 import h5py
 import argparse
 import numpy as np
@@ -50,7 +49,8 @@ class Network(torch.nn.Module):
             scale_grad=0.8, 
             max_delay=64, 
             out_delay=0,
-            hiddenLayerWidths=512,
+            hiddenLayerWidths=[512, 512],
+            hiddenLayers=2,
             n_fft=512):
         super().__init__()
         self.stft_mean = 0.2
@@ -59,6 +59,8 @@ class Network(torch.nn.Module):
         self.out_delay = out_delay
         self.EPS = 2.220446049250313e-16
         self.hiddenLayerWidths = hiddenLayerWidths
+        self.hiddenLayers = hiddenLayers
+        assert(len(self.hiddenLayerWidths) == self.hiddenLayers)
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -74,17 +76,40 @@ class Network(torch.nn.Module):
 
         self.input_quantizer = lambda x: slayer.utils.quantize(x, step=1 / 64)
 
-        self.blocks = torch.nn.ModuleList([
-            slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, 1, weight_norm=False),
-        ])
+        # Create the input layer
+        self.blocks = torch.nn.ModuleList([slayer.block.sigma_delta.Input(sdnn_params)])
+
+        # Next, create a variable number of dense layers, first layer 
+        # dimensions depend on input FFT params, but the rest can be directly 
+        # configured from command line parameters
+        for i in range(hiddenLayers):
+            if i == 0:
+                dense_layer = slayer.block.sigma_delta.Dense(sdnn_params,
+                        n_fft//2 + 1, 
+                        self.hiddenLayerWidths[0], 
+                        weight_norm=False, 
+                        delay=True, 
+                        delay_shift=True)
+            else:
+                dense_layer = slayer.block.sigma_delta.Dense(sdnn_params,
+                        self.hiddenLayerWidths[i-1],
+                        self.hiddenLayerWidths[i], 
+                        weight_norm=False, 
+                        delay=True, 
+                        delay_shift=True)
+
+            dense_layer.delay.max_delay = max_delay
+            self.blocks.append(dense_layer)
+
+        # Create the final output layer, for every FFT frame, the network 
+        # should predict what the estimated fundamental rfrequency is, so the
+        # output is a single dimension
+        self.append(slayer.block.sigma_delta.Output(sdnn_params, 
+                    self.hiddenLayerWidths[self.hiddenLayers-1], 
+                    1,
+                    weight_norm=False))
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
-
-        self.blocks[1].delay.max_delay = max_delay
-        self.blocks[2].delay.max_delay = max_delay
 
     def forward(self, speech):
         x = speech
@@ -119,84 +144,64 @@ def plot_weights(data):
         plt.savefig(name + ".png", bbox_inches="tight")
         plt.close()
 
-def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=[], startingEpoch=0):
+def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
-    if len(orientList) == 0:
-        assert(not args.useCipic)
 
     for epoch in range(args.epochs):
         trainingLosses = []
         for i, (clean, idx) in enumerate(train_loader):
             net.train()
-            if (len(orientList) > 0):
-                clean = clean.to(device)
+            clean = clean.to(device)
 
-                speechFilterOrient = random.choice(orientList)
-                speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
-                speechFilter  = speechFilter.to(device)
-                
-                ssl_clean = torch.zeros(args.b, 480000).to(device)
-                for batch_idx in range(args.b):
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
-            else:
-                ssl_clean = clean.to(device)
-
+            # Compute FFT of input audio
             if (args.spectrogram == 0):
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
             elif(args.spectrogram == 1):
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, stft_transform)
             else:
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, mel_transform)
 
+            # Pass FFT to the network
             pitch_prediction = net(clean_abs)
 
-            ssl_clean_pitch = torch.zeros(pitch_prediction.size()).to(device)
-            
-            num_fft_frames = ssl_clean_pitch.size()[-1]
+            # Determine the ground truth value
+            parselmouth_pitch = torch.zeros(pitch_prediction.size()).to(device)
+            num_fft_frames = parselmouth_pitch.size()[-1]
             period = (480000.0 / num_fft_frames) / 16000.0
             for batch_idx in range(args.b):
                 clean_file = train_set._get_filenames(idx[batch_idx])
                 clean_pitch = parselmouth.Sound(clean_file).to_pitch(time_step=(1.0*(args.n_fft//4)/16000), pitch_floor=50.0, pitch_ceiling=1000.0)
-                clean_pitch_freq = [clean_pitch.get_value_at_time((i * period) + (period/2)) for i in range(0, ssl_clean_pitch.size()[-1] - 1)]
+                clean_pitch_freq = [clean_pitch.get_value_at_time((i * period) + (period/2)) for i in range(0, parselmouth_pitch.size()[-1] - 1)]
                 clean_pitch_freq.append(np.nan)
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
                 if torch.isnan(clean_pitch_freq).any():
                     clean_pitch_freq[torch.isnan(clean_pitch_freq)] = 0
-                ssl_clean_pitch[batch_idx,:] = clean_pitch_freq
-            ssl_clean_pitch.to(device)  
+                parselmouth_pitch[batch_idx,:] = clean_pitch_freq
+            parselmouth_pitch.to(device)  
             
-            loss = F.mse_loss(pitch_prediction, ssl_clean_pitch)
+            # Compare network prediction with ground truth        
+            loss = F.mse_loss(pitch_prediction, parselmouth_pitch)
              
             if torch.isnan(loss).any():
                 loss[torch.isnan(loss)] = 0
             assert torch.isnan(loss) == False
 
+            # Perform gradient updates based on loss
             optimizer.zero_grad()
             loss.backward()
             module.validate_gradients()
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
 
+            # Track losses 
             trainingLosses.append(torch.mean(loss).item())
             if args.printOutputWhileTraining:
                 statString = "Train [" + str(epoch + startingEpoch + 1) + " | " + str(i) + "]"
-                if (args.useCipic):
-                    statString += " (s)=("
-                    statString += str(speechFilterOrient) + ") -> "
-                else:
-                    statString += " -> "
+                statString += " -> "
                 statString += str(loss.item())
                 print(statString)
         scheduler.step()
-        if args.trackDelayWhileTraining:
-            for param_tensor in net.state_dict():
-                if ("delay.delay" in param_tensor):
-                    if not param_tensor in delay_weights.keys():
-                        delay_weights[param_tensor] = dict()
-                    delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
-                    #print(param_tensor + "," + str(epoch) + "," + str(delay_weights[param_tensor][epoch]))
-        # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
     return delay_weights, averageTrainingLoss
 
@@ -379,10 +384,6 @@ if __name__ == '__main__':
                         dest='printOutputWhileValidation', 
                         action='store_true',
                         help='Switch flag to print score after every mini-batch during validation')
-    parser.add_argument('-trackDelayWhileTraining',
-                        dest='trackDelayWhileTraining', 
-                        action='store_true',
-                        help='Switch flag to track updates to delay weights while training')
     parser.add_argument('-useCheckpoint',
                         type=str,
                         default='',
@@ -391,39 +392,15 @@ if __name__ == '__main__':
                         dest='saveCheckpoint', 
                         action='store_true',
                         help='Switch flag to enable saving a chekpoint after training')
-
-    # CIPIC Filter Parameters
-    # ID:21 ==> Mannequin with large pinna
-    # ID 165 ==> Mannequin with small pinna
-    # The rest are real subjects
-    parser.add_argument('-useCipic',
-                        dest='useCipic', 
-                        action='store_true',
-                        help='Switch flag to toggle using the CIPIC pre-filter')
-    parser.add_argument('-fixedOrients',
-                        dest='fixedOrients', 
-                        action='store_true',
-                        help='Switch flag to manually configure which orients will be selected')
-    parser.add_argument('-numFixedOrients',
-                        type=int,
-                        default=1,
-                        help='Number of manually set orientation pairs to use if fixedOrients switch is set')
-    parser.add_argument('-cipicSubject',
-                        type=int,
-                        default=12,
-                        help='Cipic subject ID for pinna filters')
-    parser.add_argument('-filterChannel',
-                        type=int,
-                        default=0,
-                        help='Channel used for speech and noise separation')
     parser.add_argument('-hiddenLayerWidths',
                         type=int,
-                        default=512,
-                        help='# of nuerons in hidden layers')
-    parser.add_argument('-numOrients',
+                        nargs='+',
+                        default=[512, 512],
+                        help='Width of dense layers in network')
+    parser.add_argument('-hiddenLayers',
                         type=int,
-                        default=8,
-                        help='When using randomized orients, number of additional orientations, must be >= 8')
+                        default=2,
+                        help='Number of hidden dense layers')
 
     args = parser.parse_args()
 
@@ -454,6 +431,7 @@ if __name__ == '__main__':
                 args.dmax,
                 args.out_delay,
                 args.hiddenLayerWidths,
+                args.hiddenLayers,
                 args.n_fft).to(device),
                     device_ids=args.gpu)
     module = net.module
@@ -484,44 +462,6 @@ if __name__ == '__main__':
                                   weight_decay=1e-5)
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
-
-    if (not args.useCipic):
-        print("NOT using CIPIC subject to preprocess audio")
-
-    orientList = []
-    if (args.useCipic):
-        CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
-        print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-        if not args.fixedOrients:
-            orientSet = set()
-            orientSet.add(316) # center of front upper  right hemisphere
-            orientSet.add(300) # center of front bottom right hemisphere
-            orientSet.add(332) # center of back  upper  right hemisphere
-            orientSet.add(348) # center of back  bottom right hemisphere
-            orientSet.add(916) # center of front upper  left  hemisphere
-            orientSet.add(900) # center of front bottom left  hemisphere
-            orientSet.add(932) # center of back  upper  left  hemisphere
-            orientSet.add(948) # center of back  bottom left  hemisphere
-            allPossibleOrients = set(range(0, 1250)).difference(orientSet)
-            for _ in range(8, args.numOrients):
-                randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
-                orientSet.add(randOrient)
-                allPossibleOrients.remove(randOrient)
-            orientList = list(orientSet)
-        else:
-            assert(args.fixedOrients and args.numFixedOrients >= 1)
-            if args.numFixedOrients == 1:
-                orientList.append( 608 ) # speech in front, noise in back, medial plane
-            if args.numFixedOrients == 2:
-                orientList.append( 608 ) # speech in front, noise in back, medial plane
-                orientList.append( 640 ) # speech in back, noise in front, medial plane
-            if args.numFixedOrients == 4:
-                orientList.append( 316 )
-                orientList.append( 300 )
-                orientList.append( 916 )
-                orientList.append( 900 )
-
-    print("Orient list contains " + str(len(orientList)) + " orientations")
 
     train_set = DNSAudioCleanOnly(root=args.path + 'training_set/', maxFiles=args.training_samples)
     train_loader = DataLoader(train_set,
@@ -560,8 +500,6 @@ if __name__ == '__main__':
         print(statusString)
 
     delay_weights, lastTrainingLoss = run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=orientList, startingEpoch=startingEpoch)
-    if args.trackDelayWhileTraining:
-    	plot_weights(delay_weights)
 
     print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + "]")
 
