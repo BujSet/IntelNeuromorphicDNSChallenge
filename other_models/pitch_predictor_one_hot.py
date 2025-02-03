@@ -449,6 +449,8 @@ if __name__ == '__main__':
                 args.hiddenLayers,
                 args.n_fft).to(device),
                     device_ids=args.gpu)
+    if torch_compile_capable:
+        net = torch.compile(net)
     module = net.module
     print("[INFO] Creating " + str(len(module.blocks)) + "-layer network with hidden layer widths=" + str(module.hiddenLayerWidths))
     stft_transform =torchaudio.transforms.Spectrogram(
