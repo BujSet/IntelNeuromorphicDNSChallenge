@@ -5,7 +5,6 @@
 import os, sys, math
 sys.path.append('./')
 from audio_dataloader import DNSAudioCleanOnly
-from hrtfs.cipic_db import CipicDatabase 
 import h5py
 import argparse
 import numpy as np
@@ -19,7 +18,8 @@ import soundfile as sf
 from lava.lib.dl import slayer
 import torchaudio
 import random
-import parselmouth, librosa
+import parselmouth, librosa, time
+from chtc_files.htchirp_utils import *
 
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
@@ -57,7 +57,8 @@ class Network(torch.nn.Module):
             scale_grad=0.8, 
             max_delay=64, 
             out_delay=0,
-            hiddenLayerWidths=512,
+            hiddenLayerWidths=[512, 512],
+            hiddenLayers=2,
             n_fft=512):
         super().__init__()
         self.stft_mean = 0.2
@@ -66,6 +67,7 @@ class Network(torch.nn.Module):
         self.out_delay = out_delay
         self.EPS = 2.220446049250313e-16
         self.hiddenLayerWidths = hiddenLayerWidths
+        self.hiddenLayers = hiddenLayers
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -81,17 +83,44 @@ class Network(torch.nn.Module):
 
         self.input_quantizer = lambda x: slayer.utils.quantize(x, step=1 / 64)
 
-        self.blocks = torch.nn.ModuleList([
-            slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, n_fft//2 + 1, weight_norm=False),
-        ])
+        # Create the input layer
+        self.blocks = torch.nn.ModuleList([slayer.block.sigma_delta.Input(sdnn_params)])
+
+        # Next, create a variable number of dense layers, first layer 
+        # dimensions depend on input FFT params, but the rest can be directly 
+        # configured from command line parameters
+        for i in range(self.hiddenLayers):
+            if i == 0:
+                dense_layer = slayer.block.sigma_delta.Dense(sdnn_params,
+                        n_fft//2 + 1, 
+                        self.hiddenLayerWidths[0], 
+                        weight_norm=False, 
+                        delay=True, 
+                        delay_shift=True)
+            else:
+                dense_layer = slayer.block.sigma_delta.Dense(sdnn_params,
+                        self.hiddenLayerWidths[i-1],
+                        self.hiddenLayerWidths[i], 
+                        weight_norm=False, 
+                        delay=True, 
+                        delay_shift=True)
+
+            dense_layer.delay.max_delay = max_delay
+            self.blocks.append(dense_layer)
+
+        # Create the final output layer, for every FFT frame, the network 
+        # should predict what the estimated fundamental frequency is, so the
+        # output is a one-hot vector, where the 1 will indicate which the 
+        # perceived fundamental frequency
+        self.blocks.append(slayer.block.sigma_delta.Output(sdnn_params, 
+                    self.hiddenLayerWidths[self.hiddenLayers-1], 
+                    n_fft//2 + 1,
+                    weight_norm=False))
+        # Normally, we add a softmax layer to network since pitch predictions
+        # should be mutually exclusive, but because the PyTorch implementation
+        # of cross entropy loss already does this, we don't need to
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
-
-        self.blocks[1].delay.max_delay = max_delay
-        self.blocks[2].delay.max_delay = max_delay
 
     def forward(self, speech):
         x = speech
@@ -110,33 +139,26 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=[], startingEpoch=0):
+def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
-    if len(orientList) == 0:
-        assert(not args.useCipic)
+    epochLatencies = []
+    enoughTimeForMoreWork = True
+    currentEpoch = 0
     net.train()
-    for epoch in range(args.epochs):
+    while enoughTimeForMoreWork:
         trainingLosses = []
+        start_time = time.time()
         for i, (clean, idx) in enumerate(train_loader):        
-            if (len(orientList) > 0):
-                clean = clean.to(device)
-                speechFilterOrient = random.choice(orientList)
-                speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
-                speechFilter  = speechFilter.to(device)
-                ssl_clean = torch.zeros(args.b, 480000).to(device)
-                for batch_idx in range(args.b):
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
-            else:
-                ssl_clean = clean.to(device)
+            clean = clean.to(device)
 
             if (args.spectrogram == 0):
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
             elif(args.spectrogram == 1):
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, stft_transform)
             else:
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, mel_transform)
             
             pitch_prediction = net(clean_abs)
 
@@ -168,17 +190,32 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=
 
             trainingLosses.append(torch.mean(loss).item())
             if args.printOutputWhileTraining:
-                statString = "Train [" + str(epoch + startingEpoch + 1) + " | " + str(i) + "]"
-                if (args.useCipic):
-                    statString += " (s)=("
-                    statString += str(speechFilterOrient) + ") -> "
-                else:
-                    statString += " -> "
+                statString = "Train [" + str(currentEpoch + startingEpoch)
+                statString += " | " + str(i) + "] - > "
                 statString += str(loss.item())
                 print(statString)
         scheduler.step()
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
-    return delay_weights, averageTrainingLoss
+        end_time = time.time()
+        epochLatencies.append(end_time - start_time)
+        # only keep track of the last 10 iterations for accurate runtime estimate
+        if len(epochLatencies) > 10:
+            epochLatencies = epochLatencies[-10:]
+        currentEpoch += 1
+        if currentEpoch == args.epochs:
+            enoughTimeForMoreWork = False
+        if args.isCHTCJob:
+            avgEpochLatency = 1.0 * sum(epochLatencies)/ len(epochLatencies)
+            timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
+            # Add a buffer of five epochs before job end to allow 
+            # validation loop to occur
+            if timeLeft / avgEpochLatency < 5:
+                enoughTimeForMoreWork = False
+    completedEpochs = currentEpoch + startingEpoch
+    avgEpochLatency = 1.0 * sum(epochLatencies)/ len(epochLatencies)
+    updateString = "Completed " + str(completedEpochs)
+    updateString += " with avg epoch latency " + str(avgEpochLatency) + " secs"
+    return delay_weights, averageTrainingLoss, currentEpoch+startingEpoch
 
 def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
     net.train()
@@ -216,31 +253,20 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
         optimizer.step()
         return
 
-def run_validation_loop(args, net, validation_loader, orientList=[]):
+def run_validation_loop(args, net, validation_loader):
     net.eval()
     validationLosses = []
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
-    if len(orientList) == 0:
-        assert(not args.useCipic)
     for i, (clean, idx) in enumerate(validation_loader):
         with torch.no_grad():
-            if len(orientList) > 0:
-                speechFilterOrient = random.choice(orientList)
-                speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
-                speechFilter  = speechFilter.to(device)
-                clean = clean.to(device)
-                ssl_clean = torch.zeros(args.b, 480000).to(device)
-                for batch_idx in range(args.b):
-                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], downsampler(speechFilter))
-            else:
-                ssl_clean = clean.to(device)
+            clean = clean.to(device)
 
             if (args.spectrogram == 0):
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, None)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
             elif(args.spectrogram == 1):
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, stft_transform)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, stft_transform)
             else:
-                clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+                clean_abs, clean_arg = stft_splitter(clean, args.n_fft, mel_transform)
 
             pitch_prediction = net(clean_abs)
 
@@ -267,12 +293,7 @@ def run_validation_loop(args, net, validation_loader, orientList=[]):
 
             validationLosses.append(torch.mean(loss).item())
             if args.printOutputWhileValidation:
-                statString = "Valid [" + str(i) + "]"
-                if (args.useCipic):
-                    statString += " (s)=("
-                    statString += str(speechFilterOrient) + ") -> "
-                else:
-                    statString += " -> "
+                statString = "Valid [" + str(i) + "] -> "
                 statString += str(loss.item())
                 print(statString)
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
@@ -282,7 +303,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-script_name',
                         type=str,
-                        default='other_models/pitch_predictor',
+                        default='other_models/pitch_predictor_one_hot',
                         help='name of this file')
     parser.add_argument('-gpu',
                         type=int,
@@ -292,6 +313,14 @@ if __name__ == '__main__':
                         type=int,
                         default=32,
                         help='batch size for dataloader')
+    parser.add_argument('-dataloader_workers',
+                        type=int,
+                        default=4,
+                        help='batch size for dataloader')
+    parser.add_argument('-dataloader_prefetch_factor',
+                        type=int,
+                        default=2,
+                        help='prefetch factor for dataloader')
     parser.add_argument('-lr',
                         type=float,
                         default=0.001,
@@ -368,39 +397,19 @@ if __name__ == '__main__':
                         dest='saveCheckpoint', 
                         action='store_true',
                         help='Switch flag to enable saving a chekpoint after training')
-
-    # CIPIC Filter Parameters
-    # ID:21 ==> Mannequin with large pinna
-    # ID 165 ==> Mannequin with small pinna
-    # The rest are real subjects
-    parser.add_argument('-useCipic',
-                        dest='useCipic', 
-                        action='store_true',
-                        help='Switch flag to toggle using the CIPIC pre-filter')
-    parser.add_argument('-fixedOrients',
-                        dest='fixedOrients', 
-                        action='store_true',
-                        help='Switch flag to manually configure which orients will be selected')
-    parser.add_argument('-numFixedOrients',
-                        type=int,
-                        default=1,
-                        help='Number of manually set orientation pairs to use if fixedOrients switch is set')
-    parser.add_argument('-cipicSubject',
-                        type=int,
-                        default=12,
-                        help='Cipic subject ID for pinna filters')
-    parser.add_argument('-filterChannel',
-                        type=int,
-                        default=0,
-                        help='Channel used for speech and noise separation')
     parser.add_argument('-hiddenLayerWidths',
                         type=int,
-                        default=512,
+                        nargs="+",
+                        default=[512,512],
                         help='# of nuerons in hidden layers')
-    parser.add_argument('-numOrients',
+    parser.add_argument('-hiddenLayers',
                         type=int,
-                        default=8,
-                        help='When using randomized orients, number of additional orientations, must be >= 8')
+                        default=2,
+                        help='# of hidden layers')
+    parser.add_argument('-is_CHTC_job',
+                        dest='isCHTCJob', 
+                        action='store_true',
+                        help='Switch flag to indicate if this job was run on CHTC')
 
     args = parser.parse_args()
 
@@ -420,8 +429,14 @@ if __name__ == '__main__':
         for arg, value in sorted(vars(args).items()):
             f.write('{} : {}\n'.format(arg, value))
 
-    print('Using GPUs {}'.format(args.gpu))
     device = torch.device('cuda:{}'.format(args.gpu[0]))
+    # Get CUDA capability
+    device_cap = torch.cuda.get_device_capability()
+    torch_compile_capable = False
+    if device_cap in ((7, 0), (8, 0), (9, 0)):
+        torch_compile_capable = True
+        print("Detected device capable of using torch.compile, will attempt to use for torch operations")
+        # TODO shoudl try torch compile on the network somehow
 
     out_delay = args.out_delay
     net = torch.nn.DataParallel(Network(
@@ -431,9 +446,11 @@ if __name__ == '__main__':
                 args.dmax,
                 args.out_delay,
                 args.hiddenLayerWidths,
+                args.hiddenLayers,
                 args.n_fft).to(device),
                     device_ids=args.gpu)
     module = net.module
+    print("[INFO] Creating " + str(len(module.blocks)) + "-layer network with hidden layer widths=" + str(module.hiddenLayerWidths))
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
@@ -452,9 +469,6 @@ if __name__ == '__main__':
     # https://stackoverflow.com/questions/74447735/why-is-the-inversemelscale-torchaudio-function-so-slow
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
-    # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
-    downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
-
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
@@ -462,50 +476,13 @@ if __name__ == '__main__':
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
-    if (not args.useCipic):
-        print("NOT using CIPIC subject to preprocess audio")
-
-    orientList = []
-    if (args.useCipic):
-        CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
-        print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-        if not args.fixedOrients:
-            orientSet = set()
-            orientSet.add(316) # center of front upper  right hemisphere
-            orientSet.add(300) # center of front bottom right hemisphere
-            orientSet.add(332) # center of back  upper  right hemisphere
-            orientSet.add(348) # center of back  bottom right hemisphere
-            orientSet.add(916) # center of front upper  left  hemisphere
-            orientSet.add(900) # center of front bottom left  hemisphere
-            orientSet.add(932) # center of back  upper  left  hemisphere
-            orientSet.add(948) # center of back  bottom left  hemisphere
-            allPossibleOrients = set(range(0, 1250)).difference(orientSet)
-            for _ in range(8, args.numOrients):
-                randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
-                orientSet.add(randOrient)
-                allPossibleOrients.remove(randOrient)
-            orientList = list(orientSet)
-        else:
-            assert(args.fixedOrients and args.numFixedOrients >= 1)
-            if args.numFixedOrients == 1:
-                orientList.append( 608 ) # speech in front, noise in back, medial plane
-            if args.numFixedOrients == 2:
-                orientList.append( 608 ) # speech in front, noise in back, medial plane
-                orientList.append( 640 ) # speech in back, noise in front, medial plane
-            if args.numFixedOrients == 4:
-                orientList.append( 316 )
-                orientList.append( 300 )
-                orientList.append( 916 )
-                orientList.append( 900 )
-
-    print("Orient list contains " + str(len(orientList)) + " orientations")
-
     train_set = DNSAudioCleanOnly(root=args.path + 'training_set/', maxFiles=args.training_samples)
     train_loader = DataLoader(train_set,
                           batch_size=args.b,
                           shuffle=True,
                           collate_fn=train_set.collate_fn,
-                          num_workers=4,
+                          num_workers=args.dataloader_workers,
+                          prefetch_factor=args.dataloader_prefetch_factor,
                           pin_memory=True)
 
     startingEpoch = 0
@@ -518,6 +495,9 @@ if __name__ == '__main__':
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         startingEpoch = checkpoint['epochs_completed']
         trackingInfo = checkpoint['tracking_info']
+        cmd_line_args = checkpoint['command_line_args']
+        # TODO should verify that every value in current args matches the args
+        # from the checkpoint we're loading.
         print("Current Tracking info:")
         print("Epoch | Training Loss | Validation Loss ")
         for i in range(0, startingEpoch+1):
@@ -536,33 +516,35 @@ if __name__ == '__main__':
         statusString += str(startingValidationLoss) + "]"
         print(statusString)
 
-    delay_weights, lastTrainingLoss = run_training_loop(args, net, optimizer, scheduler, train_loader, orientList=orientList, startingEpoch=startingEpoch)
+    delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=startingEpoch)
 
-    print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + "]")
+    print("Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
 
     validation_set = DNSAudioCleanOnly(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     validation_loader = DataLoader(validation_set,
                                batch_size=args.b,
                                shuffle=True,
                                collate_fn=validation_set.collate_fn,
-                               num_workers=4,
+                               num_workers=args.dataloader_workers,
+                               prefetch_factor=args.dataloader_prefetch_factor,
                                pin_memory=True)
-    finalValidationLoss = run_validation_loop(args, net, validation_loader, orientList=orientList)
+    finalValidationLoss = run_validation_loop(args, net, validation_loader)
     statusString  = "Completed training and validation [epochs_completed:" 
-    statusString += str(startingEpoch+args.epochs) + ", training loss=" 
+    statusString += str(epochsCompleted) + ", training loss=" 
     statusString += str(lastTrainingLoss) + ", validation loss="
     statusString += str(finalValidationLoss) + "]"
     print(statusString)
     if (args.saveCheckpoint):
-        trackingInfo[startingEpoch+args.epochs] = dict()
-        currEpochStats = trackingInfo[startingEpoch+args.epochs]
+        trackingInfo[epochsCompleted] = dict()
+        currEpochStats = trackingInfo[epochsCompleted]
         currEpochStats['training_loss'] = lastTrainingLoss
         currEpochStats['validation_loss'] = finalValidationLoss
         torch.save({
-                'epochs_completed': startingEpoch + args.epochs,
+                'epochs_completed': epochsCompleted,
                 'module_state_dict': module.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
-                }, trained_folder + '/network.pt')
+                'command_line_args': args,
+                }, trained_folder + '/pitch_predictor_one_hot_' + str(epochsCompleted) + '.pt')
     print("Final validation loss: " + str(finalValidationLoss))
