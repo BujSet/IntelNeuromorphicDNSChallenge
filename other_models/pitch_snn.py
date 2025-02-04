@@ -191,19 +191,31 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         if len(epochLatencies) > 10:
             epochLatencies = epochLatencies[-10:]
         currentEpoch += 1
-        if currentEpoch == args.epochs:
-            enoughTimeForMoreWork = False
+
+        # Now determine if end condition is met
         if args.isCHTCJob:
-            avgEpochLatency = 1.0 * sum(epochLatencies)/ len(epochLatencies)
+            avgEpochLatency = 1.0 * sum(epochLatencies) / len(epochLatencies)
+            updateString = "Epoch " + str(currentEpoch) + " took " + str(avgEpochLatency)
+            updateString += " secs. Running avg of epoch latency = "
+            updateString += str(avgEpochLatency) + " secs. Time left = "
             timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
+            updateString += str(timeLeft) + " secs. Halting training = "
             # Add a buffer of five epochs before job end to allow 
             # validation loop to occur
             if timeLeft / avgEpochLatency < 5:
                 enoughTimeForMoreWork = False
-    completedEpochs = currentEpoch + startingEpoch
-    avgEpochLatency = 1.0 * sum(epochLatencies)/ len(epochLatencies)
-    updateString = "Completed " + str(completedEpochs)
-    updateString += " with avg epoch latency " + str(avgEpochLatency) + " secs"
+                updateString += "True"
+            else:
+                updateString += "False"
+            send_log_msg(updateString)
+        if currentEpoch == args.epochs:
+            enoughTimeForMoreWork = False
+            send_log_msg("Finished training all " + str(args.epochs) + " epochs.")
+#    completedEpochs = currentEpoch + startingEpoch
+#    avgEpochLatency = 1.0 * sum(epochLatencies)/ len(epochLatencies)
+#    updateString = "Completed " + str(completedEpochs)
+#    updateString += " with avg epoch latency " + str(avgEpochLatency) + " secs"
+#    
     return delay_weights, averageTrainingLoss, currentEpoch+startingEpoch
 
 def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
@@ -474,6 +486,8 @@ if __name__ == '__main__':
                           prefetch_factor=args.dataloader_prefetch_factor,
                           pin_memory=True)
 
+    if args.isCHTCJob:
+        send_log_msg("Created trainind set data loader")
     startingEpoch = 0
     trackingInfo = dict()
     if args.useCheckpoint != "":
@@ -503,7 +517,10 @@ if __name__ == '__main__':
         statusString += str(startingEpoch) + ", training loss=" 
         statusString += str(startingTrainingLoss) + ", validation loss="
         statusString += str(startingValidationLoss) + "]"
-        print(statusString)
+        if args.isCHTCJob:
+            send_log_msg(statusString)
+        else:
+            print(statusString)
 
     delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=startingEpoch)
 
@@ -517,12 +534,17 @@ if __name__ == '__main__':
                                num_workers=args.dataloader_workers,
                                prefetch_factor=args.dataloader_prefetch_factor,
                                pin_memory=True)
+    if args.isCHTCJob:
+        send_log_msg("Done training, running final validation loop")
     finalValidationLoss = run_validation_loop(args, net, validation_loader)
     statusString  = "Completed training and validation [epochs_completed:" 
     statusString += str(epochsCompleted) + ", training loss=" 
     statusString += str(lastTrainingLoss) + ", validation loss="
     statusString += str(finalValidationLoss) + "]"
-    print(statusString)
+    if args.isCHTCJob:
+        send_log_msg(statusString)
+    else:
+        print(statusString)
     if (args.saveCheckpoint):
         trackingInfo[epochsCompleted] = dict()
         currEpochStats = trackingInfo[epochsCompleted]
@@ -536,4 +558,3 @@ if __name__ == '__main__':
                 'tracking_info': trackingInfo,
                 'command_line_args': args,
                 }, trained_folder + '/pitch_snn_depth_' +str(args.hiddenLayers) + "_"  + str(epochsCompleted) + '.pt')
-    print("Final validation loss: " + str(finalValidationLoss))
