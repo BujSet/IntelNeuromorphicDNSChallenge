@@ -211,11 +211,6 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         if currentEpoch == args.epochs:
             enoughTimeForMoreWork = False
             send_log_msg("Finished training all " + str(args.epochs) + " epochs.")
-#    completedEpochs = currentEpoch + startingEpoch
-#    avgEpochLatency = 1.0 * sum(epochLatencies)/ len(epochLatencies)
-#    updateString = "Completed " + str(completedEpochs)
-#    updateString += " with avg epoch latency " + str(avgEpochLatency) + " secs"
-#    
     return delay_weights, averageTrainingLoss, currentEpoch+startingEpoch
 
 def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
@@ -440,6 +435,9 @@ if __name__ == '__main__':
         # TODO should try torch compile on the network somehow
 
     out_delay = args.out_delay
+    if len(args.hiddenLayerWidths) != args.hiddenLayers:
+        args.hiddenLayerWidths = [args.n_fft for _ in range(args.hiddenLayers)]
+    assert(len(args.hiddenLayerWidths) == args.hiddenLayers)
     net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
