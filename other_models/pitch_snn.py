@@ -186,7 +186,8 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         scheduler.step()
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
         end_time = time.time()
-        epochLatencies.append(end_time - start_time)
+        currentEpochLatency = end_time - start_time
+        epochLatencies.append(currentEpochLatency)
         # only keep track of the last 10 iterations for accurate runtime estimate
         if len(epochLatencies) > 10:
             epochLatencies = epochLatencies[-10:]
@@ -195,18 +196,17 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         # Now determine if end condition is met
         if args.isCHTCJob:
             avgEpochLatency = 1.0 * sum(epochLatencies) / len(epochLatencies)
-            updateString = "Epoch " + str(currentEpoch) + " took " + str(avgEpochLatency)
-            updateString += " secs. Running avg of epoch latency = "
-            updateString += str(avgEpochLatency) + " secs. Time left = "
+            updateString = "Epoch " + str(currentEpoch) + " took " 
+            updateString += str(currentEpochLatency)
+            updateString += " secs. Avg = "
+            updateString += str(avgEpochLatency) + " secs/epoch. Time left = "
             timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
-            updateString += str(timeLeft) + " secs. Halting training = "
-            # Add a buffer of five epochs before job end to allow 
+            updateString += str(timeLeft) + " secs. Train Loss = "
+            updateString += str(trainingLosses[-1]) + " SI-SNR db" 
+            # Add a buffer of four epochs before job end to allow 
             # validation loop to occur
-            if timeLeft / avgEpochLatency < 5:
+            if timeLeft / avgEpochLatency < 4.0:
                 enoughTimeForMoreWork = False
-                updateString += "True"
-            else:
-                updateString += "False"
             send_log_msg(updateString)
         if currentEpoch == args.epochs:
             enoughTimeForMoreWork = False
