@@ -26,7 +26,6 @@ from noisyspeech_synthesizer import segmental_snr_mixer
 import random
 import time
 from torch.profiler import profile, record_function, ProfilerActivity
-#from chtc_files.read_job_attributes import CurrentJob 
 from chtc_files.htchirp_utils import *
 
 # Suppress unneeded output from pytorch profiler scheduler
