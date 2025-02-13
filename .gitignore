@@ -10,6 +10,9 @@ magnitude.pdf
 *.err
 *.log
 __pycache__/
+aam_annotations/*.arff
+aam_audio_mixes/*.flac
+aam_audio_multitracks/*.flac
 training_set/clean/*.wav
 training_set/noise/*.wav
 training_set/noisy/*.wav
