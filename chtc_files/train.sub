@@ -1,5 +1,5 @@
 # train.sub
-docker_image = rselagam/ndns:v51_cuda12.4.0_selagamsetty
+docker_image = rselagam/ndns:v52_cuda12.4.0_selagamsetty
 universe = docker
 
 # Specify your executable (single binary or a script that runs several
@@ -7,7 +7,7 @@ universe = docker
 #  output (or "screen output").
 #  $(Process) will be a integer number for each job, starting with "0"
 #  and increasing for the relevant number of jobs.
-executable = ndns_cmd.sh
+executable = polyphonic_cmd.sh
 log = $(Cluster)_$(Process).log
 output = $(Cluster)_$(Process).out
 error = $(Cluster)_$(Process).err
@@ -28,7 +28,7 @@ request_gpus = 1
 request_cpus = 1
 request_memory = 64GB
 request_disk = 650GB
-requirements = (Target.CUDADriverVersion >= 12.1 && Target.CUDACapability >= 8.0)
+requirements = (Target.CUDADriverVersion >= 12.4 && Target.CUDACapability >= 8.0)
 
 # Tell HTCondor to run 1 instances of our job:
-queue 
+queue 1 
