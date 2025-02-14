@@ -128,7 +128,7 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
+def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
@@ -213,7 +213,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
             send_log_msg("Finished training all " + str(args.epochs) + " epochs.")
     return delay_weights, averageTrainingLoss, currentEpoch+startingEpoch
 
-def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
+def run_warm_up_training(args, net, optimizer, scheduler, train_loader, train_set):
     net.train()
     # Run single epoch just to set the network dimensions (Weird that this is necessary)?
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
@@ -249,7 +249,7 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
         optimizer.step()
         return
 
-def run_validation_loop(args, net, validation_loader):
+def run_validation_loop(args, net, validation_loader, validation_set):
     net.eval()
     validationLosses = []
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
@@ -270,7 +270,7 @@ def run_validation_loop(args, net, validation_loader):
             num_fft_frames = ssl_clean_pitch.size()[-1]
             period = (480000.0 / num_fft_frames) / 16000.0
             for batch_idx in range(args.b):
-                clean_file = train_set._get_filenames(idx[batch_idx])
+                clean_file = validation_set._get_filenames(idx[batch_idx])
                 clean_pitch = parselmouth.Sound(clean_file).to_pitch(time_step=(1.0*(args.n_fft//4)/16000), pitch_floor=50.0, pitch_ceiling=1000.0)
                 clean_pitch_freq = [clean_pitch.get_value_at_time((i * period) + (period/2)) for i in range(0, ssl_clean_pitch.size()[-1] - 1)]
                 clean_pitch_freq.append(np.nan)
@@ -489,7 +489,7 @@ if __name__ == '__main__':
     startingEpoch = 0
     trackingInfo = dict()
     if args.useCheckpoint != "":
-        run_warm_up_training(args, net, optimizer, scheduler, train_loader)
+        run_warm_up_training(args, net, optimizer, scheduler, train_loader, train_set)
         checkpoint = torch.load(args.useCheckpoint, weights_only=False)
         module.load_state_dict(checkpoint['module_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -520,7 +520,7 @@ if __name__ == '__main__':
         else:
             print(statusString)
 
-    delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=startingEpoch)
+    delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=startingEpoch)
 
     print("Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
 
@@ -534,7 +534,7 @@ if __name__ == '__main__':
                                pin_memory=True)
     if args.isCHTCJob:
         send_log_msg("Done training, running final validation loop")
-    finalValidationLoss = run_validation_loop(args, net, validation_loader)
+    finalValidationLoss = run_validation_loop(args, net, validation_loader, validation_set)
     statusString  = "Completed training and validation [epochs_completed:" 
     statusString += str(epochsCompleted) + ", training loss=" 
     statusString += str(lastTrainingLoss) + ", validation loss="
