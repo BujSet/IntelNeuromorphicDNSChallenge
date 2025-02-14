@@ -17,7 +17,7 @@ for filename in onlyfiles:
 
 allInstruments = sorted(list(allInstruments))
 # first we print the header
-headerString = "MixID,"
+headerString = "MixID"
 for instr in allInstruments: 
     headerString += "," + instr
 print(headerString)
