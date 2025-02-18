@@ -12,16 +12,16 @@ def get_job_start():
 def get_gpu_job_length():
     with HTChirp() as chirp:
         lengthStr = chirp.get_job_attr("GPUJobLength")
-        if lengthStr == '"short"':
+        if "short" in lengthStr:
             # 12 hour job length
             return 12*60*60
-        elif lengthStr == '"medium"':
-            # 1 day job length
-            return 24*60*60
-        elif lengthStr == '"mediumlong"':
+        elif "mediumlong" in lengthStr:
             # 3 day job length
             return 3*24*60*60
-        elif lengthStr == '"long"':
+        elif "medium" in lengthStr:
+            # 1 day job length
+            return 24*60*60
+        elif "long" in lengthStr:
             # 7 day job length
             return 7*24*60*60
         else:
