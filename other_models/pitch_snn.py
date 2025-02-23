@@ -520,6 +520,12 @@ if __name__ == '__main__':
         else:
             print(statusString)
 
+    if args.isCHTCJob:
+        infoString = "Detected that this instance in running in a CHTC Job "
+        infoString += " with " + get_gpu_time_remaining()
+        infoString += " time remaining."
+        print(infoString)
+
     delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=startingEpoch)
 
     print("Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
