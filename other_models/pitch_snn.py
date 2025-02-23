@@ -555,4 +555,4 @@ if __name__ == '__main__':
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
                 'command_line_args': args,
-                }, trained_folder + '/pitch_snn_depth_' +str(args.hiddenLayers) + "_"  + str(epochsCompleted) + '.pt')
+                }, trained_folder + '/pitch_snn_' + args.exp + '.pt')
