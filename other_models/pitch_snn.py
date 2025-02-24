@@ -203,9 +203,9 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, 
             timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
             updateString += str(timeLeft) + " secs. Train Loss = "
             updateString += str(trainingLosses[-1]) + " SI-SNR db" 
-            # Add a buffer of four epochs before job end to allow 
+            # Add a buffer of two epochs before job end to allow 
             # validation loop to occur
-            if timeLeft / avgEpochLatency < 4.0:
+            if timeLeft / avgEpochLatency < 2.0:
                 enoughTimeForMoreWork = False
             send_log_msg(updateString)
         if currentEpoch == args.epochs:
@@ -409,14 +409,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    identifier = args.exp
     if args.seed is not None:
         torch.manual_seed(args.seed)
-        identifier += '_{}{}'.format(args.optim, args.seed)
 
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
-    trained_folder = 'Trained' + identifier
-    logs_folder = 'Logs' + identifier
+    trained_folder = 'Trained'
+    logs_folder = 'Logs'
 
     os.makedirs(trained_folder, exist_ok=True)
     os.makedirs(logs_folder, exist_ok=True)
@@ -554,6 +552,11 @@ if __name__ == '__main__':
         currEpochStats = trackingInfo[epochsCompleted]
         currEpochStats['training_loss'] = lastTrainingLoss
         currEpochStats['validation_loss'] = finalValidationLoss
+        saveFileName = trained_folder + '/pitch_snn_' + args.exp + '_' + str(epochsCompleted) + '.pt'
+        if args.isCHTCJob:
+            send_log_msg("Attempting to save model as " + saveFileName)
+        else:
+            print("Attempting to save model as " + saveFileName)
         torch.save({
                 'epochs_completed': epochsCompleted,
                 'module_state_dict': module.state_dict(),
@@ -561,4 +564,4 @@ if __name__ == '__main__':
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
                 'command_line_args': args,
-                }, trained_folder + '/pitch_snn_' + args.exp + '_' + str(epochsCompleted) + '.pt')
+                }, saveFileName)
