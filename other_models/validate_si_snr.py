@@ -224,6 +224,10 @@ if __name__ == '__main__':
                         dest='isCHTCJob', 
                         action='store_true',
                         help='Switch flag to indicate if this job was run on CHTC')
+    parser.add_argument('-enableTorchCompile',
+                        dest='enableTorchCompile', 
+                        action='store_true',
+                        help='Switch flag to indicate whether to optimize with torch compile')
 
     args = parser.parse_args()
 
@@ -237,8 +241,17 @@ if __name__ == '__main__':
     torch_compile_capable = False
     if device_cap in ((7, 0), (8, 0), (9, 0)):
         torch_compile_capable = True
-        print("Detected device capable of using torch.compile, will attempt to use for torch operations")
-        optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
+        if args.enableTorchCompile:
+            if args.isCHTCJob:
+                send_log_msg("Detected device capable of using torch.compile, will attempt to use for torch operations")
+            else:
+                print("Detected device capable of using torch.compile, will attempt to use for torch operations")
+            optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
+        else:
+            if args.isCHTCJob:
+                send_log_msg("Detected device capable of using torch.compile, but config says not to use")
+            else:
+                print("Detected device capable of using torch.compile, but config says not to use")
 
     TraceHandler = MyTraceHandler(
             args.speechFilterOrient,
@@ -287,7 +300,7 @@ if __name__ == '__main__':
         infoString = "Detected that this instance in running in a CHTC Job "
         infoString += " with " + get_gpu_time_remaining()
         infoString += " time remaining."
-        print(infoString)
+        send_log_msg(infoString)
     iterationLatencies = []
     enoughTimeForMoreWork = True
     noiseOrient = args.noiseFilterOrientStart
@@ -322,8 +335,8 @@ if __name__ == '__main__':
                                            
                         torch.cuda.synchronize()
                    
-                    with record_function("synth_noisy_speech"):
-                        if torch_compile_capable: 
+                    if torch_compile_capable and args.enableTorchCompile: 
+                        with record_function("opt_synth_noisy_speech"):
                             optSynthesizeNoisySpeech(
                                 ssl_clean, 
                                 ssl_noise, 
@@ -334,7 +347,8 @@ if __name__ == '__main__':
                                 noise_stream,
                                 clean_stream
                             )
-                        else: 
+                    else: 
+                        with record_function("synth_noisy_speech"):
                             synthesizeNoisySpeech(
                                 ssl_clean, 
                                 ssl_noise, 
