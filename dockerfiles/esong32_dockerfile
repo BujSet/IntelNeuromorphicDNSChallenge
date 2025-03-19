@@ -19,6 +19,7 @@ RUN python -m pip install praat-parselmouth
 RUN python -m pip install --upgrade torch==2.4.1 --index-url https://download.pytorch.org/whl/cu124
 RUN python -m pip install speechbrain
 RUN python -m pip install torch_tb_profiler
+RUN python -m pip install IPython mir_eval
 RUN apt-get install unzip
 RUN useradd -u 26504 chtc_esong32
 USER chtc_esong32
