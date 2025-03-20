@@ -7,6 +7,101 @@ import soundfile as sf
 from typing import Tuple, Dict, Any
 import random
 
+class DNSAudioAndCrepeCleanOnly:
+    """Audio dataset loader for DNS to return clean speech samples along with CREPE pitch annotations.
+
+    Parameters
+    ----------
+    root : str, optional
+        Path of the dataset location, by default './'.
+    """
+    def __init__(self, root: str = './', maxFiles: int = -1) -> None:
+        self.root = root
+        self.clean_files = glob.glob(root + 'clean/**.wav')
+        self.file_id_from_name = re.compile('fileid_(\d+)')
+        if (maxFiles > len(self.clean_files)):
+            print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.clean_files)))
+            assert(False)
+
+        # Don't do anything if param isnt set or if we're using the entire dataset
+        if (maxFiles > 0 and maxFiles != len(self.clean_files)):
+            randStart = random.randint(0, len(self.clean_files) - maxFiles - 1)
+            assert(randStart + maxFiles <= len(self.clean_files))
+            self.clean_files = self.clean_files[randStart:randStart+maxFiles]
+            print("Using slice dataset[" + str(randStart) + ":" + str(randStart+maxFiles) + "] with "+str(len(self.clean_files)) + " samples")
+
+    def _get_filenames(self, n: int) -> Tuple[str]:
+        clean_file = self.clean_files[n % self.__len__()]
+        return clean_file
+
+    def __getitem__(self, n: int) -> Tuple[np.ndarray,
+                                           np.ndarray,
+                                           np.ndarray,
+                                           np.ndarray,
+                                           Dict[str, Any],
+                                           int]:
+        """Gets the nth sample from the dataset.
+
+        Parameters
+        ----------
+        n : int
+            Index of the dataset sample.
+
+        Returns
+        -------
+        np.ndarray
+            Clean audio sample.
+        np.ndarray
+            CREPE pitch prediction timestamps
+        np.ndarray
+            CREPE pitch prediction values
+        np.ndarray
+            CREPE pitch prediction confidences
+        Dict
+            Sample metadata.
+        n
+            Index of dataset sample
+        """
+        clean_file = self._get_filenames(n)
+        filename = clean_file.split(os.sep)[-1]
+        file_id = int(self.file_id_from_name.findall(filename)[0])
+        clean_audio, sampling_frequency = sf.read(clean_file)
+        num_samples = 30 * sampling_frequency  # 30 sec data
+        metadata = {'fs': sampling_frequency}
+
+        if len(clean_audio) > num_samples:
+            clean_audio = clean_audio[:num_samples]
+        else:
+            clean_audio = np.concatenate([clean_audio,
+                                          np.zeros(num_samples
+                                                   - len(clean_audio))])
+        # TODO read CREPE data
+        crepe_times = None
+        crepe_values = None
+        crepe_confs = None
+        return clean_audio, crepe_times, crepe_values, crepe_confs, metadata, n
+
+    def __len__(self) -> int:
+        """Length of the dataset.
+        """
+        return len(self.clean_files)
+
+    def collate_fn(self, batch):
+        clean = []
+        crepe_times = []
+        crepe_vals = []
+        crepe_confs = []
+
+        indices = torch.IntTensor([s[5] for s in batch])
+
+        for sample in batch:
+            clean += [torch.FloatTensor(sample[0])]
+            crepe_times += [torch.FloatTensor(sample[1])]
+            crepe_vals += [torch.FloatTensor(sample[2])]
+            crepe_confs += [torch.FloatTensor(sample[3])]
+
+        return torch.stack(clean), torch.stack(crepe_times), torch.stack(crepe_vals), torch.stack(crepe_confs), indices
+
 class DNSAudioCleanOnly:
     """Audio dataset loader for DNS to only return clean speech samples.
 
@@ -47,10 +142,10 @@ class DNSAudioCleanOnly:
         -------
         np.ndarray
             Clean audio sample.
-        np.ndarray
-            Noisy audio sample.
         Dict
             Sample metadata.
+        n
+            Index of dataset sample
         """
         clean_file= self._get_filenames(n)
         clean_audio, sampling_frequency = sf.read(clean_file)
