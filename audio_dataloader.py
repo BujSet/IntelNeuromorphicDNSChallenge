@@ -18,6 +18,7 @@ class DNSAudioAndCrepeCleanOnly:
     def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
         self.clean_files = glob.glob(root + 'clean/**.wav')
+        self.crepe_files = glob.glob(root + 'crepe_pitch_annotations/**.csv')
         self.file_id_from_name = re.compile('fileid_(\d+)')
         if (maxFiles > len(self.clean_files)):
             print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.clean_files)))

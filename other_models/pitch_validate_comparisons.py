@@ -6,6 +6,7 @@ import os, sys, math
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 sys.path.append('./')
 from audio_dataloader import DNSAudioCleanOnly
+from audio_dataloader import DNSAudioAndCrepeCleanOnly
 import h5py
 import argparse
 import numpy as np
@@ -20,7 +21,6 @@ from lava.lib.dl import slayer
 import torchaudio
 import random
 import parselmouth, librosa, time
-import crepe
 from scipy.io import wavfile
 from chtc_files.htchirp_utils import *
 
@@ -85,33 +85,35 @@ def run_validation_loop(args, validation_loader, validation_set):
                     clean_pitch_freq[torch.isnan(clean_pitch_freq)] = 0
 
                 # Now compute other comparative models, first we look at crepe
-                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)
-                crepe_pitch_freq = crepe_pitch_freq.to(device)
+                print("Need to implement reading from crepe files rather than using crepe package here")
+                sys.exit(0)
+#                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)
+#                crepe_pitch_freq = crepe_pitch_freq.to(device)
                 # Convert to 1-hot vector for easier-to-learn loss function, i.e. network does not need to 
                 # learn to perform ISTFT
-                for frame in range(num_fft_frames):
-                    one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
-                    one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[frame], freq_map) 
-            one_hot_clean_pitch.to(device)
-            one_hot_crepe_pitch.to(device)
+#                for frame in range(num_fft_frames):
+#                    one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
+#                    one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[frame], freq_map) 
+#            one_hot_clean_pitch.to(device)
+#            one_hot_crepe_pitch.to(device)
             
-            loss = F.cross_entropy(one_hot_clean_pitch, one_hot_crepe_pitch)
+#            loss = F.cross_entropy(one_hot_clean_pitch, one_hot_crepe_pitch)
              
-            if torch.isnan(loss).any():
-                loss[torch.isnan(loss)] = 0
-            assert torch.isnan(loss) == False
+#            if torch.isnan(loss).any():
+#                loss[torch.isnan(loss)] = 0
+#            assert torch.isnan(loss) == False
 
-            validationLosses.append(torch.mean(loss).item())
+#            validationLosses.append(torch.mean(loss).item())
 
-            if args.printOutputWhileValidation or args.isCHTCJob:
-                statString = "Validation Loss [DataLoaderIdx=" + str(i) + "] -> "
-                statString += str(loss.item())
-                if args.isCHTCJob:
-                    send_log_msg(statString)
-                if args.printOutputWhileValidation:
-                    print(statString)
-    averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
-    return averageValidationLoss
+#            if args.printOutputWhileValidation or args.isCHTCJob:
+#                statString = "Validation Loss [DataLoaderIdx=" + str(i) + "] -> "
+#                statString += str(loss.item())
+#                if args.isCHTCJob:
+#                    send_log_msg(statString)
+#                if args.printOutputWhileValidation:
+#                    print(statString)
+#    averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
+#    return averageValidationLoss
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -227,7 +229,7 @@ if __name__ == '__main__':
             send_log_msg("Running validation on training set")
         else:
             print("Running validation on training set")
-        chosenDataset = DNSAudioCleanOnly(root=args.path + 'training_set/', maxFiles=args.training_samples)
+        chosenDataset = DNSAudioAndCrepeCleanOnly(root=args.path + 'training_set/', maxFiles=args.training_samples)
     else:
         if args.isCHTCJob:
             send_log_msg("Dataset for validation not chosen! Must specify training or validation set to be used")
