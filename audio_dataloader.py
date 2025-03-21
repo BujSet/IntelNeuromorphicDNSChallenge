@@ -18,7 +18,7 @@ class DNSAudioAndCrepeCleanOnly:
     def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
         self.clean_files = glob.glob(root + 'clean/**.wav')
-        self.crepe_files = glob.glob(root + 'crepe_pitch_annotations/**.csv')
+        self.crepe_files = glob.glob(root + 'crepe_pitch_annotations/clean/**.csv')
         print("Number of clean wav files: " + str(len(self.clean_files)))
         print("Number of crepe csv files: " + str(len(self.crepe_files)))
         self.file_id_from_name = re.compile('fileid_(\d+)')
