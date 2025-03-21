@@ -82,6 +82,24 @@ class DNSAudioAndCrepeCleanOnly:
         crepe_times = None
         crepe_values = None
         crepe_confs = None
+        crepe_file = "clean_fileid_" + str(file_id) + ".f0.csv"
+        crepe_file = os.path.join("clean", crepe_file)
+        crepe_file = os.path.join("crepe_pitch_annotations", crepe_file)
+        crepe_file = os.path.join(self.root, crepe_file)
+        with open(crepe_file, 'r') as crepe_f:
+            lines = crepe_f.readlines()
+            crepe_times = np.zeros(len(lines)-1, dtype=float)
+            crepe_values =np.zeros(len(lines)-1, dtype=float)
+            crepe_confs = np.zeros(len(lines)-1, dtype=float)
+            # Skip header row
+            for i in range(1, len(lines)):
+                line = lines[i]
+                values = line.split(",")
+                assert(len(values) == 3)
+                crepe_times[i-1] = float(values[0])
+                crepe_values[i-1] = float(values[1])
+                crepe_confs[i-1] = float(values[2])
+
         return clean_audio, crepe_times, crepe_values, crepe_confs, metadata, n
 
     def __len__(self) -> int:

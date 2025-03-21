@@ -55,7 +55,7 @@ def freq_to_one_hot(value, freq_bins):
 def run_validation_loop(args, validation_loader, validation_set):
     validationLosses = []
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
-    for i, (clean, idx) in enumerate(validation_loader):
+    for i, (clean, crepe_times, crepe_values, crepe_confs, idx) in enumerate(validation_loader):
         with torch.no_grad():
             clean = clean.to(device)
 
@@ -86,6 +86,9 @@ def run_validation_loop(args, validation_loader, validation_set):
 
                 # Now compute other comparative models, first we look at crepe
                 print("Need to implement reading from crepe files rather than using crepe package here")
+                print(crepe_times)
+                print(crepe_values)
+                print(crepe_confs)
                 sys.exit(0)
 #                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)
 #                crepe_pitch_freq = crepe_pitch_freq.to(device)
