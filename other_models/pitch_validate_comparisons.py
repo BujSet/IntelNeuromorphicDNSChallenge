@@ -103,7 +103,7 @@ def run_validation_loop(args, validation_loader, validation_set):
                 print(crepe_times)
                 print(crepe_values)
                 print(crepe_confs)
-                crepe_collate_pitch_estimation(praatTimeStep, crepe_times, crepe_values, crepe_confs, args.crepeThreshold):
+                crepe_collate_pitch_estimation(praatTimeStep, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
 
                 sys.exit(0)
 #                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)

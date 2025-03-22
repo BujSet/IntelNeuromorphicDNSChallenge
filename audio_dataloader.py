@@ -19,8 +19,9 @@ class DNSAudioAndCrepeCleanOnly:
         self.root = root
         self.clean_files = glob.glob(root + 'clean/**.wav')
         self.crepe_files = glob.glob(root + 'crepe_pitch_annotations/clean/**.csv')
-        print("Number of clean wav files: " + str(len(self.clean_files)))
-        print("Number of crepe csv files: " + str(len(self.crepe_files)))
+        # always coollect all crepe file , even if we are only looking at subset of clean files
+        # because we do the fileid matching in the getitem method
+        assert(len(self.crepe_files) >= len(self.clean_files))
         self.file_id_from_name = re.compile('fileid_(\d+)')
         if (maxFiles > len(self.clean_files)):
             print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.clean_files)))
