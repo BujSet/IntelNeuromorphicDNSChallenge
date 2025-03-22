@@ -45,6 +45,18 @@ def crepe_detect_fundamental_frequency(filePath, wavLength=30.0, stepSizeMsec=8,
     clippedFreq = torch.where(conf >= threshold, freq, 0.0)
     return clippedFreq
 
+def crepe_collate_pitch_estimation(step, times, values, confs, threshold=-1.0):
+    pass
+'''
+    freq = torch.from_numpy(freq[:endIdx]).float()
+    conf = torch.from_numpy(conf[:endIdx]).float()
+
+    if threshold >= 0.0:
+        clippedFreq = torch.where(conf >= threshold, freq, 0.0)
+        return clippedFreq
+    return freqs
+    '''
+
 def freq_to_one_hot(value, freq_bins):
     one_hot = torch.zeros(len(freq_bins))
     abs_diff = torch.abs(freq_bins - value)
@@ -70,11 +82,13 @@ def run_validation_loop(args, validation_loader, validation_set):
             period = (480000.0 / num_fft_frames) / 16000.0
             one_hot_clean_pitch = torch.zeros(clean_abs.size()).to(device)
             one_hot_crepe_pitch = torch.zeros(clean_abs.size()).to(device)
+            print("Period: " + str(period))
             for batch_idx in range(args.b):
                 clean_file = validation_set._get_filenames(idx[batch_idx])
                 # Compute praat pitch prediction for ground-truth in time domain
                 praatSound = parselmouth.Sound(clean_file)
                 praatTimeStep = 1.0*(args.n_fft//4)/praatSound.sampling_frequency
+                print("PraatTimeStep: " + str(praatTimeStep))
                 clean_pitch = parselmouth.Sound(clean_file).to_pitch(time_step=praatTimeStep, pitch_floor=50.0, pitch_ceiling=1000.0)
                 # Subsample prediction to only look at FFT frames the network also looks at
                 clean_pitch_freq = [clean_pitch.get_value_at_time((i * period) + (period/2)) for i in range(0, num_fft_frames)]
@@ -89,6 +103,8 @@ def run_validation_loop(args, validation_loader, validation_set):
                 print(crepe_times)
                 print(crepe_values)
                 print(crepe_confs)
+                crepe_collate_pitch_estimation(praatTimeStep, crepe_times, crepe_values, crepe_confs, args.crepeThreshold):
+
                 sys.exit(0)
 #                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)
 #                crepe_pitch_freq = crepe_pitch_freq.to(device)
@@ -182,7 +198,7 @@ if __name__ == '__main__':
                         help='Switch flag to print score after every mini-batch during validation')
     parser.add_argument('-crepeThreshold',
                         type=float,
-                        default=0.5,
+                        default=-1.0,
                         help='Threshold for CREPE comparison')
     parser.add_argument('-is_CHTC_job',
                         dest='isCHTCJob', 
