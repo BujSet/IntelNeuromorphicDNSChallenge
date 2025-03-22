@@ -103,6 +103,10 @@ def run_validation_loop(args, validation_loader, validation_set):
                 print(crepe_times)
                 print(crepe_values)
                 print(crepe_confs)
+                print(crepe_times.size())
+                print(crepe_values.size())
+                print(crepe_confs.size())
+                print(clean.size())
                 crepe_collate_pitch_estimation(praatTimeStep, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
 
                 sys.exit(0)
