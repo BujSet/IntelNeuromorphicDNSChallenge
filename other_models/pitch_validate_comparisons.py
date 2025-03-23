@@ -35,29 +35,28 @@ def stft_splitter(audio, n_fft=512, method=None):
         spec = method(audio)
         return spec.abs(), spec.angle()    
 
-def crepe_detect_fundamental_frequency(filePath, wavLength=30.0, stepSizeMsec=8, threshold=0.5):
-    sr, audio = wavfile.read(filePath)
-    timesarray, freq, conf, activation = crepe.predict(audio, sr, model_capacity='full', step_size=stepSizeMsec, center=True, viterbi=True)
-    endIdx = np.searchsorted(timesarray, 30.0, side="left") + 1
-    timesarray = torch.from_numpy(timesarray[:endIdx]).float()
-    freq = torch.from_numpy(freq[:endIdx]).float()
-    conf = torch.from_numpy(conf[:endIdx]).float()
-    clippedFreq = torch.where(conf >= threshold, freq, 0.0)
-    return clippedFreq
+
+#def crepe_detect_fundamental_frequency(filePath, wavLength=30.0, stepSizeMsec=8, threshold=0.5):
+#    sr, audio = wavfile.read(filePath)
+#    timesarray, freq, conf, activation = crepe.predict(audio, sr, model_capacity='full', step_size=stepSizeMsec, center=True, viterbi=True)
+#    endIdx = np.searchsorted(timesarray, 30.0, side="left") + 1
+#    timesarray = torch.from_numpy(timesarray[:endIdx]).float()
+#    freq = torch.from_numpy(freq[:endIdx]).float()
+#    conf = torch.from_numpy(conf[:endIdx]).float()
+#    clippedFreq = torch.where(conf >= threshold, freq, 0.0)
+#    return clippedFreq
 
 def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=-1.0):
     print("FFT_centers: " + str(len(fft_centers))
     print("threshold: " + str(len(threshold))
     pass
-'''
-    freq = torch.from_numpy(freq[:endIdx]).float()
-    conf = torch.from_numpy(conf[:endIdx]).float()
+    freq = torch.from_numpy(values).float()
+    conf = torch.from_numpy(confs).float()
 
     if threshold >= 0.0:
         clippedFreq = torch.where(conf >= threshold, freq, 0.0)
         return clippedFreq
-    return freqs
-    '''
+    return freq
 
 def freq_to_one_hot(value, freq_bins):
     one_hot = torch.zeros(len(freq_bins))
@@ -94,7 +93,7 @@ def run_validation_loop(args, validation_loader, validation_set):
                 clean_pitch = parselmouth.Sound(clean_file).to_pitch(time_step=praatTimeStep, pitch_floor=50.0, pitch_ceiling=1000.0)
                 # Subsample prediction to only look at FFT frames the network also looks at
                 fft_centers = [(i * period) + (period/2) for i in range(0, num_fft_frames)]
-                clean_pitch_freq = [clean_pitch.get_value_at_time(center_time) for center_time in fft_centers)]
+                clean_pitch_freq = [clean_pitch.get_value_at_time(center_time) for center_time in fft_centers]
 
                 # Final clean up to deal with off-by-one and error vals
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
@@ -110,16 +109,22 @@ def run_validation_loop(args, validation_loader, validation_set):
                 print(crepe_values.size())
                 print(crepe_confs.size())
                 print(clean_pitch_freq.size())
-                crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
 
-                sys.exit(0)
-#                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)
-#                crepe_pitch_freq = crepe_pitch_freq.to(device)
+                #crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, 
+                #        wavLength=30.0, 
+                #        stepSizeMsec=praatTimeStep*1000.0, 
+                #        threshold=args.crepeThreshold)
+                #crepe_pitch_freq = crepe_pitch_freq.to(device)
+
+                # Instead of generating on the fly, just read from file
+                crepe_pitch_freqs = crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
+
                 # Convert to 1-hot vector for easier-to-learn loss function, i.e. network does not need to 
                 # learn to perform ISTFT
-#                for frame in range(num_fft_frames):
-#                    one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
-#                    one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[frame], freq_map) 
+                for frame in range(num_fft_frames):
+                    one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
+                    one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[frame], freq_map) 
+                sys.exit(0)
 #            one_hot_clean_pitch.to(device)
 #            one_hot_crepe_pitch.to(device)
             
