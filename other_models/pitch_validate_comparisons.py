@@ -33,26 +33,14 @@ def stft_splitter(audio, n_fft=512, method=None):
                                 return_complex=True)
             return audio_stft.abs(), audio_stft.angle()
         spec = method(audio)
-        return spec.abs(), spec.angle()    
-
-
-#def crepe_detect_fundamental_frequency(filePath, wavLength=30.0, stepSizeMsec=8, threshold=0.5):
-#    sr, audio = wavfile.read(filePath)
-#    timesarray, freq, conf, activation = crepe.predict(audio, sr, model_capacity='full', step_size=stepSizeMsec, center=True, viterbi=True)
-#    endIdx = np.searchsorted(timesarray, 30.0, side="left") + 1
-#    timesarray = torch.from_numpy(timesarray[:endIdx]).float()
-#    freq = torch.from_numpy(freq[:endIdx]).float()
-#    conf = torch.from_numpy(conf[:endIdx]).float()
-#    clippedFreq = torch.where(conf >= threshold, freq, 0.0)
-#    return clippedFreq
+        return spec.abs(), spec.angle()
 
 def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=-1.0):
-    print("FFT_centers: " + str(len(fft_centers))
-    print("threshold: " + str(len(threshold))
-    pass
+    print("FFT_centers: " + str(len(fft_centers)))
+    print("threshold: " + str(len(threshold)))
+    # TODO use times to create appropriate arrays
     freq = torch.from_numpy(values).float()
     conf = torch.from_numpy(confs).float()
-
     if threshold >= 0.0:
         clippedFreq = torch.where(conf >= threshold, freq, 0.0)
         return clippedFreq
