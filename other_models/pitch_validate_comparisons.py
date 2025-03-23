@@ -45,7 +45,9 @@ def crepe_detect_fundamental_frequency(filePath, wavLength=30.0, stepSizeMsec=8,
     clippedFreq = torch.where(conf >= threshold, freq, 0.0)
     return clippedFreq
 
-def crepe_collate_pitch_estimation(step, times, values, confs, threshold=-1.0):
+def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=-1.0):
+    print("FFT_centers: " + str(len(fft_centers))
+    print("threshold: " + str(len(threshold))
     pass
 '''
     freq = torch.from_numpy(freq[:endIdx]).float()
@@ -91,7 +93,8 @@ def run_validation_loop(args, validation_loader, validation_set):
                 print("PraatTimeStep: " + str(praatTimeStep))
                 clean_pitch = parselmouth.Sound(clean_file).to_pitch(time_step=praatTimeStep, pitch_floor=50.0, pitch_ceiling=1000.0)
                 # Subsample prediction to only look at FFT frames the network also looks at
-                clean_pitch_freq = [clean_pitch.get_value_at_time((i * period) + (period/2)) for i in range(0, num_fft_frames)]
+                fft_centers = [(i * period) + (period/2) for i in range(0, num_fft_frames)]
+                clean_pitch_freq = [clean_pitch.get_value_at_time(center_time) for center_time in fft_centers)]
 
                 # Final clean up to deal with off-by-one and error vals
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
@@ -106,8 +109,8 @@ def run_validation_loop(args, validation_loader, validation_set):
                 print(crepe_times.size())
                 print(crepe_values.size())
                 print(crepe_confs.size())
-                print(clean.size())
-                crepe_collate_pitch_estimation(praatTimeStep, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
+                print(clean_pitch_freq.size())
+                crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
 
                 sys.exit(0)
 #                crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, wavLength=30.0, stepSizeMsec=praatTimeStep*1000.0, threshold=args.crepeThreshold)
