@@ -39,7 +39,7 @@ def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=
     print("FFT_centers: " + str(len(fft_centers)))
     print("threshold: " + str(threshold))
     # TODO use times to create appropriate arrays
-    freq = torch.zeroes_like(values, dtype=torch.float)
+    freq = torch.zeros_like(values, dtype=torch.float)
     if threshold >= 0.0:
         clippedFreq = torch.where(confs >= threshold, freq, 0.0)
         return clippedFreq
@@ -104,34 +104,34 @@ def run_validation_loop(args, validation_loader, validation_set):
                 #crepe_pitch_freq = crepe_pitch_freq.to(device)
 
                 # Instead of generating on the fly, just read from file
-                crepe_pitch_freqs = crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
+                crepe_pitch_freq = crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
 
                 # Convert to 1-hot vector for easier-to-learn loss function, i.e. network does not need to 
                 # learn to perform ISTFT
                 for frame in range(num_fft_frames):
                     one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
                     one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[frame], freq_map) 
-                sys.exit(0)
 #            one_hot_clean_pitch.to(device)
 #            one_hot_crepe_pitch.to(device)
             
-#            loss = F.cross_entropy(one_hot_clean_pitch, one_hot_crepe_pitch)
+            loss = F.cross_entropy(one_hot_clean_pitch, one_hot_crepe_pitch)
              
-#            if torch.isnan(loss).any():
-#                loss[torch.isnan(loss)] = 0
-#            assert torch.isnan(loss) == False
+            if torch.isnan(loss).any():
+                loss[torch.isnan(loss)] = 0
+            assert torch.isnan(loss) == False
 
-#            validationLosses.append(torch.mean(loss).item())
+            validationLosses.append(torch.mean(loss).item())
 
-#            if args.printOutputWhileValidation or args.isCHTCJob:
-#                statString = "Validation Loss [DataLoaderIdx=" + str(i) + "] -> "
-#                statString += str(loss.item())
-#                if args.isCHTCJob:
-#                    send_log_msg(statString)
-#                if args.printOutputWhileValidation:
-#                    print(statString)
-#    averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
-#    return averageValidationLoss
+            if args.printOutputWhileValidation or args.isCHTCJob:
+                statString = "Validation Loss [DataLoaderIdx=" + str(i) + "] -> "
+                statString += str(loss.item())
+                if args.isCHTCJob:
+                    send_log_msg(statString)
+                if args.printOutputWhileValidation:
+                    print(statString)
+            sys.exit(0)
+    averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
+    return averageValidationLoss
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
