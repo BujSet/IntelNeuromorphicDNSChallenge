@@ -39,10 +39,9 @@ def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=
     print("FFT_centers: " + str(len(fft_centers)))
     print("threshold: " + str(threshold))
     # TODO use times to create appropriate arrays
-    freq = torch.from_numpy(values).float()
-    conf = torch.from_numpy(confs).float()
+    freq = torch.zeroes_like(values, dtype=torch.float)
     if threshold >= 0.0:
-        clippedFreq = torch.where(conf >= threshold, freq, 0.0)
+        clippedFreq = torch.where(confs >= threshold, freq, 0.0)
         return clippedFreq
     return freq
 
