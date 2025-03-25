@@ -89,7 +89,7 @@ def run_validation_loop(args, validation_loader, validation_set):
 
                 # Now compute other comparative models, first we look at crepe
                 print("Need to implement reading from crepe files rather than using crepe package here")
-                print("times: " + str(crepe_times[batch_dx]))
+                print("times: " + str(crepe_times[batch_idx]))
                 print("values: " + str(crepe_values[batch_idx]))
                 print("confs: " + str(crepe_confs[batch_idx]))
                 print("times size: " + str(crepe_times[batch_idx].size()))
