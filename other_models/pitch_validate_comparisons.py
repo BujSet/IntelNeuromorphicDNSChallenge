@@ -269,6 +269,6 @@ if __name__ == '__main__':
     statusString += " set [loss=" 
     statusString += str(finalValidationLoss) + "]"
     if args.isCHTCJob:
-        send_log_msg(statuString)
+        send_log_msg(statusString)
     else:
         print(statusString)
