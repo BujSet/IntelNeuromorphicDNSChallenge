@@ -36,8 +36,6 @@ def stft_splitter(audio, n_fft=512, method=None):
         return spec.abs(), spec.angle()
 
 def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=-1.0):
-#    print("FFT_centers: " + str(len(fft_centers)))
-#    print("threshold: " + str(threshold))
     # TODO use times to create appropriate arrays
     freq = torch.zeros_like(values, dtype=torch.float)
     if threshold >= 0.0:
@@ -70,13 +68,11 @@ def run_validation_loop(args, validation_loader, validation_set):
             period = (480000.0 / num_fft_frames) / 16000.0
             one_hot_clean_pitch = torch.zeros(clean_abs.size()).to(device)
             one_hot_crepe_pitch = torch.zeros(clean_abs.size()).to(device)
-#            print("Period: " + str(period))
             for batch_idx in range(args.b):
                 clean_file = validation_set._get_filenames(idx[batch_idx])
                 # Compute praat pitch prediction for ground-truth in time domain
                 praatSound = parselmouth.Sound(clean_file)
                 praatTimeStep = 1.0*(args.n_fft//4)/praatSound.sampling_frequency
-#                print("PraatTimeStep: " + str(praatTimeStep))
                 clean_pitch = parselmouth.Sound(clean_file).to_pitch(time_step=praatTimeStep, pitch_floor=50.0, pitch_ceiling=1000.0)
                 # Subsample prediction to only look at FFT frames the network also looks at
                 fft_centers = [(i * period) + (period/2) for i in range(0, num_fft_frames)]
@@ -88,24 +84,9 @@ def run_validation_loop(args, validation_loader, validation_set):
                     clean_pitch_freq[torch.isnan(clean_pitch_freq)] = 0
 
                 # Now compute other comparative models, first we look at crepe
-#                print("Need to implement reading from crepe files rather than using crepe package here")
-#                print("times: " + str(crepe_times[batch_idx]))
-#                print("values: " + str(crepe_values[batch_idx]))
-#                print("confs: " + str(crepe_confs[batch_idx]))
-#                print("times size: " + str(crepe_times[batch_idx].size()))
-#                print("values size: " + str(crepe_values[batch_idx].size()))
-#                print("confs size: " + str(crepe_confs[batch_idx].size()))
-#                print("clean_pitch_freq size " + str(clean_pitch_freq.size()))
-
-                #crepe_pitch_freq = crepe_detect_fundamental_frequency(clean_file, 
-                #        wavLength=30.0, 
-                #        stepSizeMsec=praatTimeStep*1000.0, 
-                #        threshold=args.crepeThreshold)
-                #crepe_pitch_freq = crepe_pitch_freq.to(device)
 
                 # Instead of generating on the fly, just read from file
                 crepe_pitch_freq = crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
-#                print("crepe_pitch_freq size " + str(crepe_pitch_freq.size()))
 
                 # Convert to 1-hot vector for easier-to-learn loss function, i.e. network does not need to 
                 # learn to perform ISTFT
@@ -128,7 +109,6 @@ def run_validation_loop(args, validation_loader, validation_set):
                     send_log_msg(statString)
                 if args.printOutputWhileValidation:
                     print(statString)
-#            sys.exit(0)
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
     return averageValidationLoss
 
@@ -262,6 +242,11 @@ if __name__ == '__main__':
                                num_workers=args.dataloader_workers,
                                prefetch_factor=args.dataloader_prefetch_factor,
                                pin_memory=True)
+    if args.crepeThreshold >= 0.0:
+        if args.isCHTCJob:
+            send_log_msg("Running with CREPE threshold of " + str(args.crepeThreshold))
+        else:
+            print("Running with CREPE threshold of " + str(args.crepeThreshold))
     finalValidationLoss = run_validation_loop(args, chosenDataloader, chosenDataset)
     statusString  = "Completed validation on " 
     statusString += "validation" if args.useValidationSet else ""
