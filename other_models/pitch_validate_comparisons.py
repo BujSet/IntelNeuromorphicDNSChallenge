@@ -37,7 +37,7 @@ def stft_splitter(audio, n_fft=512, method=None):
 
 def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=-1.0):
     # TODO use times to create appropriate arrays
-    freq = torch.zeros_like(values, dtype=torch.float)
+    freq = torch.from_nupmy(values).float()
     if threshold >= 0.0:
         clippedFreq = torch.where(confs >= threshold, freq, 0.0)
         return clippedFreq
@@ -77,6 +77,7 @@ def run_validation_loop(args, validation_loader, validation_set):
                 # Subsample prediction to only look at FFT frames the network also looks at
                 fft_centers = [(i * period) + (period/2) for i in range(0, num_fft_frames)]
                 clean_pitch_freq = [clean_pitch.get_value_at_time(center_time) for center_time in fft_centers]
+                print("clean_pitch_freq = " + str(clean_pitch_freq))
 
                 # Final clean up to deal with off-by-one and error vals
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
@@ -87,12 +88,17 @@ def run_validation_loop(args, validation_loader, validation_set):
 
                 # Instead of generating on the fly, just read from file
                 crepe_pitch_freq = crepe_collate_pitch_estimation(fft_centers, crepe_times, crepe_values, crepe_confs, args.crepeThreshold)
+                crepe_pitch_freq.to(device)
 
                 # Convert to 1-hot vector for easier-to-learn loss function, i.e. network does not need to 
                 # learn to perform ISTFT
                 for frame in range(num_fft_frames):
                     one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
                     one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[batch_idx,frame], freq_map) 
+                    print("one_hot_clean_pitch = " + str(one_hot_clean_pitch[batch_idx,:,frame]))
+                    print("one_hot_crepe_pitch = " + str(one_hot_crepe_pitch[batch_idx,:,frame]))
+
+                    sys.exit(0)
             
             loss = F.cross_entropy(one_hot_clean_pitch, one_hot_crepe_pitch)
              
