@@ -37,7 +37,7 @@ def stft_splitter(audio, n_fft=512, method=None):
 
 def crepe_collate_pitch_estimation(fft_centers, times, values, confs, threshold=-1.0):
     # TODO use times to create appropriate arrays
-    freq = torch.from_nupmy(values).float()
+    freq = torch.from_numpy(values).float()
     if threshold >= 0.0:
         clippedFreq = torch.where(confs >= threshold, freq, 0.0)
         return clippedFreq
