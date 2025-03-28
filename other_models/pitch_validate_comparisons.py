@@ -52,6 +52,7 @@ def freq_to_one_hot(value, freq_bins):
 def run_validation_loop(args, validation_loader, validation_set):
     validationLosses = []
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
+    num_batchs = len(validation_set) / args.b 
     for i, (clean, crepe_times, crepe_values, crepe_confs, idx) in enumerate(validation_loader):
         with torch.no_grad():
             clean = clean.to(device)
@@ -76,7 +77,6 @@ def run_validation_loop(args, validation_loader, validation_set):
                 # Subsample prediction to only look at FFT frames the network also looks at
                 fft_centers = [(i * period) + (period/2) for i in range(0, num_fft_frames)]
                 clean_pitch_freq = [clean_pitch.get_value_at_time(center_time) for center_time in fft_centers]
-                print("clean_pitch_freq = " + str(clean_pitch_freq))
 
                 # Final clean up to deal with off-by-one and error vals
                 clean_pitch_freq = torch.FloatTensor(clean_pitch_freq).to(device)
@@ -94,10 +94,6 @@ def run_validation_loop(args, validation_loader, validation_set):
                 for frame in range(num_fft_frames):
                     one_hot_clean_pitch[batch_idx,:, frame] = freq_to_one_hot(clean_pitch_freq[frame], freq_map) 
                     one_hot_crepe_pitch[batch_idx,:, frame] = freq_to_one_hot(crepe_pitch_freq[batch_idx,frame], freq_map) 
-                    print("one_hot_clean_pitch = " + str(one_hot_clean_pitch[batch_idx,:,frame]))
-                    print("one_hot_crepe_pitch = " + str(one_hot_crepe_pitch[batch_idx,:,frame]))
-
-                    sys.exit(0)
             
             loss = F.cross_entropy(one_hot_clean_pitch, one_hot_crepe_pitch)
              
@@ -108,12 +104,14 @@ def run_validation_loop(args, validation_loader, validation_set):
             validationLosses.append(torch.mean(loss).item())
 
             if args.printOutputWhileValidation or args.isCHTCJob:
-                statString = "Validation Loss [DataLoaderIdx=" + str(i) + "] -> "
+                statString = "Validation Loss [DataLoaderIdx="
+                statString += str(i) + "/" + str(num_batches) + "] -> "
                 statString += str(loss.item())
                 if args.isCHTCJob:
                     send_log_msg(statString)
                 if args.printOutputWhileValidation:
                     print(statString)
+            sys.exit(0)
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
     return averageValidationLoss
 
