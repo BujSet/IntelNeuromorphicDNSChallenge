@@ -111,7 +111,6 @@ def run_validation_loop(args, validation_loader, validation_set):
                     send_log_msg(statString)
                 if args.printOutputWhileValidation:
                     print(statString)
-            sys.exit(0)
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
     return averageValidationLoss
 
