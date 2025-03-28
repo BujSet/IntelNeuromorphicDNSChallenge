@@ -52,7 +52,7 @@ def freq_to_one_hot(value, freq_bins):
 def run_validation_loop(args, validation_loader, validation_set):
     validationLosses = []
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
-    num_batchs = len(validation_set) / args.b 
+    num_batches = len(validation_set) / args.b 
     for i, (clean, crepe_times, crepe_values, crepe_confs, idx) in enumerate(validation_loader):
         with torch.no_grad():
             clean = clean.to(device)
