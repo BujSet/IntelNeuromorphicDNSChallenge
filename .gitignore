@@ -10,6 +10,9 @@ magnitude.pdf
 *.err
 *.log
 __pycache__/
+musdb18hq.zip
+musdb18hq/test/*
+musdb18hq/train/*
 aam_annotations/*.arff
 aam_audio_mixes/*.flac
 aam_audio_multitracks/*.flac
@@ -23,3 +26,4 @@ training_orients.txt
 validation_orients.txt
 Trained/
 runs/
+null_condor_config
