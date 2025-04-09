@@ -10,9 +10,13 @@ magnitude.pdf
 *.err
 *.log
 __pycache__/
+training_set/*.tar.gz
+training_set/crepe_pitch_annotations/clean/*.csv
 training_set/clean/*.wav
 training_set/noise/*.wav
 training_set/noisy/*.wav
+validation_set/*.tar.gz
+validation_set/crepe_pitch_annotations/clean/*.csv
 validation_set/clean/*.wav
 validation_set/noise/*.wav
 validation_set/noisy/*.wav
@@ -20,3 +24,4 @@ training_orients.txt
 validation_orients.txt
 Trained/
 runs/
+*.tar.gz
