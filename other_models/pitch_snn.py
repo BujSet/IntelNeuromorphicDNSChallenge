@@ -21,6 +21,12 @@ import random
 import parselmouth, librosa, time
 from chtc_files.htchirp_utils import *
 
+def chtc_print(args, string, prefix="[INFO]"):
+    if args.isCHTCJob:
+        send_log_msg(prefix + " " +  string)
+    else:
+        print(prefix + " " + str(datetime.datetime.now()) + " " + string)
+
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
         if (method == None):
@@ -210,7 +216,10 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, 
             send_log_msg(updateString)
         if currentEpoch == args.epochs:
             enoughTimeForMoreWork = False
-            send_log_msg("Finished training all " + str(args.epochs) + " epochs.")
+            if args.isCHTCJob:
+                send_log_msg("Finished training all " + str(args.epochs) + " epochs.")
+            else:
+                print("Finished training all " + str(args.epochs) + " epochs.")
     return delay_weights, averageTrainingLoss, currentEpoch+startingEpoch
 
 def run_warm_up_training(args, net, optimizer, scheduler, train_loader, train_set):
@@ -410,7 +419,17 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.seed is not None:
+        chtc_print(args, "Setting seed to " + str(args.seed)) 
         torch.manual_seed(args.seed)
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        if len(args.exp) == 0:
+            args.exp = "seed" + str(args.seed)
+        else:
+            if (args.exp[-1] == '_'):
+                args.exp += "seed" + str(args.seed)
+            else:
+                args.exp += "_seed" + str(args.seed)
 
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
     trained_folder = 'Trained'
@@ -429,7 +448,7 @@ if __name__ == '__main__':
     torch_compile_capable = False
     if device_cap in ((7, 0), (8, 0), (9, 0)):
         torch_compile_capable = True
-        print("Detected device capable of using torch.compile, will attempt to use for torch operations")
+        chtc_print(args, "Detected device capable of using torch.compile, will attempt to use for torch operations")
         # TODO should try torch compile on the network somehow
 
     out_delay = args.out_delay
@@ -450,7 +469,7 @@ if __name__ == '__main__':
     # if torch_compile_capable:
     #    net = torch.compile(net)
     module = net.module
-    print("[INFO] Creating " + str(len(module.blocks)) + "-layer network with hidden layer widths=" + str(module.hiddenLayerWidths))
+    chtc_print(args, "Creating " + str(len(module.blocks)) + "-layer network with hidden layer widths=" + str(module.hiddenLayerWidths))
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
@@ -482,8 +501,7 @@ if __name__ == '__main__':
                           prefetch_factor=args.dataloader_prefetch_factor,
                           pin_memory=True)
 
-    if args.isCHTCJob:
-        send_log_msg("Created trainind set data loader")
+    chtc_print(args, "Created training DataSet and DataLoader")
     startingEpoch = 0
     trackingInfo = dict()
     if args.useCheckpoint != "":
@@ -513,20 +531,18 @@ if __name__ == '__main__':
         statusString += str(startingEpoch) + ", training loss=" 
         statusString += str(startingTrainingLoss) + ", validation loss="
         statusString += str(startingValidationLoss) + "]"
-        if args.isCHTCJob:
-            send_log_msg(statusString)
-        else:
-            print(statusString)
+        chtc_print(args, statusString)
 
     if args.isCHTCJob:
-        infoString = "Detected that this instance in running in a CHTC Job "
+        infoString = "[INFO] Detected that this instance in running in a CHTC Job "
         infoString += " with " + get_gpu_time_remaining()
         infoString += " time remaining."
         print(infoString)
 
+    chtc_print(args, "Beginning training loop")
     delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=startingEpoch)
 
-    print("Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
+    chtc_print(args, "Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
 
     validation_set = DNSAudioCleanOnly(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     validation_loader = DataLoader(validation_set,
@@ -536,27 +552,21 @@ if __name__ == '__main__':
                                num_workers=args.dataloader_workers,
                                prefetch_factor=args.dataloader_prefetch_factor,
                                pin_memory=True)
-    if args.isCHTCJob:
-        send_log_msg("Done training, running final validation loop")
+    chtc_print(args, "Created validation DataSet and DataLoader")
+    chtc_print(args, "Beginning validation")
     finalValidationLoss = run_validation_loop(args, net, validation_loader, validation_set)
     statusString  = "Completed training and validation [epochs_completed:" 
     statusString += str(epochsCompleted) + ", training loss=" 
     statusString += str(lastTrainingLoss) + ", validation loss="
     statusString += str(finalValidationLoss) + "]"
-    if args.isCHTCJob:
-        send_log_msg(statusString)
-    else:
-        print(statusString)
+    chtc_print(args, statusString)
     if (args.saveCheckpoint):
         trackingInfo[epochsCompleted] = dict()
         currEpochStats = trackingInfo[epochsCompleted]
         currEpochStats['training_loss'] = lastTrainingLoss
         currEpochStats['validation_loss'] = finalValidationLoss
         saveFileName = trained_folder + '/pitch_snn_' + args.exp + '_' + str(epochsCompleted) + '.pt'
-        if args.isCHTCJob:
-            send_log_msg("Attempting to save model as " + saveFileName)
-        else:
-            print("Attempting to save model as " + saveFileName)
+        chtc_print(args, "Attempting to save model as " + saveFileName)
         torch.save({
                 'epochs_completed': epochsCompleted,
                 'module_state_dict': module.state_dict(),

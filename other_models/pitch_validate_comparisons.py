@@ -5,8 +5,7 @@
 import os, sys, math
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 sys.path.append('./')
-from audio_dataloader import DNSAudioCleanOnly
-from audio_dataloader import DNSAudioAndCrepeCleanOnly
+from audio_dataloader import DNSAudioCleanAndPitch
 import h5py
 import argparse
 import numpy as np
@@ -53,9 +52,12 @@ def run_validation_loop(args, validation_loader, validation_set):
     validationLosses = []
     freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
     num_batches = len(validation_set) / args.b 
-    for i, (clean, crepe_times, crepe_values, crepe_confs, idx) in enumerate(validation_loader):
+    for i, (clean, crepeTimes, crepeFreqs, crepeConfs, idx) in enumerate(validation_loader):
         with torch.no_grad():
             clean = clean.to(device)
+            crepeTimes = crepeTimes.to(device)
+            crepeFreqs = crepeFreqs.to(device)
+            crepeConfs = crepeConfs.to(device)
 
             if (args.spectrogram == 0):
                 clean_abs, clean_arg = stft_splitter(clean, args.n_fft, None)
@@ -222,13 +224,13 @@ if __name__ == '__main__':
             send_log_msg("Running validation on validation set")
         else:
             print("Running validation on validation set")
-        chosenDataset = DNSAudioCleanOnly(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
+        chosenDataset = DNSAudioCleanAndPitch(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     elif args.useTrainingSet:
         if args.isCHTCJob:
             send_log_msg("Running validation on training set")
         else:
             print("Running validation on training set")
-        chosenDataset = DNSAudioAndCrepeCleanOnly(root=args.path + 'training_set/', maxFiles=args.training_samples)
+        chosenDataset = DNSAudioCleanAndPitch(root=args.path + 'training_set/', maxFiles=args.training_samples)
     else:
         if args.isCHTCJob:
             send_log_msg("Dataset for validation not chosen! Must specify training or validation set to be used")
