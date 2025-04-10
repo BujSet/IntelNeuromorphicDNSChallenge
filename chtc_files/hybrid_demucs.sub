@@ -1,6 +1,6 @@
 # hybrid_demucs.sub
 # My HTCondor submit file
-docker_image = rselagam/ndns:v53_cuda12.4.0_esong32
+docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
 universe = docker
    
 executable = hybrid_demucs.sh
@@ -8,15 +8,26 @@ log = hybrid_demucs_$(Cluster).log
 error = hybrid_demucs_$(Cluster).err
 output = hybrid_demucs_$(Cluster).out
    
-transfer_input_files = hybrid_demucs_tutorial.py
+transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip, file:///staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT_OR_EVICT
+max_idle = 10
+want_io_proxy = true
+#TODO should change back to -15 when done with testing
+priority = 10
+batch_name = "music_sep_eval"
    
++WantGPULab = true
++GPUJobLength = "long"
+
 # Tell HTCondor requirements (e.g., operating system) your job needs, 
 # what amount of compute resources each job will need on the computer where it runs.
+request_gpus = 1
 request_cpus = 1
 request_memory = 36GB
 request_disk = 180GB
+require_gpus = (Capability >= 8.0) && (DriverVersion >= 12.4)
+requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
    
 # Tell HTCondor to run 1 instance of our job:
 queue 1
