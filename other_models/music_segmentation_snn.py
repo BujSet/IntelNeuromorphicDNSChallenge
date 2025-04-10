@@ -21,6 +21,17 @@ import random
 import parselmouth, librosa, time
 from chtc_files.htchirp_utils import *
 
+def collate_fn(self, batch):
+    noisy, clean, noise = [], [], []
+
+    indices = torch.IntTensor([s[4] for s in batch])
+
+    for sample in batch:
+        noisy += [torch.FloatTensor(sample[0])]
+        clean += [torch.FloatTensor(sample[1])]
+        noise += [torch.FloatTensor(sample[2])]
+
+        return torch.stack(noisy), torch.stack(clean), torch.stack(noise), indices
 def chtc_print(args, string, prefix="[INFO]"):
     if args.isCHTCJob:
         send_log_msg(prefix + " " +  string)
@@ -137,7 +148,7 @@ class Network(torch.nn.Module):
 def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
-    freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
+#    freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
     epochLatencies = []
     enoughTimeForMoreWork = True
     currentEpoch = 0
@@ -145,7 +156,18 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, 
     while enoughTimeForMoreWork:
         trainingLosses = []
         start_time = time.time()
-        for i, (clean, idx) in enumerate(train_loader):        
+        for i, sample in enumerate(train_loader):        
+            assert(len(sample) == 4)
+            waveform = sample[0].squeeze()
+            sr = sample[1]
+            numFrames = sample[2]
+            trackName = sample[3]
+
+            print(i)
+            print(numFrames)
+            print(waveform.size())
+            # waveform has dims (5, 2, numFrames) for five tracks captured via stereo
+            sys.exit(0)
             clean = clean.to(device)
 
             if (args.spectrogram == 0):
@@ -493,11 +515,14 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
     # 21 GB for training set, downloads to musdbhq/train
-    musdb_hq_data = torchaudio.datasets.MUSDB_HQ('.', subset="train",  download=False)
+    musdb_hq_data = torchaudio.datasets.MUSDB_HQ('.',
+            subset="train",  
+            sources=["bass", "drums", "other", "mixture", "vocals"],
+            download=False)
     data_loader = torch.utils.data.DataLoader(
         musdb_hq_data,
         batch_size=1,
-        shuffle=True,
+        shuffle=False,
         num_workers=args.dataloader_workers)
     train_set = musdb_hq_data
     train_loader = data_loader
@@ -540,7 +565,6 @@ if __name__ == '__main__':
         print(infoString)
 
     chtc_print(args, "Beginning training loop")
-    sys.exit(0)
     delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=startingEpoch)
 
     chtc_print(args, "Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
