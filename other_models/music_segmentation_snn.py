@@ -145,7 +145,7 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=0):
+def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, stft_transform, device, startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
 #    freq_map = torch.from_numpy(librosa.fft_frequencies(sr=16000, n_fft=args.n_fft)).to(device)
@@ -153,12 +153,16 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, 
     enoughTimeForMoreWork = True
     currentEpoch = 0
     net.train()
+
+    stft_transform = stft_transform.to(device)
     while enoughTimeForMoreWork:
         trainingLosses = []
         start_time = time.time()
         for i, sample in enumerate(train_loader):        
             assert(len(sample) == 4)
             waveform = sample[0].squeeze()
+            channel0 = waveform[:,0,:].squeeze()
+            channel1 = waveform[:,1,:].squeeze()
             sr = sample[1]
             numFrames = sample[2]
             trackName = sample[3]
@@ -166,7 +170,18 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, 
             print(i)
             print(numFrames)
             print(waveform.size())
+            print(channel0.size())
             # waveform has dims (5, 2, numFrames) for five tracks captured via stereo
+            # From https://github.com/sigsep/sigsep-mus-db it appears that the stems 
+            # are always in the following order: ['mixture', 'drums', 'bass', 'other', 'vocals']
+            # will need to verify this somehow TODO
+            mixture0 = channel0[0,:].squeeze()
+            print(mixture0.size())
+            # TODO need to do that chunking thing to make sure it fits on GPU memory
+
+            mix0_abs, mix0_arg = stft_transform(mixture0)
+            print(mix0_abs.size())
+
             sys.exit(0)
             clean = clean.to(device)
 
@@ -366,8 +381,12 @@ if __name__ == '__main__':
                         help='surrogate gradient scale')
     parser.add_argument('-n_fft',
                         type=int,
-                        default=512,
-                        help='number of FFT specturm, hop is n_fft // 4')
+                        default=4096,
+                        help='number of FFT spectrmm, default is 4096')
+    parser.add_argument('-n_hop',
+                        type=int,
+                        default=4,
+                        help='hop length for FFT, default is 4')
     parser.add_argument('-dmax',
                         type=int,
                         default=64,
@@ -496,16 +515,16 @@ if __name__ == '__main__':
                 n_fft=args.n_fft,
                 onesided=True, 
                 power=None,
-                hop_length=math.floor(args.n_fft//4)).to(device)
+                hop_length=args.n_hop)
     inv_stft_transform =torchaudio.transforms.InverseSpectrogram(
                 n_fft=args.n_fft,
                 onesided=True, 
-                hop_length=math.floor(args.n_fft//4)).to(device)
+                hop_length=math.floor(args.n_fft//4))
     mel_transform =torchaudio.transforms.MelSpectrogram(
                 n_fft=4*args.n_fft,
                 n_mels=257,
                 power=2,
-                hop_length=math.floor(args.n_fft//4)).to(device)
+                hop_length=math.floor(args.n_fft//4))
 
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
@@ -565,7 +584,7 @@ if __name__ == '__main__':
         print(infoString)
 
     chtc_print(args, "Beginning training loop")
-    delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, startingEpoch=startingEpoch)
+    delay_weights, lastTrainingLoss, epochsCompleted = run_training_loop(args, net, optimizer, scheduler, train_loader, train_set, stft_transform, device, startingEpoch=startingEpoch)
 
     chtc_print(args, "Completed training loop [epochs_completed:" + str(epochsCompleted) + ", training loss=" + str(lastTrainingLoss) + "]")
 
