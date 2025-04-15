@@ -3,6 +3,7 @@
 docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
 universe = docker
    
+arguments = $(set)
 executable = hybrid_demucs.sh
 log = hybrid_demucs_$(Cluster).log
 error = hybrid_demucs_$(Cluster).err
@@ -29,5 +30,4 @@ request_disk = 180GB
 require_gpus = (Capability >= 8.0) && (DriverVersion >= 12.4)
 requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
    
-# Tell HTCondor to run 1 instance of our job:
-queue 1
+queue set from hybrid_demucs_sets.txt

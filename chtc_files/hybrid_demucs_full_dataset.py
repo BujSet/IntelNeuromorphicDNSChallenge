@@ -251,7 +251,7 @@ overlap = 0.1
 # sources_list = model.sources
 # sources = list(sources)
 
-sdr_file = open(test_or_train + "_sdr_scores.csv", "w")
+sdr_file = open("hybrid_demucs_" + test_or_train + "_sdr_scores.csv", "w")
 # write header
 sdr_file.write("track ID, train/test set")
 
@@ -265,8 +265,8 @@ for i, sample in enumerate(data_loader):
     ref = waveform.mean(0)
     waveform = (waveform - ref.mean()) / ref.std()  # normalization
     mix = waveform[0,0,:,:].squeeze()
-    print("mix has dims " + str(mix.size()))
-    print("mix[None] has dims " + str(mix[None].size()))
+    # print("mix has dims " + str(mix.size()))
+    # print("mix[None] has dims " + str(mix[None].size()))
     sources = separate_sources(
         model,
         mix[None],
@@ -275,14 +275,13 @@ for i, sample in enumerate(data_loader):
         overlap=overlap,
     )[0]
     sources = sources * ref.std() + ref.mean()
-    print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
-    print(model.sources)
-    sdr_file.write("\n" + str(i) + test_or_train)
+    # print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
+    # print(model.sources)
+    sdr_file.write("\n" + str(i)+ ", " + test_or_train)
     for j in range(len(model.sources)):
-        print(model.sources[j])
+        # print(model.sources[j])
         sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
         #write sdr score
         sdr_file.write(", "+str(sdr_score))
-    break
 
 sdr_file.close()
