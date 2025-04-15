@@ -15,4 +15,4 @@ touch null_condor_config
 export CONDOR_CONFIG=$(pwd)/null_condor_config
 mv ~/musdb18hq.zip .
 unzip musdb18hq.zip
-python3 chtc_files/ hybrid_demucs_full_dataset.py
+python3 chtc_files/hybrid_demucs_full_dataset.py test

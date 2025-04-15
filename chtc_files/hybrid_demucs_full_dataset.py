@@ -190,12 +190,29 @@ def plot_spectrogram(stft, title="Spectrogram", savefile="spectogram"):
 # separator in different ways.
 #
 
-musdb_hq_data = torchaudio.datasets.MUSDB_HQ('.',
+data_loader = None
+assert(len(sys.argv) == 2)
+test_or_train = sys.argv[1]
+if test_or_train == "train":
+    musdb_hq_data = torchaudio.datasets.MUSDB_HQ('.',
             subset="train",  
             sources=['mixture', 'drums', 'bass', 'other', 'vocals'],
             #sources=["bass", "drums", "other", "mixture", "vocals"],
             download=False)
-train_loader = torch.utils.data.DataLoader(
+
+    data_loader = torch.utils.data.DataLoader(
+        musdb_hq_data,
+        batch_size=1,
+        shuffle=False,
+        num_workers=4)
+else:
+    musdb_hq_data = torchaudio.datasets.MUSDB_HQ('.',
+            subset="test",  
+            sources=['mixture', 'drums', 'bass', 'other', 'vocals'],
+            #sources=["bass", "drums", "other", "mixture", "vocals"],
+            download=False)
+
+    data_loader = torch.utils.data.DataLoader(
         musdb_hq_data,
         batch_size=1,
         shuffle=False,
@@ -203,38 +220,46 @@ train_loader = torch.utils.data.DataLoader(
 
 
 # We download the audio file from our storage. Feel free to download another file and use audio from a specific path
-SAMPLE_SONG = download_asset("tutorial-assets/hdemucs_mix.wav")
-waveform, sample_rate = torchaudio.load(SAMPLE_SONG)  # replace SAMPLE_SONG with desired path for different song
-waveform = waveform.to(device)
-mixture = waveform
-print("mixture has dims " + str(mixture.size()))
+# SAMPLE_SONG = download_asset("tutorial-assets/hdemucs_mix.wav")
+# waveform, sample_rate = torchaudio.load(SAMPLE_SONG)  # replace SAMPLE_SONG with desired path for different song
+# waveform = waveform.to(device)
+# mixture = waveform
+# print("mixture has dims " + str(mixture.size()))
 
 # parameters
 segment: int = 10
 overlap = 0.1
 
-print("Separating track")
+# print("Separating track")
 
-ref = waveform.mean(0)
-waveform = (waveform - ref.mean()) / ref.std()  # normalization
-print("waveform has dims " + str(waveform.size()))
-print("waveform[None] has dims " + str(waveform[None].size()))
+# ref = waveform.mean(0)
+# waveform = (waveform - ref.mean()) / ref.std()  # normalization
+# print("waveform has dims " + str(waveform.size()))
+# print("waveform[None] has dims " + str(waveform[None].size()))
 
-sources = separate_sources(
-    model,
-    waveform[None],
-    device=device,
-    segment=segment,
-    overlap=overlap,
-)
-sources = sources[0] # has dims (4,2,numFrames)
+# sources = separate_sources(
+#     model,
+#     waveform[None],
+#     device=device,
+#     segment=segment,
+#     overlap=overlap,
+# )
+# sources = sources[0] # has dims (4,2,numFrames)
 
-sources = sources * ref.std() + ref.mean()
+# sources = sources * ref.std() + ref.mean()
 
-sources_list = model.sources
-sources = list(sources)
+# sources_list = model.sources
+# sources = list(sources)
 
-for i, sample in enumerate(train_loader):        
+sdr_file = open(test_or_train + "_sdr_scores.csv", "w")
+# write header
+sdr_file.write("track ID, train/test set")
+
+for i in range(len(model.sources)):
+    sdr_file.write(", " + model.sources[i])
+
+
+for i, sample in enumerate(data_loader):      
     assert(len(sample) == 4)
     waveform = sample[0].to(device) # (1,5,2,numFrames)
     ref = waveform.mean(0)
@@ -252,7 +277,12 @@ for i, sample in enumerate(train_loader):
     sources = sources * ref.std() + ref.mean()
     print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
     print(model.sources)
+    sdr_file.write("\n" + str(i) + test_or_train)
     for j in range(len(model.sources)):
         print(model.sources[j])
         sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
-        print("sdr_score: " + str(sdr_score))
+        #write sdr score
+        sdr_file.write(", "+str(sdr_score))
+    break
+
+sdr_file.close()
