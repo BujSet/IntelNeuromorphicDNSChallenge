@@ -304,21 +304,21 @@ for epoch in range(num_epochs):
         # prediction = net(mix)
         # output is tensor with 4 tracks
 
-        sources = separate_sources(
-            model,
-            mix[None],
-            device=device,
-            segment=segment,
-            overlap=overlap,
-        )[0]
-        sources = sources * ref.std() + ref.mean()
-        # print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
-        # print(model.sources)
-        sdr_file.write("\n" + str(i)+ ", " + test_or_train)
-        for j in range(len(model.sources)):
-            # print(model.sources[j])
-            sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
-            #write sdr score
-            sdr_file.write(", "+str(sdr_score))
+        # sources = separate_sources(
+        #     model,
+        #     mix[None],
+        #     device=device,
+        #     segment=segment,
+        #     overlap=overlap,
+        # )[0]
+        # sources = sources * ref.std() + ref.mean()
+        # # print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
+        # # print(model.sources)
+        # sdr_file.write("\n" + str(i)+ ", " + test_or_train)
+        # for j in range(len(model.sources)):
+        #     # print(model.sources[j])
+        #     sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
+        #     #write sdr score
+        #     sdr_file.write(", "+str(sdr_score))
 
     sdr_file.close()
