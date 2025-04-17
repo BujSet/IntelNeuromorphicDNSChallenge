@@ -75,7 +75,10 @@ bundle = HDEMUCS_HIGH_MUSDB_PLUS
 
 model = bundle.get_model()
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print("CUDA is available? " + str(torch.cuda.is_avaiable()))
+deviceString = "cuda:0" if torch.cuda.is_available() else "cpu"
+print(deviceString)
+device = torch.device(deviceString)
 
 model.to(device)
 
