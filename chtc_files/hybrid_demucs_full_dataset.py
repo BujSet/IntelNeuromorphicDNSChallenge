@@ -43,8 +43,8 @@ import sys
 import torch
 import torchaudio
 
-print(torch.__version__)
-print(torchaudio.__version__)
+# print(torch.__version__)
+# print(torchaudio.__version__)
 
 import matplotlib.pyplot as plt
 
@@ -81,7 +81,7 @@ model.to(device)
 
 sample_rate = bundle.sample_rate
 
-print(f"Sample rate: {sample_rate}")
+# print(f"Sample rate: {sample_rate}")
 
 ######################################################################
 # 4. Configure the application function
@@ -251,12 +251,12 @@ overlap = 0.1
 # sources_list = model.sources
 # sources = list(sources)
 
-sdr_file = open("hybrid_demucs_" + test_or_train + "_sdr_scores.csv", "w")
+# sdr_file = open("hybrid_demucs_" + test_or_train + "_sdr_scores.csv", "w")
 # write header
-sdr_file.write("track ID, train/test set")
+print("track ID, train/test set")
 
 for i in range(len(model.sources)):
-    sdr_file.write(", " + model.sources[i])
+    print(", " + model.sources[i])
 
 
 for i, sample in enumerate(data_loader):      
@@ -277,11 +277,11 @@ for i, sample in enumerate(data_loader):
     sources = sources * ref.std() + ref.mean()
     # print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
     # print(model.sources)
-    sdr_file.write("\n" + str(i)+ ", " + test_or_train)
+    print("\n" + str(i)+ ", " + test_or_train)
     for j in range(len(model.sources)):
         # print(model.sources[j])
         sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
         #write sdr score
-        sdr_file.write(", "+str(sdr_score))
+        print(", "+str(sdr_score))
+    sys.exit(0)
 
-sdr_file.close()
