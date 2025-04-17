@@ -2,7 +2,8 @@ import os, sys
 sys.path.append('./')
 import matplotlib.pyplot as plt
 import numpy as np
-from hrtfs.cipic_db import CipicDatabase 
+#from hrtfs.cipic_db import CipicDatabase 
+from matplotlib import cm
 
 path = os.getcwd()
 filePath = os.path.join(path, "collated_results.csv")
@@ -34,7 +35,7 @@ with open(filePath, "r") as f:
                 print(line)
                 assert(False)
 
-CIPICSubject = CipicDatabase.subjects[3]
+#CIPICSubject = CipicDatabase.subjects[3]
 row_average = np.full((1250), 0.0)
 for i in range(1250):
     row_sum = 0.0
@@ -49,29 +50,31 @@ for i in range(1250):
         row_average[i] = -1.0
 
       
-u = np.linspace(0, 2 * np.pi, 80)
-v = np.linspace(0, np.pi, 80)
+#u = np.linspace(0, 2 * np.pi, 80)
+#v = np.linspace(0, np.pi, 80)
 
 # create the sphere surface
-x=10 * np.outer(np.cos(u), np.sin(v))
-y=10 * np.outer(np.sin(u), np.sin(v))
-z=10 * np.outer(np.ones(np.size(u)), np.cos(v))
+#x=10 * np.outer(np.cos(u), np.sin(v))
+#y=10 * np.outer(np.sin(u), np.sin(v))
+#z=10 * np.outer(np.ones(np.size(u)), np.cos(v))
 
 # simulate heat pattern (striped)
-myheatmap = np.abs(np.sin(y))
+#myheatmap = np.abs(np.sin(y))
 
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.plot_surface(x, y, z, cstride=1, rstride=1, facecolors=cm.hot(myheatmap))
-plt.savefig("passive_pinna_sub3_chan0_3D_noise.png", bbox_inches="tight")
-plt.close()
+#fig = plt.figure()
+#ax = fig.add_subplot(111, projection='3d')
+#ax.plot_surface(x, y, z, cstride=1, rstride=1, facecolors=cm.hot(myheatmap))
+#plt.savefig("passive_pinna_sub3_chan0_3D_noise.png", bbox_inches="tight")
+#plt.close()
 
-plt.figure(figsize=(8, 8))
+plt.figure(figsize=(10, 10))
 plt.imshow(data, cmap='hot', interpolation='nearest', origin='lower')
 plt.colorbar()
-plt.xlabel('Speech Orient')
-plt.ylabel('Noise Orient')
+plt.xlabel('Noise Orient')
+plt.xticks(ticks=[i for i in range(0, 1250, 50)] + [1249], labels=[str(i) for i in range(0,1250,50)] + ["1249"], rotation=45)
+plt.ylabel('Speech Orient')
+plt.yticks(ticks=[i for i in range(0, 1250, 50)] + [1249], labels=[str(i) for i in range(0,1250,50)] + ["1249"])
 plt.savefig("passive_pinna_sub3_chan0.png", bbox_inches="tight")
 plt.close()
 
