@@ -147,6 +147,7 @@ def separate_sources(
 
     while start < length - overlap_frames:
         chunk = mix[:, :, start:end]
+        print("chunk dims: " + str(chunk.size()))
         with torch.no_grad():
             out = model.forward(chunk)
         out = fade(out)
