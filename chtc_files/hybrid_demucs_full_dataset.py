@@ -253,10 +253,12 @@ overlap = 0.1
 
 # sdr_file = open("hybrid_demucs_" + test_or_train + "_sdr_scores.csv", "w")
 # write header
-print("track ID, train/test set")
+header = "track ID, train/test set"
 
 for i in range(len(model.sources)):
-    print(", " + model.sources[i])
+    header += ", " + model.sources[i]
+
+print(header)
 
 
 for i, sample in enumerate(data_loader):      
@@ -277,11 +279,12 @@ for i, sample in enumerate(data_loader):
     sources = sources * ref.std() + ref.mean()
     # print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
     # print(model.sources)
-    print("\n" + str(i)+ ", " + test_or_train)
+    line = str(i) + ", " + test_or_train
     for j in range(len(model.sources)):
         # print(model.sources[j])
         sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
         #write sdr score
-        print(", "+str(sdr_score))
+        line += ", "+str(sdr_score)
+    print(line)
     sys.exit(0)
 
