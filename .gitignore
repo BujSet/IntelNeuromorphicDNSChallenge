@@ -10,6 +10,7 @@ magnitude.pdf
 *.err
 *.log
 __pycache__/
+collated_results.csv
 training_set/*.tar.gz
 training_set/crepe_pitch_annotations/clean/*.csv
 training_set/clean/*.wav
