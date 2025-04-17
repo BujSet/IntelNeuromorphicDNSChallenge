@@ -295,11 +295,13 @@ for epoch in range(num_epochs):
         
         print("mix has dims " + str(mix.size()))
         print("mix[None] has dims " + str(mix[None].size()))
-        sys.exit(0)
+        
+        if (i == 5):
+            sys.exit()
 
 
         # pass to network 
-        prediction = net(mix)
+        # prediction = net(mix)
         # output is tensor with 4 tracks
 
         sources = separate_sources(
