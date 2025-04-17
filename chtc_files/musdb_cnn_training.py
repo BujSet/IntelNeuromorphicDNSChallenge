@@ -275,7 +275,7 @@ class Net(nn.Module):
 
 #instantiate model
 net = torch.nn.DataParallel(Net().to(device),  # use data parallel for gpu
-                    device_ids='cuda:0')
+                    device_ids='0')
 
 optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=0.001, # start with "high" learning rate 
