@@ -296,23 +296,24 @@ for epoch in range(num_epochs):
         print("mix has dims " + str(mix.size()))
         print("mix[None] has dims " + str(mix[None].size()))
         
-        if (i == 5):
-            sys.exit()
+        
 
 
         # pass to network 
         # prediction = net(mix)
         # output is tensor with 4 tracks
 
-        # sources = separate_sources(
-        #     model,
-        #     mix[None],
-        #     device=device,
-        #     segment=segment,
-        #     overlap=overlap,
-        # )[0]
-        # sources = sources * ref.std() + ref.mean()
-        # # print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
+        sources = separate_sources(
+            model,
+            mix[None],
+            device=device,
+            segment=segment,
+            overlap=overlap,
+        )[0]
+        sources = sources * ref.std() + ref.mean()
+        print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
+        if (i == 5):
+            sys.exit()
         # # print(model.sources)
         # sdr_file.write("\n" + str(i)+ ", " + test_or_train)
         # for j in range(len(model.sources)):
