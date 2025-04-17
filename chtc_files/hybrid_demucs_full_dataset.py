@@ -286,5 +286,4 @@ for i, sample in enumerate(data_loader):
         #write sdr score
         line += ", "+str(sdr_score)
     print(line)
-    sys.exit(0)
 
