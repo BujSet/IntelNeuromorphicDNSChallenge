@@ -309,8 +309,8 @@ for epoch in range(num_epochs):
 
 
         # pass to network 
-        prediction = net(mix[None])
-        print("prediction dims: " + prediction.size())
+        # prediction = net(mix[None])
+        # print("prediction dims: " + prediction.size())
         # output is tensor with 4 tracks
 
         sources = separate_sources(
