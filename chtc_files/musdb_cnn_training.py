@@ -144,12 +144,15 @@ def separate_sources(
     fade = Fade(fade_in_len=0, fade_out_len=int(overlap_frames), fade_shape="linear")
 
     final = torch.zeros(batch, len(model.sources), channels, length, device=device)
-    p1d = (int(overlap_frames), 0) # padding for first chunk
+    first_pad = (int(overlap_frames), 0) # padding for first chunk
 
     while start < length - overlap_frames:
         chunk = mix[:, :, start:end]
-        if (start == 0 ):
-            chunk = F.pad(chunk, p1d, "constant", 0)
+        if start == 0: # first chunk padding
+            chunk = F.pad(chunk, first_pad, "constant", 0)
+        if fade.fade_out_len == 0: # last chunk padding
+            last_pad = (0, end - length)
+            chunk = F.pad(chunk, last_pad, "constant", 0)
         print("chunk dims: " + str(chunk.size()))
         with torch.no_grad():
             out = model.forward(chunk)
