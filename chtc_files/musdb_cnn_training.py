@@ -159,6 +159,10 @@ def separate_sources(
         out = fade(out)
         if start == 0:
             final[:, :, :, start:end + int(overlap_frames)] += out
+        elif fade.fade_out_len == 0: # last chunk padding
+            print(final[:, :, :, start:end + int(overlap_frames)].size())
+            print(out.size())
+            final[:, :, :, start:end + int(overlap_frames)] += out
         else:
             final[:, :, :, start:end] += out
         if start == 0:
