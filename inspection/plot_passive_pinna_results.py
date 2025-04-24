@@ -13,19 +13,24 @@ with open(filePath, "r") as f:
     lines = f.readlines()
     headerLine = lines[0]
     headerTokens = [tok.strip() for tok in headerLine.split(",")]
+    assert("Subject" in headerTokens)
+    assert("Channel" in headerTokens)
+    assert("Speech Orient" in headerTokens)
+    assert("Noise Orient" in headerTokens)
+    assert("Final Validation Score SI-SNR (dB)" in headerTokens)
+    subIdx = headerTokens.index("Subject")
+    chanIdx = headerTokens.index("Channel")
+    speechOIdx = headerTokens.index("Speech Orient")
+    noiseOIdx = headerTokens.index("Noise Orient")
+    scoreIdx = headerTokens.index("Final Validation Score SI-SNR (dB)")
     lines = lines[1:]
     for line in lines:
         dataTokens = [tok.strip() for tok in line.split(",")]
-        assert("Subject" in headerTokens)
-        assert("Channel" in headerTokens)
-        assert("Speech Orient" in headerTokens)
-        assert("Noise Orient" in headerTokens)
-        assert("Final Validation Score SI-SNR (dB)" in headerTokens)
-        sub = int(dataTokens[headerTokens.index("Subject")])
-        chan = int(dataTokens[headerTokens.index("Channel")])
-        speechO = int(dataTokens[headerTokens.index("Speech Orient")])
-        noiseO = int(dataTokens[headerTokens.index("Noise Orient")])
-        score = float(dataTokens[headerTokens.index("Final Validation Score SI-SNR (dB)")])
+        sub = int(dataTokens[subIdx])
+        chan = int(dataTokens[chanIdx])
+        speechO = int(dataTokens[speechOIdx])
+        noiseO = int(dataTokens[noiseOIdx])
+        score = float(dataTokens[scoreIdx])
 
         assert(0 <= speechO < 1250)
         assert(0 <= noiseO  < 1250)
@@ -35,7 +40,8 @@ with open(filePath, "r") as f:
                 print(line)
                 assert(False)
 
-#CIPICSubject = CipicDatabase.subjects[3]
+def index_to_cart_pos(index):
+
 row_average = np.full((1250), 0.0)
 for i in range(1250):
     row_sum = 0.0
@@ -48,7 +54,6 @@ for i in range(1250):
         row_average[i] = row_sum / row_count
     else:
         row_average[i] = -1.0
-
       
 #u = np.linspace(0, 2 * np.pi, 80)
 #v = np.linspace(0, np.pi, 80)
@@ -68,13 +73,36 @@ for i in range(1250):
 #plt.savefig("passive_pinna_sub3_chan0_3D_noise.png", bbox_inches="tight")
 #plt.close()
 
-plt.figure(figsize=(10, 10))
-plt.imshow(data, cmap='hot', interpolation='nearest', origin='lower')
-plt.colorbar()
+plt.figure(figsize=(25, 25))
 plt.xlabel('Noise Orient')
 plt.xticks(ticks=[i for i in range(0, 1250, 50)] + [1249], labels=[str(i) for i in range(0,1250,50)] + ["1249"], rotation=45)
 plt.ylabel('Speech Orient')
 plt.yticks(ticks=[i for i in range(0, 1250, 50)] + [1249], labels=[str(i) for i in range(0,1250,50)] + ["1249"])
+plt.ylim(bottom=-0.5)
+plt.xlim(left=-0.5)
+plt.imshow(data, cmap='hot', aspect="equal", interpolation='none', origin='lower')
+plt.colorbar(shrink=0.80)
 plt.savefig("passive_pinna_sub3_chan0.png", bbox_inches="tight")
 plt.close()
+
+dataSmall = np.full((50, 50), -1.0)
+for i in range(0, 1250, 25):
+    for j in range(0, 1250, 25):
+        if data[i,j] > 0.0:
+            dataSmall[i//25,j//25] = data[i,j]
+ 
+plt.figure(figsize=(10, 10))
+plt.xlabel('Noise Orient')
+plt.xticks(ticks=[125*i//25 for i in range(10)], labels=[str(125*i) for i in range(10)], rotation=45)
+plt.ylabel('Speech Orient')
+plt.yticks(ticks=[125*i//25 for i in range(10)], labels=[str(125*i) for i in range(10)])
+plt.ylim(bottom=-0.5)
+plt.ylim(top=49.5)
+plt.xlim(left=-0.5)
+plt.xlim(right=49.5)
+plt.imshow(dataSmall, cmap='hot', aspect="equal", interpolation='nearest', origin='lower')
+plt.colorbar(shrink=0.80)
+plt.savefig("passive_pinna_sub3_chan0_small.png", bbox_inches="tight")
+plt.close()
+
 
