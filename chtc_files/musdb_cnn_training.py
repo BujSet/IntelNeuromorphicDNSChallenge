@@ -155,7 +155,7 @@ def separate_sources(
             out = model.forward(chunk)
         out = fade(out)
         if start == 0:
-            final[:, :, :, start:end + overlap_frames] += out
+            final[:, :, :, start:end + int(overlap_frames)] += out
         else:
             final[:, :, :, start:end] += out
         if start == 0:
