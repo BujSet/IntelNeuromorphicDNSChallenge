@@ -144,14 +144,20 @@ def separate_sources(
     fade = Fade(fade_in_len=0, fade_out_len=int(overlap_frames), fade_shape="linear")
 
     final = torch.zeros(batch, len(model.sources), channels, length, device=device)
+    p1d = (int(overlap_frames), 0) # padding for first chunk
 
     while start < length - overlap_frames:
         chunk = mix[:, :, start:end]
+        if (start == 0 ):
+            chunk = F.pad(chunk, p1d, "constant", 0)
         print("chunk dims: " + str(chunk.size()))
         with torch.no_grad():
             out = model.forward(chunk)
         out = fade(out)
-        final[:, :, :, start:end] += out
+        if start == 0:
+            final[:, :, :, start:end + overlap_frames] += out
+        else:
+            final[:, :, :, start:end] += out
         if start == 0:
             fade.fade_in_len = int(overlap_frames)
             start += int(chunk_len - overlap_frames)
@@ -243,7 +249,7 @@ class Net(nn.Module):
     #   self.conv2 = nn.Conv2d(32, 64, 3, 1)
       self.conv1 = nn.Conv1d(2, 32, 2, 1)
       self.conv2 = nn.Conv1d(32, 64, 2, 1)
-      self.dropout1 = nn.Dropout1d(0.25)
+      self.dropout1 = nn.Dropout1d(0.25) # dropout rate - higher rate is more robust
       self.dropout2 = nn.Dropout1d(0.5)
       self.fc1 = nn.Linear(9216, 128) # TODO: need constant width 
       self.fc2 = nn.Linear(128, 10)
