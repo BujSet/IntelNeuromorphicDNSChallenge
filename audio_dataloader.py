@@ -421,8 +421,12 @@ class DNSAudioCleanAndPitch:
     ----------
     root : str, optional
         Path of the dataset location, by default './'.
+    maxFiles : int, optional
+        Number of files to use as subset for faster training
+    n_fft : int, optional
+        Used for shaping the output to match fft of external values
     """
-    def __init__(self, root: str = './', maxFiles: int = -1) -> None:
+    def __init__(self, root: str = './', maxFiles: int = -1, n_fft: int = 512) -> None:
         self.root = root
         self.clean_files = glob.glob(root + 'clean/**.wav')
         if (maxFiles > len(self.clean_files)):
@@ -435,6 +439,7 @@ class DNSAudioCleanAndPitch:
             assert(randStart + maxFiles <= len(self.clean_files))
             self.clean_files = self.clean_files[randStart:randStart+maxFiles]
             print("Using slice dataset[" + str(randStart) + ":" + str(randStart+maxFiles) + "] with "+str(len(self.clean_files)) + " samples")
+        self.num_fft_frames = int((30 * 16000 / (n_fft // 4)) + 1)
 
     def _get_filenames(self, n: int) -> Tuple[str]:
         clean_file = self.clean_files[n % self.__len__()]
@@ -478,9 +483,10 @@ class DNSAudioCleanAndPitch:
                                           np.zeros(num_samples
                                                    - len(clean_audio))])
         pathTokens = clean_file.split("/")
-        crepeFilePath = "/".join(pathTokens[:-1]) + "../crepe_pitch_annotations/clean/" 
-        crepeFileName = pathTokens[-1].replace(".wav", "f0.csv")
-        crepeFile = crepeFilePath + crepeFileName
+        crepeFilePath = os.path.join(self.root, "crepe_pitch_annotations")
+        crepeFilePath = os.path.join(crepeFilePath, "clean")
+        crepeFileName = pathTokens[-1].replace(".wav", ".f0.csv")
+        crepeFile = os.path.join(crepeFilePath, crepeFileName)
         with open(crepeFile) as f:
             lines = f.readlines()
             # Skip header line
@@ -493,10 +499,10 @@ class DNSAudioCleanAndPitch:
                 times.append(values[0])
                 freqs.append(values[1])
                 confs.append(values[2])
-        times = np.array(times, dtype=np.float32)
-        freqs = np.array(freqs, dtype=np.float32)
-        confs = np.array(confs, dtype=np.float32)
-        return clean_audio, times, freqs, confs, np.arraymetadata, n
+        times = np.array(times[0:self.num_fft_frames], dtype=np.float32)
+        freqs = np.array(freqs[0:self.num_fft_frames], dtype=np.float32)
+        confs = np.array(confs[0:self.num_fft_frames], dtype=np.float32)
+        return clean_audio, times, freqs, confs, metadata, n
 
     def __len__(self) -> int:
         """Length of the dataset.
@@ -517,7 +523,11 @@ class DNSAudioCleanAndPitch:
             crepeFreqs += [torch.FloatTensor(sample[2])]
             crepeConfs += [torch.FloatTensor(sample[3])]
 
-        return torch.stack(clean), torch.stack(crepeTimes), torch.stack(crepeFreqs), torch.stack(crepeConfs), indices
+        clean = torch.stack(clean)
+        crepeTimes = torch.stack(crepeTimes)
+        crepeFreqs = torch.stack(crepeFreqs)
+        crepeConfs = torch.stack(crepeConfs)
+        return clean, crepeTimes, crepeFreqs, crepeConfs, indices
 
 class DNSAudio:
     """Audio dataset loader for DNS.
@@ -526,6 +536,8 @@ class DNSAudio:
     ----------
     root : str, optional
         Path of the dataset location, by default './'.
+    maxFiles : int, optional
+        Number of files to use as subset for faster training
     """
     def __init__(self, root: str = './', maxFiles: int = -1) -> None:
         self.root = root
