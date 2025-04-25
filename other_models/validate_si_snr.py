@@ -1,7 +1,3 @@
-# Copyright (C) 2021-22 Intel Corporation
-# SPDX-License-Identifier: MIT
-# See: https://spdx.org/licenses/
-
 import os, sys, math
 import h5py
 import argparse
@@ -73,34 +69,29 @@ def scale_by_target_level(x, targ, rms, bias):
     scalar = torch.div(norm, torch.add(rms, bias))
     return torch.mul(x, scalar)
 
-def _segmental_snr_mixer(clean, noise, snr,
+def _segmental_snr_mixer(device, clean, noise, snr,
                         target_level,
-                        noise_stream,
-                        clean_stream, 
                         target_level_lower=-35,
                         target_level_higher=-15,
                         clipping_threshold=0.99,
                         EPS = 2.220446049250313e-16
                         ):
     '''Function to mix clean speech and noise at various segmental SNR levels'''
-    epsT = torch.tensor([EPS], device="cuda")
-    clipT = torch.tensor([clipping_threshold], device="cuda")
+    epsT = torch.tensor([EPS]).to(device)
+    clipT = torch.tensor([clipping_threshold]).to(device)
     normSNRT = torch.pow(10, torch.div(snr, 20.0))
 
     # TODO should only calculate the RMS of the 'active' windows, but
     # for now we just use the whole audio sample
 
-    with torch.cuda.stream(clean_stream):
-        ssl_clean = bias_normalize(clean, epsT)
-        clean_rms = calc_rms(ssl_clean)
-        ssl_clean = scale_by_target_level(ssl_clean, target_level, clean_rms, epsT)
+    ssl_clean = bias_normalize(clean, epsT)
+    clean_rms = calc_rms(ssl_clean)
+    ssl_clean = scale_by_target_level(ssl_clean, target_level, clean_rms, epsT)
 
-    with torch.cuda.stream(noise_stream):
-        ssl_noise = bias_normalize(noise, epsT)
-        noise_rms = calc_rms(ssl_noise)
-        ssl_noise = scale_by_target_level(ssl_noise, target_level, noise_rms, epsT)
+    ssl_noise = bias_normalize(noise, epsT)
+    noise_rms = calc_rms(ssl_noise)
+    ssl_noise = scale_by_target_level(ssl_noise, target_level, noise_rms, epsT)
 
-    torch.cuda.synchronize()
     # Adjust noise to SNR level
     noise_scalar = torch.div(torch.div(clean_rms, normSNRT), torch.add(noise_rms, epsT))
     ssl_noise = torch.mul(ssl_noise, noise_scalar)
@@ -108,19 +99,12 @@ def _segmental_snr_mixer(clean, noise, snr,
     noisy_rms_level = torch.randint(
             target_level_lower,
             target_level_higher,
-            (1,), device="cuda")
+            (1,)).to(device)
     noisy_rms = calc_rms(ssl_noisy)
     noisy_scalar = torch.div(torch.pow(10, torch.div(noisy_rms_level, 20.0)), torch.add(noisy_rms, epsT))
     ssl_noisy = torch.mul(ssl_noisy, noisy_scalar)
     ssl_clean = torch.mul(ssl_clean, noisy_scalar)
     ssl_noise = torch.mul(ssl_noise, noisy_scalar)
-#    # check if any clipping happened
-#    needToClip = torch.gt(torch.abs(ssl_noisy), 0.99).any() # 0.99 is the clipping threshold 
-#    if (needToClip):
-#        noisyspeech_maxamplevel = torch.div(torch.max(torch.abs(ssl_noisy)), torch.sub(clipT, epsT))
-#        ssl_noisy = torch.div(ssl_noisy, noisyspeech_maxamplevel)
-#        ssl_noise = torch.div(ssl_noise, noisyspeech_maxamplevel)
-#        ssl_clean = torch.div(ssl_clean, noisyspeech_maxamplevel)
     # Checking for clipping requires a GPU-CPU synchronization via the .any()
     # function call. Rather than check if clipping occured, always rescale
     noisyspeech_maxamplevel = torch.div(torch.max(torch.abs(ssl_noisy)), torch.sub(clipT, epsT))
@@ -129,13 +113,15 @@ def _segmental_snr_mixer(clean, noise, snr,
     ssl_clean = torch.div(ssl_clean, noisyspeech_maxamplevel)
     return ssl_clean, ssl_noise, ssl_noisy
 
-def synthesizeNoisySpeech(clean, noise, noisy, batchSize, 
+def synthesizeNoisySpeech(device, clean, noise, noisy, batchSize, 
             snr,
-            targetLevel, noise_stream, clean_stream):
+            targetLevel
+            ):
     for i in range(batchSize):
-        clean[i, :], noise[i,:], noisy[i,:] = _segmental_snr_mixer(clean[i,:], noise[i,:], 
+        clean[i, :], noise[i,:], noisy[i,:] = _segmental_snr_mixer(device, 
+            clean[i,:], noise[i,:], 
             snr[i], 
-            targetLevel[i], noise_stream, clean_stream)
+            targetLevel[i])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -206,12 +192,11 @@ if __name__ == '__main__':
     parser.add_argument('-noiseFilterOrientStep',
                         type=int,
                         default=1,
-                        help='First index (inclusive) into CIPIC source directions to orient the noise to ')
+                        help='Sampling step size for noise orient')
     parser.add_argument('-noiseFilterOrientEnd',
                         type=int,
                         default=1250,
                         help='Last index (exclusive) into CIPIC source directions to orient the noise to ')
-
     parser.add_argument('-print_validation_results_header',
                         dest='printValidationResultsHeader', 
                         action='store_true',
@@ -234,24 +219,25 @@ if __name__ == '__main__':
     if args.seed is not None:
         torch.manual_seed(args.seed)
 
-    assert(torch.cuda.is_available())
-    device = torch.device('cuda:0')
-    # Get CUDA capability
-    device_cap = torch.cuda.get_device_capability()
+    deviceString = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = torch.device(deviceString)
     torch_compile_capable = False
-    if device_cap in ((7, 0), (8, 0), (9, 0)):
-        torch_compile_capable = True
-        if args.enableTorchCompile:
-            if args.isCHTCJob:
-                send_log_msg("Detected device capable of using torch.compile, will attempt to use for torch operations")
+    if deviceString == "cuda:0":
+        # Get CUDA capability
+        device_cap = torch.cuda.get_device_capability()
+        if device_cap in ((7, 0), (8, 0), (9, 0)):
+            torch_compile_capable = True
+            if args.enableTorchCompile:
+                if args.isCHTCJob:
+                    send_log_msg("Detected device capable of using torch.compile, will attempt to use for torch operations")
+                else:
+                    print("Detected device capable of using torch.compile, will attempt to use for torch operations")
+                optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
             else:
-                print("Detected device capable of using torch.compile, will attempt to use for torch operations")
-            optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
-        else:
-            if args.isCHTCJob:
-                send_log_msg("Detected device capable of using torch.compile, but config says not to use")
-            else:
-                print("Detected device capable of using torch.compile, but config says not to use")
+                if args.isCHTCJob:
+                    send_log_msg("Detected device capable of using torch.compile, but config says not to use")
+                else:
+                    print("Detected device capable of using torch.compile, but config says not to use")
 
     TraceHandler = MyTraceHandler(
             args.speechFilterOrient,
@@ -280,16 +266,16 @@ if __name__ == '__main__':
         speechFilter = CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.cipicChannel)
         speechFilter = torch.from_numpy(speechFilter).float().to(device)
         speechFilter = downsampler(speechFilter) 
-        ssl_noise = torch.zeros(args.b, 480000, device="cuda")
-        ssl_clean = torch.zeros(args.b, 480000, device="cuda")
-        ssl_noisy = torch.zeros(args.b, 480000, device="cuda")
-        ssl_snrs  = torch.zeros(args.b, 1, device="cuda")
-        ssl_targlvls= torch.zeros(args.b, 1, device="cuda")
-        runningScore = torch.zeros(1, device="cuda")
+        ssl_noise = torch.zeros(args.b, 480000).to(device)
+        ssl_clean = torch.zeros(args.b, 480000).to(device)
+        ssl_noisy = torch.zeros(args.b, 480000).to(device)
+        ssl_snrs  = torch.zeros(args.b, 1).to(device)
+        ssl_targlvls= torch.zeros(args.b, 1).to(device)
+        runningScore = torch.zeros(1).to(device)
  
-    activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-    noise_stream = torch.cuda.Stream()
-    clean_stream = torch.cuda.Stream()
+    activities = [ProfilerActivity.CPU]
+    if "cuda" in deviceString:
+        activities.append(ProfilerActivity.CUDA)
     my_schedule = torch.profiler.schedule(
         skip_first= numIters-20,
         wait=5,
@@ -313,28 +299,23 @@ if __name__ == '__main__':
                 runningScore.fill_(0)
                 start_time = time.time()
                 with record_function("load_noise_filter"):
-                    with torch.cuda.stream(noise_stream):
-                        noiseFilter = CIPICSubject.getHRIRFromIndex(noiseOrient, args.cipicChannel)
-                        noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
-                        noiseFilter = downsampler(noiseFilter) 
+                    noiseFilter = CIPICSubject.getHRIRFromIndex(noiseOrient, args.cipicChannel)
+                    noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
+                    noiseFilter = downsampler(noiseFilter) 
                 for i, (clean, noise, idx) in enumerate(validation_loader):
                     with record_function("load_mini_batch"):
-                        with torch.cuda.stream(noise_stream):
-                            noise = noise.to(device, non_blocking=True)
-                            for batch_idx in range(args.b):
-                                ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                        with torch.cuda.stream(clean_stream):
-                            clean = clean.to(device, non_blocking=True)
-                            for batch_idx in range(args.b):
-                                ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                        noise = noise.to(device, non_blocking=True)
+                        for batch_idx in range(args.b):
+                            ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                        clean = clean.to(device, non_blocking=True)
+                        for batch_idx in range(args.b):
+                            ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
                            
                         for batch_idx in range(args.b):
                             clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
                             ssl_snrs[batch_idx] = metadata['snr']
                             ssl_targlvls[batch_idx] = metadata['target_level']
                                            
-                        torch.cuda.synchronize()
-                   
                     if torch_compile_capable and args.enableTorchCompile: 
                         with record_function("opt_synth_noisy_speech"):
                             optSynthesizeNoisySpeech(
@@ -350,14 +331,13 @@ if __name__ == '__main__':
                     else: 
                         with record_function("synth_noisy_speech"):
                             synthesizeNoisySpeech(
+                                device,
                                 ssl_clean, 
                                 ssl_noise, 
                                 ssl_noisy,
                                 args.b, 
                                 ssl_snrs,
-                                ssl_targlvls,
-                                noise_stream,
-                                clean_stream
+                                ssl_targlvls
                             )
                            
                     with record_function("calculate_score"):
