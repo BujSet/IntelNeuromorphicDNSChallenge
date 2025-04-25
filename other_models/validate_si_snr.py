@@ -282,7 +282,7 @@ if __name__ == '__main__':
         warmup=5,
         active=10,
         repeat=1)
-    if args.isCHTCJob:
+    if args.isCHTCJob and "cuda" in deviceString:
         infoString = "Detected that this instance in running in a CHTC Job "
         infoString += " with " + get_gpu_time_remaining()
         infoString += " time remaining."
@@ -380,7 +380,7 @@ if __name__ == '__main__':
                 # compilcated to deal with speech also
                 if (noiseOrient >= 1250 or noiseOrient >= args.noiseFilterOrientEnd):
                     enoughTimeForMoreWork = False
-                if args.isCHTCJob:
+                if args.isCHTCJob and "cuda" in deviceString:
                     avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
                     timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
                     # Add a buffer of three iterations before job end
