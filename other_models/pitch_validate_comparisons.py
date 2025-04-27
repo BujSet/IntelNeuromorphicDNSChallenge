@@ -30,7 +30,6 @@ def chtc_print(args, string):
     else:
         print(string)
 
-
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
         if (method == None):
@@ -80,18 +79,44 @@ def torchaudio_pitch_estimate(args, device, speech):
     torchaudio_pitch = torch.nn.functional.pad(torchaudio_pitch, p1d, "constant", 0)
     return torchaudio_pitch
 
-def pyin_pitch_estimate(args, device, speech):
-    pitch, voiced_flag, prob_flag = librosa.pyin(speech, fmin=50, fmax=1000, sr=16000, hop_length=3)
-    print(pitch)
-    print(voiced_flag)
-    print(prob_flag)
-    sys.exit(0)
+def crepe_pitch_estimate(args, device, speech, files):
+    num_fft_frames = int((30 * 16000 / (args.n_fft // 4)) + 1)
+    crepeFreqs = torch.zeros( (args.b, num_fft_frames) )
+    crepeConfs = torch.zeros( (args.b, num_fft_frames) )
+    for batch_idx in range(args.b):
+        file = files[batch_idx]
+        pathTokens = file.split("/")
+        fullPath = "/".join(pathTokens[:-2])
+        crepeFilePath = os.path.join(fullPath, "crepe_pitch_annotations")
+        crepeFilePath = os.path.join(crepeFilePath, "clean")
+        crepeFileName = pathTokens[-1].replace(".wav", ".f0.csv")
+        crepeFile = os.path.join(crepeFilePath, crepeFileName)
+        with open(crepeFile) as f:
+            lines = f.readlines()
+            # Skip header line
+            freqs = []
+            confs = []
+            for i in range(1, len(lines)):
+                values = lines[i].split(",")
+                assert(len(values) == 3)
+                freqs.append(float(values[1]))
+                confs.append(float(values[2]))
 
-def predict_pitch(args, device, clean_speech):
+        freqs = torch.tensor(freqs[0:num_fft_frames])
+        confs = torch.tensor(confs[0:num_fft_frames])
+        crepeFreqs[batch_idx,:] = freqs
+        crepeConfs[batch_idx,:] = confs
+    crepeFreqs = torch.where(crepeConfs > args.validation_method_threshold, crepeFreqs, 0.0)
+    crepeFreqs = crepeFreqs.to(device)
+    return crepeFreqs
+
+def predict_pitch(args, device, clean_speech, clean_files):
     if args.validation_method == "yin":
         return torchyin_pitch_estimate(args, device, clean_speech)
     elif args.validation_method == "torchaudio":
         return torchaudio_pitch_estimate(args, device, clean_speech)
+    elif args.validation_method == "crepe":
+        return crepe_pitch_estimate(args, device, clean_speech, clean_files)
     else:
         errorString = "[ERROR] Validation method " 
         errorString += str(args.validation_method) + " not implemented!"
@@ -157,8 +182,10 @@ def run_validation_loop(args, device, validation_loader, validation_set):
 
             clean_pitch_batched = torch.zeros( (args.b, num_fft_frames) ).to(device)
             one_hot_predicted_pitch = torch.zeros( (args.b, num_fft_frames, 257) ).to(device)
+            clean_files = [None for _ in range(args.b)]
             for batch_idx in range(args.b):
                 clean_file = validation_set._get_filenames(idx[batch_idx])
+                clean_files[batch_idx] = clean_file
                 # Compute praat pitch prediction for ground-truth in time domain
                 praatSound = parselmouth.Sound(clean_file)
                 praatTimeStep = 1.0*(args.n_fft//4)/praatSound.sampling_frequency
@@ -173,7 +200,7 @@ def run_validation_loop(args, device, validation_loader, validation_set):
                 clean_pitch_batched[batch_idx] = clean_pitch_freq
 
             # Now compute the selected comparative model
-            predicted = predict_pitch(args, device, clean)
+            predicted = predict_pitch(args, device, clean, clean_files)
                 
             rpa = calc_rpa(predicted, clean_pitch_batched)
             rca = calc_rca(predicted, clean_pitch_batched)
