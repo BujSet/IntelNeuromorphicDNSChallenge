@@ -245,7 +245,7 @@ if __name__ == '__main__':
                 chtc_print(args, infoString)
                 optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
             else:
-                infoString += ", but config says not to use")
+                infoString += ", but config says not to use"
                 chtc_print(args, infoString)
 
     TraceHandler = MyTraceHandler(
