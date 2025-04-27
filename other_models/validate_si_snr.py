@@ -230,6 +230,7 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
 
     deviceString = "cuda:0" if torch.cuda.is_available() else "cpu"
+    chtc_print(args, "[INFO] Device string set to " + str(deviceString))
     device = torch.device(deviceString)
     torch_compile_capable = False
     if deviceString == "cuda:0":
