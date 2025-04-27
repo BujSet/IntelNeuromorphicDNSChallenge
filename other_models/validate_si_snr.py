@@ -298,8 +298,8 @@ if __name__ == '__main__':
             infoString += " time remaining."
             chtc_print(args, infoString)
         if "cpu" in deviceString:
-#            infoString += " with " + get_cpu_time_remaining()
-#            infoString += " time remaining."
+            infoString += " with " + get_cpu_time_remaining()
+            infoString += " time remaining."
             chtc_print(args, infoString)
     iterationLatencies = []
     enoughTimeForMoreWork = True
@@ -362,7 +362,6 @@ if __name__ == '__main__':
                             statString = "Valid [" + str(i) + "] -> "
                             statString += str(torch.mean(score).item()) + " SI-SNR dB"
                             print(statString)
-                   
                     prof.step()
 
                 end_time = time.time()
@@ -400,7 +399,7 @@ if __name__ == '__main__':
                         timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
                         if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
                             enoughTimeForMoreWork = False
-#                    if "cpu" in deviceString:
-#                        timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
-#                        if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
-#                            enoughTimeForMoreWork = False
+                    if "cpu" in deviceString:
+                        timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
+                        if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
+                            enoughTimeForMoreWork = False
