@@ -5,7 +5,7 @@ def send_log_msg(message):
     with HTChirp() as chirp:
         chirp.ulog(message)
 
-def get_job_start():
+def get_gpu_job_start():
     with HTChirp() as chirp:
         return float(chirp.get_job_attr("JobCurrentStartDate"))
 
@@ -29,8 +29,23 @@ def get_gpu_job_length():
             sys.exit(1)
 
 def get_gpu_time_remaining(rawValue=False):
-    elapsed = time.time() - get_job_start()
+    elapsed = time.time() - get_gpu_job_start()
     remaining = get_gpu_job_length() - elapsed
+    if rawValue == True:
+        return remaining
+    return str(datetime.timedelta(seconds=remaining))
+
+def get_cpu_job_start():
+    with HTChirp() as chirp:
+        return float(chirp.get_job_attr("JobStart"))
+
+def get_cpu_job_length():
+    with HTChirp() as chirp:
+        return float(chirp.get_job_attr("JobRuntimeLimit"))
+
+def get_cpu_time_remaining(rawValue=False):
+    elapsed = time.time() - get_cpu_job_start()
+    remaining = get_cpu_job_length() - elapsed
     if rawValue == True:
         return remaining
     return str(datetime.timedelta(seconds=remaining))

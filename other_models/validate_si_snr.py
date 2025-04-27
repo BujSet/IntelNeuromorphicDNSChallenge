@@ -24,6 +24,12 @@ import time
 from torch.profiler import profile, record_function, ProfilerActivity
 from chtc_files.htchirp_utils import *
 
+def chtc_print(args, string):
+    if args.isCHTCJob:
+        send_log_msg(string)
+    else:
+        print(string)
+
 # Suppress unneeded output from pytorch profiler scheduler
 os.environ.update({'KINETO_LOG_LEVEL' : '3'})
 
@@ -209,6 +215,10 @@ if __name__ == '__main__':
                         dest='isCHTCJob', 
                         action='store_true',
                         help='Switch flag to indicate if this job was run on CHTC')
+    parser.add_argument('-epochsEarlyEndBuffer',
+                        type=int,
+                        default=3,
+                        help='When early stopping is supporting, this value indicates how early to stop')
     parser.add_argument('-enableTorchCompile',
                         dest='enableTorchCompile', 
                         action='store_true',
@@ -227,17 +237,16 @@ if __name__ == '__main__':
         device_cap = torch.cuda.get_device_capability()
         if device_cap in ((7, 0), (8, 0), (9, 0)):
             torch_compile_capable = True
+            infoString = "[INFO] Detected device capable of using "
+            infoString += "torch.compile" 
             if args.enableTorchCompile:
-                if args.isCHTCJob:
-                    send_log_msg("Detected device capable of using torch.compile, will attempt to use for torch operations")
-                else:
-                    print("Detected device capable of using torch.compile, will attempt to use for torch operations")
+                infoString += ", will attempt to use for " 
+                infoString += "torch operations."
+                chtc_print(args, infoString)
                 optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
             else:
-                if args.isCHTCJob:
-                    send_log_msg("Detected device capable of using torch.compile, but config says not to use")
-                else:
-                    print("Detected device capable of using torch.compile, but config says not to use")
+                infoString += ", but config says not to use")
+                chtc_print(args, infoString)
 
     TraceHandler = MyTraceHandler(
             args.speechFilterOrient,
@@ -282,11 +291,16 @@ if __name__ == '__main__':
         warmup=5,
         active=10,
         repeat=1)
-    if args.isCHTCJob and "cuda" in deviceString:
-        infoString = "Detected that this instance in running in a CHTC Job "
-        infoString += " with " + get_gpu_time_remaining()
-        infoString += " time remaining."
-        send_log_msg(infoString)
+    if args.isCHTCJob:
+        infoString = "[INFO] Detected that this instance in running in a CHTC Job"
+        if "cuda" in deviceString:
+            infoString += " with " + get_gpu_time_remaining()
+            infoString += " time remaining."
+            chtc_print(args, infoString)
+        if "cpu" in deviceString:
+            infoString += " with " + get_cpu_time_remaining()
+            infoString += " time remaining."
+            chtc_print(args, infoString)
     iterationLatencies = []
     enoughTimeForMoreWork = True
     noiseOrient = args.noiseFilterOrientStart
@@ -380,10 +394,13 @@ if __name__ == '__main__':
                 # compilcated to deal with speech also
                 if (noiseOrient >= 1250 or noiseOrient >= args.noiseFilterOrientEnd):
                     enoughTimeForMoreWork = False
-                if args.isCHTCJob and "cuda" in deviceString:
+                if args.isCHTCJob:
                     avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
-                    timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
-                    # Add a buffer of three iterations before job end
-                    if timeLeft / avgIterationLatency < 3:
-                        enoughTimeForMoreWork = False
-
+                    if "cuda" in deviceString:
+                        timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
+                        if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
+                            enoughTimeForMoreWork = False
+                    if "cpu" in deviceString:
+                        timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
+                        if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
+                            enoughTimeForMoreWork = False
