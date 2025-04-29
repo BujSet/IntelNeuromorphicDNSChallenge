@@ -7,7 +7,6 @@ from datetime import datetime
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 import soundfile as sf
 
 from lava.lib.dl import slayer
@@ -21,7 +20,6 @@ import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
 import random
 import time
-from torch.profiler import profile, record_function, ProfilerActivity
 from chtc_files.htchirp_utils import *
 
 def chtc_print(args, string):
@@ -29,39 +27,6 @@ def chtc_print(args, string):
         send_log_msg(string)
     else:
         print(string)
-
-# Suppress unneeded output from pytorch profiler scheduler
-os.environ.update({'KINETO_LOG_LEVEL' : '3'})
-
-class MyTraceHandler(object):
-    def __init__(self, speechOrient, noiseOrient, batchSize, 
-            numWorkers, prefetchFactor, isCHTCJob):
-        self.speechOrient = speechOrient
-        self.noiseOrient = noiseOrient
-        self.batchSize = batchSize
-        self.numWorkers = numWorkers
-        self.prefetchFactor = prefetchFactor
-        self.isCHTCJob = isCHTCJob
-
-    def getString(self):
-        if self.isCHTCJob:
-            # If a CHTC job, move the trace file to top level dir so that it is 
-            # copied back to access point.
-            dir_path = "../"
-        else:
-            dir_path = "./proflog"
-        file_name = "passive_pinna_so" + str(self.speechOrient)
-        file_name += "_no" + str(self.noiseOrient)
-        file_name += "_b" + str(self.batchSize)
-        file_name += "_w" + str(self.numWorkers)
-        file_name += "_pf" + str(self.prefetchFactor)
-        return os.path.join(dir_path, file_name)
-
-def trace_handler(p, save_string, saveOutput):
-    if saveOutput:
-        print("Writing json output")
-        p.export_chrome_trace(save_string + "_trace.json")
-        p.export_memory_timeline(save_string + "_memory.html")
 
 def calc_rms(x):
     return torch.sqrt(torch.mean(torch.square(x)))
@@ -187,10 +152,18 @@ if __name__ == '__main__':
     # index = 600 ==> (0, -45)
     # We choose filters in the midsagittal plane, so either selecting
     # which channels is read from 'should' be irrelevant
-    parser.add_argument('-speechFilterOrient',
+    parser.add_argument('-speechFilterOrientStart',
                         type=int,
                         default=608,
                         help='Index into CIPIC source directions to orient the speech to ')
+    parser.add_argument('-speechFilterOrientEnd',
+                        type=int,
+                        default=-1,
+                        help='Last index into CIPIC source directions to orient the speech to ')
+    parser.add_argument('-speechFilterOrientStep',
+                        type=int,
+                        default=1,
+                        help='Sampling step size for speech orient')
     parser.add_argument('-noiseFilterOrientStart',
                         type=int,
                         default=608,
@@ -207,10 +180,6 @@ if __name__ == '__main__':
                         dest='printValidationResultsHeader', 
                         action='store_true',
                         help='Switch flag to print validation results header (useful for CHTC)')
-    parser.add_argument('-save_profile_trace',
-                        dest='saveProfileTrace', 
-                        action='store_true',
-                        help='Switch flag to save profiling trace output')
     parser.add_argument('-is_CHTC_job',
                         dest='isCHTCJob', 
                         action='store_true',
@@ -225,6 +194,8 @@ if __name__ == '__main__':
                         help='Switch flag to indicate whether to optimize with torch compile')
 
     args = parser.parse_args()
+    if args.speechFilterOrientEnd == -1:
+        args.speechFilterOrientEnd = args.speechFilterOrientStart + 1
 
     if args.seed is not None:
         torch.manual_seed(args.seed)
@@ -249,14 +220,6 @@ if __name__ == '__main__':
                 infoString += ", but config says not to use"
                 chtc_print(args, infoString)
 
-    TraceHandler = MyTraceHandler(
-            args.speechFilterOrient,
-            args.noiseFilterOrientStart,
-            args.b,
-            args.dataloader_workers,
-            args.dataloader_prefetch_factor,
-            args.isCHTCJob)
-
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
     # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
@@ -273,9 +236,6 @@ if __name__ == '__main__':
     numIters = round(args.validation_samples / args.b)
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
     with torch.no_grad():
-        speechFilter = CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.cipicChannel)
-        speechFilter = torch.from_numpy(speechFilter).float().to(device)
-        speechFilter = downsampler(speechFilter) 
         ssl_noise = torch.zeros(args.b, 480000).to(device)
         ssl_clean = torch.zeros(args.b, 480000).to(device)
         ssl_noisy = torch.zeros(args.b, 480000).to(device)
@@ -283,15 +243,6 @@ if __name__ == '__main__':
         ssl_targlvls= torch.zeros(args.b, 1).to(device)
         runningScore = torch.zeros(1).to(device)
  
-    activities = [ProfilerActivity.CPU]
-    if "cuda" in deviceString:
-        activities.append(ProfilerActivity.CUDA)
-    my_schedule = torch.profiler.schedule(
-        skip_first= numIters-20,
-        wait=5,
-        warmup=5,
-        active=10,
-        repeat=1)
     if args.isCHTCJob:
         infoString = "[INFO] Detected that this instance in running in a CHTC Job"
         if "cuda" in deviceString:
@@ -303,104 +254,115 @@ if __name__ == '__main__':
             infoString += " time remaining."
             chtc_print(args, infoString)
     iterationLatencies = []
-    enoughTimeForMoreWork = True
-    noiseOrient = args.noiseFilterOrientStart
-    with profile(activities=activities, schedule=my_schedule,
-            record_shapes=True, profile_memory=True, with_stack=True, with_flops=True,
-            on_trace_ready=lambda profiler: trace_handler(profiler, TraceHandler.getString() , args.saveProfileTrace)) as prof: 
-        with torch.no_grad():
-            while enoughTimeForMoreWork:
-                # Reset running score for current iteration
-                runningScore.fill_(0)
-                start_time = time.time()
-                with record_function("load_noise_filter"):
-                    noiseFilter = CIPICSubject.getHRIRFromIndex(noiseOrient, args.cipicChannel)
-                    noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
-                    noiseFilter = downsampler(noiseFilter) 
-                for i, (clean, noise, idx) in enumerate(validation_loader):
-                    with record_function("load_mini_batch"):
-                        noise = noise.to(device, non_blocking=True)
-                        for batch_idx in range(args.b):
-                            ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
-                        clean = clean.to(device, non_blocking=True)
-                        for batch_idx in range(args.b):
-                            ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
-                           
-                        for batch_idx in range(args.b):
-                            clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
-                            ssl_snrs[batch_idx] = metadata['snr']
-                            ssl_targlvls[batch_idx] = metadata['target_level']
-                                           
-                    if torch_compile_capable and args.enableTorchCompile: 
-                        with record_function("opt_synth_noisy_speech"):
-                            optSynthesizeNoisySpeech(
-                                ssl_clean, 
-                                ssl_noise, 
-                                ssl_noisy,
-                                args.b, 
-                                ssl_snrs,
-                                ssl_targlvls,
-                                noise_stream,
-                                clean_stream
-                            )
-                    else: 
-                        with record_function("synth_noisy_speech"):
-                            synthesizeNoisySpeech(
-                                device,
-                                ssl_clean, 
-                                ssl_noise, 
-                                ssl_noisy,
-                                args.b, 
-                                ssl_snrs,
-                                ssl_targlvls
-                            )
-                           
-                    with record_function("calculate_score"):
-                        score = si_snr(ssl_noisy, ssl_clean)
-                        score = torch.nan_to_num(score, nan=0.0)
-                        runningScore = torch.add(runningScore, torch.mean(score), alpha=1.0/float(numIters))
-                        if args.printOutputWhileValidation:
-                            statString = "Valid [" + str(i) + "] -> "
-                            statString += str(torch.mean(score).item()) + " SI-SNR dB"
-                            print(statString)
-                    prof.step()
+    orientationPairs = []
+    for so in range(args.speechFilterOrientStart, args.speechFilterOrientEnd, args.speechFilterOrientStep):
+        for no in range(args.noiseFilterOrientStart, args.noiseFilterOrientEnd, args.noiseFilterOrientStep):
+            orientationPairs.append( (so, no) )
 
-                end_time = time.time()
-                exec_time = end_time - start_time
-                iterationLatencies.append(exec_time)
-                # only keep track of the last iteration for accurate runtime estimate
-                if len(iterationLatencies) > 10:
-                    iterationLatencies = iterationLatencies[1:]
-                averageValidationScore = runningScore.item()
-                if args.printValidationResultsHeader and noiseOrient == args.noiseFilterOrientStart:
-                    headerString = "Subject, Channel, Speech Orient, "
-                    headerString += "Noise Orient, "
-                    headerString += "Final Validation Score SI-SNR (dB), "
-                    headerString += "ExecTime, "
-                    headerString += "BatchSize, "
-                    headerString += "Dataloader Num Workers, "
-                    headerString += "Dataloader Prefetch Factor"
-                    print(headerString)
-                resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
-                resultString += str(args.speechFilterOrient) + "," + str(noiseOrient) + "," 
-                resultString += str(averageValidationScore) + "," + str(exec_time) + ","
-                resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
-                resultString += str(args.dataloader_prefetch_factor)
-                print(resultString)
-                
-                # Determine if ending condition is met
-                noiseOrient = noiseOrient + args.noiseFilterOrientStep
-                # For now, we only vary the noise orient in jobs, its too
-                # compilcated to deal with speech also
-                if (noiseOrient >= 1250 or noiseOrient >= args.noiseFilterOrientEnd):
-                    enoughTimeForMoreWork = False
-                if args.isCHTCJob:
-                    avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
-                    if "cuda" in deviceString:
-                        timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
-                        if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
-                            enoughTimeForMoreWork = False
-                    if "cpu" in deviceString:
-                        timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
-                        if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
-                            enoughTimeForMoreWork = False
+    infoString = "[INFO] looking at " + str(len(orientationPairs)) +" orientation pairs varying"
+    infoString += " speech: (" + str(args.speechFilterOrientStart) + "," + str(args.speechFilterOrientEnd)
+    infoString += "," + str(args.speechFilterOrientStep) + ") and noise: (" + str(args.noiseFilterOrientStart)
+    infoString += "," + str(args.noiseFilterOrientEnd) + "," + str(args.noiseFilterOrientStep) + ")"
+    chtc_print(args, infoString)
+    orientationPairIdx = 0
+    assert(len(orientationPairs) > 0)
+    speechOrient, noiseOrient = orientationPairs[orientationPairIdx]
+    enoughTimeForMoreWork = True
+    with torch.no_grad():
+        while enoughTimeForMoreWork:
+            # Reset running score for current iteration
+            runningScore.fill_(0)
+            start_time = time.time()
+
+            speechFilter = CIPICSubject.getHRIRFromIndex(speechOrient, args.cipicChannel)
+            speechFilter = torch.from_numpy(speechFilter).float().to(device)
+            speechFilter = downsampler(speechFilter) 
+
+            noiseFilter = CIPICSubject.getHRIRFromIndex(noiseOrient, args.cipicChannel)
+            noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
+            noiseFilter = downsampler(noiseFilter) 
+            for i, (clean, noise, idx) in enumerate(validation_loader):
+                noise = noise.to(device, non_blocking=True)
+                for batch_idx in range(args.b):
+                    ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
+                clean = clean.to(device, non_blocking=True)
+                for batch_idx in range(args.b):
+                    ssl_clean[batch_idx,:] = conv_transform(clean[batch_idx,:], speechFilter)
+                     
+                for batch_idx in range(args.b):
+                    clean_file, noise_file, metadata = validation_set._get_filenames(idx[batch_idx])
+                    ssl_snrs[batch_idx] = metadata['snr']
+                    ssl_targlvls[batch_idx] = metadata['target_level']
+                                       
+                if torch_compile_capable and args.enableTorchCompile: 
+                    optSynthesizeNoisySpeech(
+                            ssl_clean, 
+                            ssl_noise, 
+                            ssl_noisy,
+                            args.b, 
+                            ssl_snrs,
+                            ssl_targlvls,
+                            noise_stream,
+                            clean_stream
+                    )
+                else: 
+                    synthesizeNoisySpeech(
+                            device,
+                            ssl_clean, 
+                            ssl_noise, 
+                            ssl_noisy,
+                            args.b, 
+                            ssl_snrs,
+                            ssl_targlvls
+                    )
+                       
+                score = si_snr(ssl_noisy, ssl_clean)
+                score = torch.nan_to_num(score, nan=0.0)
+                runningScore = torch.add(runningScore, torch.mean(score), alpha=1.0/float(numIters))
+                if args.printOutputWhileValidation:
+                    statString = "Valid [" + str(i) + "] -> "
+                    statString += str(torch.mean(score).item()) + " SI-SNR dB"
+                    print(statString)
+
+            end_time = time.time()
+            exec_time = end_time - start_time
+            iterationLatencies.append(exec_time)
+            # only keep track of the last iteration for accurate runtime estimate
+            if len(iterationLatencies) > 10:
+                iterationLatencies = iterationLatencies[1:]
+            averageValidationScore = runningScore.item()
+            if (args.printValidationResultsHeader and 
+                    noiseOrient == args.noiseFilterOrientStart and
+                    speechOrient == args.speechFilterOrientStart):
+                headerString = "Subject, Channel, Speech Orient, "
+                headerString += "Noise Orient, "
+                headerString += "Final Validation Score SI-SNR (dB), "
+                headerString += "ExecTime, "
+                headerString += "BatchSize, "
+                headerString += "Dataloader Num Workers, "
+                headerString += "Dataloader Prefetch Factor"
+                print(headerString)
+            resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
+            resultString += str(speechOrient) + "," + str(noiseOrient) + "," 
+            resultString += str(averageValidationScore) + "," + str(exec_time) + ","
+            resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
+            resultString += str(args.dataloader_prefetch_factor)
+            print(resultString)
+            
+            # Determine if ending condition is met
+            orientationPairIdx += 1
+            if orientationPairIdx >= len(orientationPairs):
+                enoughTimeForMoreWork = False
+            else:
+                speechOrient, noiseOrient = orientationPairs[orientationPairIdx]
+
+            if args.isCHTCJob:
+                avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
+                if "cuda" in deviceString:
+                    timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
+                    if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
+                        enoughTimeForMoreWork = False
+                if "cpu" in deviceString:
+                    timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
+                    if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
+                        enoughTimeForMoreWork = False
