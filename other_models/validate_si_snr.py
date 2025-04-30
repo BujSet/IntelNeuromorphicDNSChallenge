@@ -331,6 +331,7 @@ if __name__ == '__main__':
                                        
                 if torch_compile_capable and args.enableTorchCompile: 
                     optSynthesizeNoisySpeech(
+                            device,
                             ssl_clean, 
                             ssl_noise, 
                             ssl_noisy,
