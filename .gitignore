@@ -4,6 +4,7 @@ hrtfs/*.pyc
 hrtfs/*.png
 hrtfs/*.tar.gz
 magnitude.pdf
+passive_pinna_sub3_chan0_3D.pdf
 *.png
 *.gif
 *.out
