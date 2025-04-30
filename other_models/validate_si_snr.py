@@ -264,6 +264,41 @@ if __name__ == '__main__':
     infoString += "," + str(args.speechFilterOrientStep) + ") and noise: (" + str(args.noiseFilterOrientStart)
     infoString += "," + str(args.noiseFilterOrientEnd) + "," + str(args.noiseFilterOrientStep) + ")"
     chtc_print(args, infoString)
+    
+    resultsFile = os.path.join(os.getcwd(), "collated_results.csv")
+    completedResults = set()
+    if os.path.isfile(resultsFile):
+        infoString = "[INFO] Detected collated_results.csv file."
+        chtc_print(args, infoString)
+        with open(resultsFile, 'r') as rf:
+            lines = rf.readlines()
+            headerLine = lines[0]
+            assert("Speech Orient" in headerLine and 
+                   "Noise Orient" in headerLine and
+                   "Final Validation Score SI-SNR (dB)" in headerLine)
+            headerTokens = [tok.strip() for tok in headerLine.split(",")]
+            speechHeaderIdx = headerTokens.index("Speech Orient")
+            noiseHeaderIdx = headerTokens.index("Noise Orient")
+            for line in lines[1:]:
+                valueTokens = [tok.strip() for tok in line.split(",")]
+                speechOComplete = int(valueTokens[speechHeaderIdx])
+                noiseOComplete = int(valueTokens[noiseHeaderIdx])
+                completedResults.add( (speechOComplete, noiseOComplete) )
+        infoString = "[INFO] File collated_results.csv contained "
+        infoString += str(len(completedResults)) + " completed results."
+        chtc_print(args, infoString)
+
+        pruned = [(suo,nuo) for (suo, nuo) in orientationPairs if (not (suo,nuo) in completedResults) ]
+        infoString = "[INFO] Only " + str(len(pruned)) 
+        infoString += " orientation pairs haven't already been computed."
+        infoString += " Running on only those."
+        chtc_print(args, infoString)
+        orientationPairs = [tup for tup in pruned]
+        if len(pruned) == 0:
+            infoString = "[INFO] All orientation pairs complete, no work to do"
+            chtc_print(args, infoString)
+            sys.exit(0)
+           
     orientationPairIdx = 0
     assert(len(orientationPairs) > 0)
     speechOrient, noiseOrient = orientationPairs[orientationPairIdx]
