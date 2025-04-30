@@ -336,9 +336,7 @@ if __name__ == '__main__':
                             ssl_noisy,
                             args.b, 
                             ssl_snrs,
-                            ssl_targlvls,
-                            noise_stream,
-                            clean_stream
+                            ssl_targlvls
                     )
                 else: 
                     synthesizeNoisySpeech(
