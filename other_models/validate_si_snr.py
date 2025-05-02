@@ -366,8 +366,7 @@ if __name__ == '__main__':
                 iterationLatencies = iterationLatencies[1:]
             averageValidationScore = runningScore.item()
             if (args.printValidationResultsHeader and 
-                    noiseOrient == args.noiseFilterOrientStart and
-                    speechOrient == args.speechFilterOrientStart):
+                    orientationPairIdx == 0):
                 headerString = "Subject, Channel, Speech Orient, "
                 headerString += "Noise Orient, "
                 headerString += "Final Validation Score SI-SNR (dB), "
