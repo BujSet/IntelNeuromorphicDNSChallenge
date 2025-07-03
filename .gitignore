@@ -32,3 +32,4 @@ Trained/
 runs/
 *.tar.gz
 passive_pinna_*.pdf
+other_models/optimized_cpp/vector_add
