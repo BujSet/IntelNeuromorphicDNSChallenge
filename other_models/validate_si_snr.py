@@ -200,6 +200,8 @@ if __name__ == '__main__':
     if args.seed is not None:
         torch.manual_seed(args.seed)
 
+    chtc_print(args, "[INFO] args.b set to: " + str(args.b))
+
     deviceString = "cuda:0" if torch.cuda.is_available() else "cpu"
     chtc_print(args, "[INFO] Device string set to " + str(deviceString))
     device = torch.device(deviceString)
@@ -214,11 +216,23 @@ if __name__ == '__main__':
             if args.enableTorchCompile:
                 infoString += ", will attempt to use for " 
                 infoString += "torch operations."
-                chtc_print(args, infoString)
                 optSynthesizeNoisySpeech = torch.compile(synthesizeNoisySpeech)
             else:
                 infoString += ", but config says not to use"
-                chtc_print(args, infoString)
+            chtc_print(args, infoString)
+
+        cudaDeviceName = torch.cuda.get_device_name(0)
+        chtc_print(args, "[INFO] Running on GPU: " + str(torch.cuda.get_device_name(0)))
+        cudaDeviceMemory = torch.cuda.get_device_properties(0).total_memory
+        chtc_print(args, f"[INFO] Available GPU memory (estimated): {cudaDeviceMemory / (1024**3):.2f} GB")
+        # On NVIDIA L40 44GB memory, see these hyperparam perfs
+        # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
+        # 331.4012989997864,16,8,4,58.59430694580078
+        # 316.9886281490326,32,4,2,117.18805694580078
+        # 317.27633690834045,60,4,2,219.7
+        # 317.5880286693573,75,4,2,274.6587600708008
+        # 318.55631279945374,75,4,4,274.6587600708008
+        # 347.68118691444397,75,8,4,274.6587600708008
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
@@ -234,6 +248,9 @@ if __name__ == '__main__':
                                prefetch_factor=args.dataloader_prefetch_factor,
                                pin_memory=True)
     numIters = round(args.validation_samples / args.b)
+    if args.validation_samples % args.b != 0:
+        chtc_print(args, "[WARN] batch size to non-perfect multiple, likely to crash...")
+
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
     with torch.no_grad():
         ssl_noise = torch.zeros(args.b, 480000).to(device)
@@ -316,7 +333,18 @@ if __name__ == '__main__':
             noiseFilter = CIPICSubject.getHRIRFromIndex(noiseOrient, args.cipicChannel)
             noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
             noiseFilter = downsampler(noiseFilter) 
+            sampleSizeInBytes = -1
             for i, (clean, noise, idx) in enumerate(validation_loader):
+                if sampleSizeInBytes < 0:
+                    cleanBytes = clean.element_size() * clean.nelement()
+                    noiseBytes = noise.element_size() * noise.nelement()
+                    speechFBytes = speechFilter.element_size() * speechFilter.nelement()
+                    noiseFBytes = noiseFilter.element_size() * noiseFilter.nelement()
+                    sampleSizeInBytes = cleanBytes
+                    sampleSizeInBytes += noiseBytes
+                    sampleSizeInBytes += speechFBytes
+                    sampleSizeInBytes += noiseFBytes
+
                 noise = noise.to(device, non_blocking=True)
                 for batch_idx in range(args.b):
                     ssl_noise[batch_idx,:] = conv_transform(noise[batch_idx,:], noiseFilter)
@@ -373,13 +401,15 @@ if __name__ == '__main__':
                 headerString += "ExecTime, "
                 headerString += "BatchSize, "
                 headerString += "Dataloader Num Workers, "
-                headerString += "Dataloader Prefetch Factor"
+                headerString += "Dataloader Prefetch Factor, "
+                headerString += "Sample Size (MB)"
                 print(headerString)
             resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
             resultString += str(speechOrient) + "," + str(noiseOrient) + "," 
             resultString += str(averageValidationScore) + "," + str(exec_time) + ","
             resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
-            resultString += str(args.dataloader_prefetch_factor)
+            resultString += str(args.dataloader_prefetch_factor) + ","
+            resultString += str(sampleSizeInBytes/ (1024.0*1024.0))
             print(resultString)
             
             # Determine if ending condition is met
