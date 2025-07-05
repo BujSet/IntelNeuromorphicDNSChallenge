@@ -225,7 +225,7 @@ if __name__ == '__main__':
         chtc_print(args, "[INFO] Running on GPU: " + str(torch.cuda.get_device_name(0)))
         cudaDeviceMemory = torch.cuda.get_device_properties(0).total_memory
         chtc_print(args, f"[INFO] Available GPU memory (estimated): {cudaDeviceMemory / (1024**3):.2f} GB")
-        # On NVIDIA L40 44GB memory, see these hyperparam perfs
+        # On NVIDIA L40 44GB memory, see these infra param perfs
         # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
         # 331.4012989997864,16,8,4,58.59430694580078
         # 316.9886281490326,32,4,2,117.18805694580078
@@ -234,6 +234,11 @@ if __name__ == '__main__':
         # 318.55631279945374,75,4,4,274.6587600708008
         # 347.68118691444397,75,8,4,274.6587600708008
         # 337.07224130630493,100,4,2,366.2114944458008
+        #
+        # On NVIDIA A100-SXM4-40GB 39GB memory, see these infra param perfs
+        # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
+        # 889.7344930171967,32,4,2,117.18805694580078
+        # 955.3944482803345,60,4,2,219.72711944580078
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
@@ -335,6 +340,7 @@ if __name__ == '__main__':
             noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
             noiseFilter = downsampler(noiseFilter) 
             sampleSizeInBytes = -1
+            torch.cuda.reset_peak_memory_stats(0)
             for i, (clean, noise, idx) in enumerate(validation_loader):
                 if sampleSizeInBytes < 0:
                     cleanBytes = clean.element_size() * clean.nelement()
@@ -403,14 +409,16 @@ if __name__ == '__main__':
                 headerString += "BatchSize, "
                 headerString += "Dataloader Num Workers, "
                 headerString += "Dataloader Prefetch Factor, "
-                headerString += "Sample Size (MB)"
+                headerString += "Sample Size (MB), "
+                headerString += "CUDA Peak Mem Allocated (MB)"
                 print(headerString)
             resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
             resultString += str(speechOrient) + "," + str(noiseOrient) + "," 
             resultString += str(averageValidationScore) + "," + str(exec_time) + ","
             resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
             resultString += str(args.dataloader_prefetch_factor) + ","
-            resultString += str(sampleSizeInBytes/ (1024.0*1024.0))
+            resultString += str(sampleSizeInBytes/ (1024.0*1024.0)) + ","
+            resultString += str(torch.cuda.max_memory_allocated(0)/ (1024.0*1024.0))
             print(resultString)
             
             # Determine if ending condition is met
