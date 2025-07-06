@@ -200,8 +200,6 @@ if __name__ == '__main__':
     if args.seed is not None:
         torch.manual_seed(args.seed)
 
-    chtc_print(args, "[INFO] args.b set to: " + str(args.b))
-
     deviceString = "cuda:0" if torch.cuda.is_available() else "cpu"
     chtc_print(args, "[INFO] Device string set to " + str(deviceString))
     device = torch.device(deviceString)
@@ -222,9 +220,12 @@ if __name__ == '__main__':
             chtc_print(args, infoString)
 
         cudaDeviceName = torch.cuda.get_device_name(0)
-        chtc_print(args, "[INFO] Running on GPU: " + str(torch.cuda.get_device_name(0)))
+#        chtc_print(args, "[INFO] Running on GPU: " + str(torch.cuda.get_device_name(0)))
         cudaDeviceMemory = torch.cuda.get_device_properties(0).total_memory
-        chtc_print(args, f"[INFO] Available GPU memory (estimated): {cudaDeviceMemory / (1024**3):.2f} GB")
+#        chtc_print(args, f"[INFO] Available GPU memory (estimated): {cudaDeviceMemory / (1024**3):.2f} GB")
+        infoString = "[INFO] Running on " + cudaDeviceName + " with "
+        infoString += str(cudaDeviceMemory/ (1024**3)) + " GB"
+        chtc_print(args, infoString)
         # On NVIDIA L40 44GB memory, see these infra param perfs
         # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
         # 331.4012989997864,16,8,4,58.59430694580078
@@ -239,6 +240,17 @@ if __name__ == '__main__':
         # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
         # 889.7344930171967,32,4,2,117.18805694580078
         # 955.3944482803345,60,4,2,219.72711944580078
+        #
+        # On NVIDIA TITAN Xp 11.9 GB memory, see these infra para perfs
+        # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB), CUDA Peak Mem Allocated (MB), CUDA Peak Mem Cached (MB)
+        # 389.91152906417847,32,8,2,117.18805694580078,586.234375,622.0
+        # 379.6079320907593,32,8,4,117.18805694580078,586.234375,622.0
+        # 374.3158450126648,32,8,8,117.18805694580078,586.234375,622.0
+        # 383.7538676261902,60,8,8,219.72711944580078,1100.29736328125,1122.0
+        # 354.2504813671112,60,16,8,219.72711944580078,1100.29736328125,1122.0
+        # 389.04674339294434,60,17,8,219.72711944580078,1100.29736328125,1122.0
+        # 385.7736032009125,60,16,4,219.72711944580078,1100.29736328125,1122.0
+
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
 
@@ -341,6 +353,7 @@ if __name__ == '__main__':
             noiseFilter = downsampler(noiseFilter) 
             sampleSizeInBytes = -1
             torch.cuda.reset_peak_memory_stats(0)
+            torch.cuda.reset_max_memory_cached(0)
             for i, (clean, noise, idx) in enumerate(validation_loader):
                 if sampleSizeInBytes < 0:
                     cleanBytes = clean.element_size() * clean.nelement()
@@ -410,7 +423,8 @@ if __name__ == '__main__':
                 headerString += "Dataloader Num Workers, "
                 headerString += "Dataloader Prefetch Factor, "
                 headerString += "Sample Size (MB), "
-                headerString += "CUDA Peak Mem Allocated (MB)"
+                headerString += "CUDA Peak Mem Allocated (MB), "
+                headerString += "CUDA Peak Mem Cached (MB)"
                 print(headerString)
             resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
             resultString += str(speechOrient) + "," + str(noiseOrient) + "," 
@@ -418,7 +432,8 @@ if __name__ == '__main__':
             resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
             resultString += str(args.dataloader_prefetch_factor) + ","
             resultString += str(sampleSizeInBytes/ (1024.0*1024.0)) + ","
-            resultString += str(torch.cuda.max_memory_allocated(0)/ (1024.0*1024.0))
+            resultString += str(torch.cuda.max_memory_allocated(0)/ (1024.0*1024.0)) + ","
+            resultString += str(torch.cuda.max_memory_cached(0)/ (1024.0*1024.0))
             print(resultString)
             
             # Determine if ending condition is met
