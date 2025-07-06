@@ -220,9 +220,7 @@ if __name__ == '__main__':
             chtc_print(args, infoString)
 
         cudaDeviceName = torch.cuda.get_device_name(0)
-#        chtc_print(args, "[INFO] Running on GPU: " + str(torch.cuda.get_device_name(0)))
         cudaDeviceMemory = torch.cuda.get_device_properties(0).total_memory
-#        chtc_print(args, f"[INFO] Available GPU memory (estimated): {cudaDeviceMemory / (1024**3):.2f} GB")
         infoString = "[INFO] Running on " + cudaDeviceName + " with "
         infoString += str(cudaDeviceMemory/ (1024**3)) + " GB"
         chtc_print(args, infoString)
@@ -350,7 +348,8 @@ if __name__ == '__main__':
     speechOrient, noiseOrient = orientationPairs[orientationPairIdx]
     enoughTimeForMoreWork = True
     with torch.no_grad():
-        torch.cuda.cudart().cudaProfilerStart()
+        if torch.cuda.is_available():
+            torch.cuda.cudart().cudaProfilerStart()
         while enoughTimeForMoreWork:
             # Reset running score for current iteration
             runningScore.fill_(0)
@@ -364,8 +363,9 @@ if __name__ == '__main__':
             noiseFilter  = torch.from_numpy(noiseFilter).float().to(device)
             noiseFilter = downsampler(noiseFilter) 
             sampleSizeInBytes = -1
-            torch.cuda.reset_peak_memory_stats(0)
-            torch.cuda.nvtx.range_push("(so=" + str(speechOrient) +",no="+str(noiseOrient)+")")
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats(0)
+                torch.cuda.nvtx.range_push("(so=" + str(speechOrient) +",no="+str(noiseOrient)+")")
             for i, (clean, noise, idx) in enumerate(validation_loader):
 
                 if sampleSizeInBytes < 0:
@@ -435,18 +435,23 @@ if __name__ == '__main__':
                 headerString += "BatchSize, "
                 headerString += "Dataloader Num Workers, "
                 headerString += "Dataloader Prefetch Factor, "
-                headerString += "Sample Size (MB), "
-                headerString += "CUDA Peak Mem Allocated (MB), "
-                headerString += "CUDA Peak Mem Cached (MB)"
+                headerString += "Sample Size (MB)"
+                
+                if torch.cuda.is_available():
+                    headerString += ", "
+                    headerString += "CUDA Peak Mem Allocated (MB), "
+                    headerString += "CUDA Peak Mem Cached (MB)"
                 print(headerString)
             resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
             resultString += str(speechOrient) + "," + str(noiseOrient) + "," 
             resultString += str(averageValidationScore) + "," + str(exec_time) + ","
             resultString += str(args.b) + "," + str(args.dataloader_workers) + ","
             resultString += str(args.dataloader_prefetch_factor) + ","
-            resultString += str(sampleSizeInBytes/ (1024.0*1024.0)) + ","
-            resultString += str(torch.cuda.max_memory_allocated(0)/ (1024.0*1024.0)) + ","
-            resultString += str(torch.cuda.max_memory_cached(0)/ (1024.0*1024.0))
+            resultString += str(sampleSizeInBytes/ (1024.0*1024.0))
+            if torch.cuda.is_available():
+                resultString += "," 
+                resultString += str(torch.cuda.max_memory_allocated(0)/ (1024.0*1024.0)) + ","
+                resultString += str(torch.cuda.max_memory_cached(0)/ (1024.0*1024.0))
             print(resultString)
             
             # Determine if ending condition is met
@@ -466,5 +471,7 @@ if __name__ == '__main__':
                     timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
                     if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
                         enoughTimeForMoreWork = False
-            torch.cuda.nvtx.range_pop()
-        torch.cuda.cudart().cudaProfilerStop()
+            if torch.cuda.is_available():
+                torch.cuda.nvtx.range_pop()
+        if torch.cuda.is_available():
+            torch.cuda.cudart().cudaProfilerStop()
