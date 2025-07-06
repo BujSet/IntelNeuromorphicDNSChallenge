@@ -227,7 +227,7 @@ if __name__ == '__main__':
         infoString += str(cudaDeviceMemory/ (1024**3)) + " GB"
         chtc_print(args, infoString)
         # On NVIDIA L40 44GB memory, see these infra param perfs
-        # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
+        # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB), CUDA Peak Mem Allocated (MB), CUDA Peak Mem Cached (MB)
         # 331.4012989997864,16,8,4,58.59430694580078
         # 316.9886281490326,32,4,2,117.18805694580078
         # 317.27633690834045,60,4,2,219.7
@@ -235,6 +235,12 @@ if __name__ == '__main__':
         # 318.55631279945374,75,4,4,274.6587600708008
         # 347.68118691444397,75,8,4,274.6587600708008
         # 337.07224130630493,100,4,2,366.2114944458008
+        # 320.39454102516174,60,4,2,219.72711944580078,1100.29833984375,1122.0
+        # 324.34226298332214,60,8,2,219.72711944580078,1100.29833984375,1122.0
+        # 322.08918595314026,75,4,2,274.6587600708008,1380.29833984375,1402.0
+        # 319.5035207271576,75,4,1,274.6587600708008,1380.29833984375,1402.0
+        # 321.0840516090393,75,6,1,274.6587600708008,1380.29833984375,1402.0
+        # 320.412926197052,60,6,1,219.72711944580078,1100.29833984375,1122.0
         #
         # On NVIDIA A100-SXM4-40GB 39GB memory, see these infra param perfs
         # ExecTime, BatchSize, Dataloader Num Workers, Dataloader Prefetch Factor, Sample Size (MB)
