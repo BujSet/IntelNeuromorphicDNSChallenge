@@ -256,6 +256,11 @@ if __name__ == '__main__':
         # 354.2504813671112,60,16,8,219.72711944580078,1100.29736328125,1122.0
         # 389.04674339294434,60,17,8,219.72711944580078,1100.29736328125,1122.0
         # 385.7736032009125,60,16,4,219.72711944580078,1100.29736328125,1122.0
+        # 363.13287019729614,60,16,2,219.72711944580078,1100.29736328125,1122.0
+        # 470.62742137908936,100,4,2,366.2114944458008,1840.29833984375,1862.0
+        # 416.24674820899963,100,5,2,366.2114944458008,1840.29833984375,1862.0
+        # 433.98556089401245,100,5,1,366.2114944458008,1840.29833984375,1862.0
+        # 411.9994261264801,100,6,1,366.2114944458008,1840.29833984375,1862.0
 
 
     conv_transform = torchaudio.transforms.Convolve("same").to(device)
@@ -345,6 +350,7 @@ if __name__ == '__main__':
     speechOrient, noiseOrient = orientationPairs[orientationPairIdx]
     enoughTimeForMoreWork = True
     with torch.no_grad():
+        torch.cuda.cudart().cudaProfilerStart()
         while enoughTimeForMoreWork:
             # Reset running score for current iteration
             runningScore.fill_(0)
@@ -359,8 +365,9 @@ if __name__ == '__main__':
             noiseFilter = downsampler(noiseFilter) 
             sampleSizeInBytes = -1
             torch.cuda.reset_peak_memory_stats(0)
-            torch.cuda.reset_max_memory_cached(0)
+            torch.cuda.nvtx.range_push("(so=" + str(speechOrient) +",no="+str(noiseOrient)+")")
             for i, (clean, noise, idx) in enumerate(validation_loader):
+
                 if sampleSizeInBytes < 0:
                     cleanBytes = clean.element_size() * clean.nelement()
                     noiseBytes = noise.element_size() * noise.nelement()
@@ -459,3 +466,5 @@ if __name__ == '__main__':
                     timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
                     if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
                         enoughTimeForMoreWork = False
+            torch.cuda.nvtx.range_pop()
+        torch.cuda.cudart().cudaProfilerStop()
