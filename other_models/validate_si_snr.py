@@ -301,7 +301,8 @@ if __name__ == '__main__':
     orientationPairs = []
     for so in range(args.speechFilterOrientStart, args.speechFilterOrientEnd, args.speechFilterOrientStep):
         for no in range(args.noiseFilterOrientStart, args.noiseFilterOrientEnd, args.noiseFilterOrientStep):
-            orientationPairs.append( (so, no) )
+            if so >= 0 and so < 1250 and no >= 0 and no < 1250:
+                orientationPairs.append( (so, no) )
 
     infoString = "[INFO] looking at " + str(len(orientationPairs)) +" orientation pairs varying"
     infoString += " speech: (" + str(args.speechFilterOrientStart) + "," + str(args.speechFilterOrientEnd)
