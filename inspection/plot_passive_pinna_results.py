@@ -5,6 +5,7 @@ import numpy as np
 from hrtfs.cipic_db import CipicDatabase 
 from matplotlib import cm
 import math
+import matplotlib.ticker as mticker
 
 path = os.getcwd()
 filePath = os.path.join(path, "collated_results.csv")
@@ -69,17 +70,32 @@ def fill_row_average(dest, data):
             dest[i] = -1.0
     return dest
 
-def make_3D_plot(ax, data3D, azimuth, prefix):
-    scatterAX = ax.scatter(x, y, z, c=data3D, cmap=cm.hot)
+def make_3D_plot(ax, data3D, elevation_view_angle, azimuth_view_angle, prefix):
+    scatterAX = ax.scatter(x, y, z, c=data3D, cmap=cm.plasma)
     ax.set_xticks([0.5, -0.5], labels=["Dorsal", "Ventral"])
     ax.set_yticks([0.5, -0.5], labels=["Right", "Left"])
-    ax.set_zticks([0.5, -0.5], labels=["Below", "Above"])
     tmp_planes = ax.zaxis._PLANES
-    ax.zaxis._PLANES = (tmp_planes[2], tmp_planes[3],
+    if azimuth_view_angle > 90 and azimuth_view_angle < 180:
+        x_grid_positions = [-0.5, 0.5]
+        y_grid_positions = [-0.5, 0.5]
+        z_grid_positions = [-0.5, 0.5]
+        # Set the major tick locators for each axis
+        # The grid lines will be drawn at these specific positions.
+        ax.xaxis.set_major_locator(mticker.FixedLocator(x_grid_positions))
+        ax.yaxis.set_major_locator(mticker.FixedLocator(y_grid_positions))
+        ax.zaxis.set_major_locator(mticker.FixedLocator(z_grid_positions))
+        # Customize the grid line appearance (optional)
+        ax.xaxis.grid(True, linestyle='--', color='gray', alpha=0.5)
+        ax.yaxis.grid(True, linestyle='--', color='gray', alpha=0.5)
+        ax.zaxis.grid(True, linestyle='--', color='gray', alpha=0.5)
+        ax.set_zticks([0.5, -0.5], labels=["",""]) # remove labels
+    else:
+        ax.zaxis._PLANES = ( tmp_planes[2], tmp_planes[3],
                              tmp_planes[0], tmp_planes[1],
                              tmp_planes[4], tmp_planes[5])
-    ax.view_init(elev=ELEV, azim=azimuth)
-    ax.set_title(prefix+" θ="+str(azimuth)+"°", fontweight='bold')
+        ax.set_zticks([0.5, -0.5], labels=["Above      ", "Below      "])
+    ax.view_init(elev=elevation_view_angle, azim=azimuth_view_angle)
+    ax.set_title(prefix+" Viewing θ="+str(azimuth_view_angle)+"°", fontweight='bold', y=0.95)
     return scatterAX
 
 Subject3 = CipicDatabase.subjects[3]
@@ -128,29 +144,61 @@ print("Row Max = " + str(cart_pos[row_max_idx]) + " - " + str(Subject3.getSpheri
 #print("Row max = " + str(Subject3.getSphericalPositionsFromIndex(np.argmax(row_average))))
 #print(Subject3.printAnthroData())
 
-ELEV=25
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(8,6), subplot_kw={'projection': '3d'})
+scatter1 = make_3D_plot(axes[0], row_average, 20, 145, "a)")
+make_3D_plot(axes[1], row_average, 20, 215, "b)")
+#make_3D_plot(axes[2], row_average, 20, 225, "c)")
+#make_3D_plot(axes[3], row_average, 20, 315, "d)")
+fig.text(0.5, 0.75, 'Speech Audiosphere', ha='center', fontsize=14, fontweight='bold')
 
-fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(25,12), subplot_kw={'projection': '3d'})
-scatter1 = make_3D_plot(axes[0,0], row_average, 45, "a)")
-make_3D_plot(axes[0,1], row_average, 135, "b)")
-make_3D_plot(axes[0,2], row_average, 225, "c)")
-make_3D_plot(axes[0,3], row_average, 315, "d)")
-fig.text(0.5, 0.91, 'Speech Audio-sphere', ha='center', fontsize=14, fontweight='bold')
-
-fig.text(0.5, 0.50, 'Noise Audio-sphere', ha='center', fontsize=14, fontweight='bold')
-make_3D_plot(axes[1,0], col_average, 45, "e)")
-make_3D_plot(axes[1,1], col_average, 135, "f)")
-make_3D_plot(axes[1,2], col_average, 225, "g)")
-make_3D_plot(axes[1,3], col_average, 315, "h)")
+#fig.text(0.5, 0.50, 'Noise Audio-sphere', ha='center', fontsize=14, fontweight='bold')
+#make_3D_plot(axes[1,0], col_average, 45, "e)")
+#make_3D_plot(axes[1,1], col_average, 135, "f)")
+#make_3D_plot(axes[1,2], col_average, 225, "g)")
+#make_3D_plot(axes[1,3], col_average, 315, "h)")
 
 #fig.colorbar(scatter9)
 # Create an inset axes for the colorbar
-cbax = fig.add_axes([0.11, 0.1, 0.78, 0.02])  # [left, bottom, width, height]
-fig.text(0.5, 0.07, 'Final SI-NSR (dB)', ha='center', fontsize=14, fontweight='bold')
+cbax = fig.add_axes([0.14, 0.23, 0.74, 0.02])  # [left, bottom, width, height]
+fig.text(0.5, 0.15, 'Final SI-SNR (dB)', ha='center', fontsize=14, fontweight='bold')
 
 # Add the colorbar to the inset axes
 cbar = fig.colorbar(scatter1, cax=cbax, orientation='horizontal')
 plt.savefig("passive_pinna_sub3_chan0_3D.pdf", bbox_inches="tight", format='pdf')
+plt.close()
+
+row_azimuths = []
+for i in range(len(row_average)):
+    planeBase = i - (i % 50)
+    azimuth = Subject3.getSphericalPositionsFromIndex(planeBase + 8)[0]
+    if planeBase < 650:
+        azimuth = 90 - azimuth
+    else:
+        azimuth = 360.0 - azimuth + 90.0
+    row_azimuths.append(azimuth)
+row_elevs = []
+for i in range(len(row_average)):
+    elev = Subject3.getSphericalPositionsFromIndex(600 + (i % 50))[1]
+    # Perform rotation
+    if (i % 50) < 25:
+        elev += 90.0
+    else:
+        elev = 270.0 - elev 
+    assert(elev > 0.0 and elev < 360.0)
+    assert(elev >= 45.0)
+    row_elevs.append(elev)
+        
+theta = np.array(row_elevs)
+r = np.array(row_azimuths)
+colors = np.array(row_average)
+fig, ax = plt.subplots(figsize=(25,25),subplot_kw={'projection': 'polar'})
+scatter = ax.scatter(np.deg2rad(theta), r, c=colors, cmap='plasma', s=50, alpha=0.8)
+cbar = fig.colorbar(scatter, ax=ax, orientation='vertical', pad=0.1)
+cbar.set_label('Color Value')
+ax.set_title('Colored Scatter Plot on Polar Axis', va='bottom')
+ax.set_rlabel_position(-22.5) # Adjust position of radial labels
+ax.grid(True)
+plt.savefig("passive_pinna_sub3_chan0_polar.png", bbox_inches="tight", format='png')
 plt.close()
 
 plt.figure(figsize=(25, 25))
@@ -399,10 +447,50 @@ def findZones(x, y, y_pred, threshold):
         remainingStart = zoneEnd
     return zones
 
+fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(6,6))
+win_size = 50
+distX = [dist for dist,score in sortedSpeechByDist]
+scoreY = [score for dist,score in sortedSpeechByDist]
+rollingX = moving_average(distX, win_size)
+rollingY = moving_average(scoreY, win_size)
+rollingX5 = moving_average(distX, 50)
+rollingY5 = moving_average(scoreY, 50)
+coefficients = np.polyfit(distX, scoreY, 1)
+# Create a polynomial function
+polynomial = np.poly1d(coefficients)
+# Calculate predicted y values
+y_predicted = polynomial(distX)
+y_pred_as_list = [y_predicted[i] for i in range(len(y_predicted))]
 
+errorR2 = calcR2(distX, scoreY, y_pred_as_list)
 
+print("R2 value for linear fit is " + str(errorR2))
+axes.set_xlabel('Angular Dist from Max (°)')
+axes.set_ylabel('SI-SNR (dB)')
+axes.scatter(distX, scoreY, color="blue", s=2, label='Raw Data')
+#axes.plot(rollingX, rollingY, color="orange", label="SMA-3")
+axes.plot(rollingX5, rollingY5, color="orange", label="Moving Average")
+axes.plot(distX, y_predicted, color="green", label=r"Linear Fit ($R^2$=" + str(round(errorR2,2)) + ")")
+axes.legend()
+plt.savefig("passive_pinna_angular_dist_speech.pdf", bbox_inches="tight")
+plt.close()
+drollingY = [abs(rollingY[i+1] - rollingY[i]) for i in range(len(rollingY) - 1)]
+win_size = 150
+padded_data = np.pad(drollingY, win_size//2, mode='reflect')
+rolldry = moving_average(padded_data, win_size)
+paddedRollDRY = rolldry #[0 for i in range(win_size//2)] + [rolldry[i] for i in range(len(rolldry))] + [0 for i in range(win_size//2)]
 
+fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(8,6))
 
+axes.set_xlabel('Data Point Sorted by Angular Dist from Max')
+axes.set_ylabel('ΔSI-SNR (dB)')
+axes.set_title('Conic Boundaries for Auditory Acuity', fontweight='bold')
+axes.plot([i for i in range(len(drollingY))], drollingY, color="blue", label="|SMA-3'|")
+axes.plot([i for i in range(len(paddedRollDRY))], paddedRollDRY, color="orange", label="SMA-100(|SMA-3'|)")
+axes.plot([i for i in range(len(drollingY))], [0.125 for _ in range(len(drollingY))], color="green", label="Threshold")
+axes.legend()
+plt.savefig("passive_pinna_speech_deriv_sma.pdf", bbox_inches="tight")
+plt.close()
 
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(6,6))
 win_size = 3
@@ -422,10 +510,10 @@ errorR2 = calcR2(distX, scoreY, y_pred_as_list)
 print("R2 value for linear fit is " + str(errorR2))
 axes.set_xlabel('Angular Dist from Max (°)')
 axes.set_ylabel('SI-SNR (dB)')
-axes.set_title('Noise Audio Sphere', fontweight='bold')
+#axes.set_title('Noise Audio Sphere', fontweight='bold')
 axes.scatter(distX, scoreY, color="blue", s=2, label='Raw Data')
 axes.plot(rollingX, rollingY, color="orange", label="SMA-3")
-axes.plot(distX, y_predicted, color="green", label="Linear Fit")
+axes.plot(distX, y_predicted, color="green", label=r"Linear Fit $R^2$=" + str(errorR2))
 axes.legend()
 
 #distX = [dist for dist,score in sortedSpeechByDist]
