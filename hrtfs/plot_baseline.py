@@ -51,10 +51,24 @@ axs.set_xlim(-315, 315)
 axs.set_title("Subject 12, Channel 0")
 plt.savefig("ss_sensitivity_baseline.png", bbox_inches="tight")
 plt.close()
+upperRightDiagonal_means = np.zeros(channel0.shape[0])
+upperRightDiagonal_stddev = np.zeros(channel0.shape[0])
 row_means = np.zeros(channel0.shape[0])
 row_stddev = np.zeros(channel0.shape[0])
 col_means = np.zeros(channel0.shape[1])
 col_stddev = np.zeros(channel0.shape[1])
+#for i in range(2*50 - 1):
+#    mean = 0.0
+#    num_valid = 0.0
+#    vals = []
+#    for j in range(50):
+#        val = channel0[i,j]
+#        if (val >= minScore and val <= maxScore):
+#            num_valid += 1.0
+#            mean += val
+#            vals.append(val)
+#    upperRightDiagonal_stddev[i] = np.std(vals)
+#    upperRightDiagonal_means[i] = mean / num_valid
 for i in range(50):
     mean = 0.0
     num_valid = 0.0
@@ -85,30 +99,24 @@ masked_array = np.ma.masked_where(channel0 < minScore, channel0)
 masked_array = np.ma.masked_where(channel0 > maxScore, masked_array)
 cmap = matplotlib.cm.viridis
 cmap.set_bad('red')
-col_colors = np.zeros(50)
-for i in range(50):
-    val = col_means[i]
-    scaled = cmap.N * (val - minScore) / (maxScore - minScore)
-    col_colors[i] = int(round(scaled))
-col_colors = np.array(col_colors, dtype=np.int32)
-colors = cmap(col_colors) 
 fig, axs = plt.subplots(2, 2, figsize=(40,15))
 
 fig = plt.figure(figsize=(20,20))
-gs = GridSpec(nrows=2, ncols=2, figure=fig, wspace=0.1, hspace=0.1, height_ratios=[0.1, 1], width_ratios=[1, 0.1])
-ax1 = fig.add_subplot(gs[0, 0])
-ax2 = fig.add_subplot(gs[0, 1])
-axs3 = fig.add_subplot(gs[1, 0])
-axs4 = fig.add_subplot(gs[1, 1])
-fig.delaxes(ax2)
-ax1.set_xlim(0, 49)
-ax1.set_xticks(range(0, 49, 8))
-ax1.set_xticklabels(["" for deg in range(-45, 89, 45)] + [""] +  ["" for deg in range(45, -90, -45)])
-ax1.set_ylim(minScore, maxScore)
-ax1.set_ylabel("SI-SNR (dB)")
-ax1.plot(range(0, 50), col_means, color='blue')
-ax1.plot(range(0, 50), [col_means[i] + col_stddev[i] for i in range(col_means.size)], color='orange')
-ax1.plot(range(0, 50), [col_means[i] - col_stddev[i] for i in range(col_means.size)], color='orange')
+#gs = GridSpec(nrows=2, ncols=2, figure=fig, wspace=0.1, hspace=0.1, height_ratios=[0.1, 1], width_ratios=[1, 0.1])
+gs = GridSpec(nrows=1, ncols=1, figure=fig, wspace=0.1, hspace=0.1, height_ratios=[1], width_ratios=[1])
+#ax1 = fig.add_subplot(gs[0, 0])
+#ax2 = fig.add_subplot(gs[0, 1])
+axs3 = fig.add_subplot(gs[0, 0])
+#axs4 = fig.add_subplot(gs[1, 1])
+#fig.delaxes(ax2)
+#ax1.set_xlim(0, 49)
+#ax1.set_xticks(range(0, 49, 8))
+#ax1.set_xticklabels(["" for deg in range(-45, 89, 45)] + [""] +  ["" for deg in range(45, -90, -45)])
+#ax1.set_ylim(minScore, maxScore)
+#ax1.set_ylabel("SI-SNR (dB)")
+#ax1.plot(range(0, 50), col_means, color='blue')
+#ax1.plot(range(0, 50), [col_means[i] + col_stddev[i] for i in range(col_means.size)], color='orange')
+#ax1.plot(range(0, 50), [col_means[i] - col_stddev[i] for i in range(col_means.size)], color='orange')
 im = axs3.imshow(masked_array, cmap=cmap, vmin=minScore, vmax=maxScore)
 axs3.set_xlim(0, 49)
 axs3.set_xticks(range(0, 49, 8))
@@ -118,26 +126,37 @@ axs3.set_yticklabels(["front " + str(deg)  + "°" for deg in range(-45, 89, 45)]
 axs3.set_ylim(0, 49)
 axs3.set_ylabel("Speech Elevation Angle")
 axs3.set_xlabel("Noise Elevation Angle")
-axs4.set_xlim(minScore, maxScore)
-axs4.set_yticks(range(0, 49, 8))
-axs4.set_yticklabels(["" for deg in range(-45, 89, 45)] + [""] +  ["" for deg in range(45, -90, -45)])
-axs4.set_ylim(0, 49)
-axs4.set_xlabel("SI-SNR (dB)")
-row_colors = np.zeros(50)
-for i in range(50):
-    val = row_means[i]
-    scaled = cmap.N * (val - minScore) / (maxScore - minScore)
-    row_colors[i] = int(round(scaled))
-row_colors = np.array(row_colors, dtype=np.int32)
-colors = cmap(row_colors) 
-axs4.plot(row_means, range(0, 50), color='blue')
-axs4.plot([row_means[i] + row_stddev[i] for i in range(row_means.size)], range(0, 50), color='orange')
-axs4.plot([row_means[i] - row_stddev[i] for i in range(row_means.size)], range(0, 50), color='orange')
-divider = make_axes_locatable(axs4)
+axs3.set_title("Effect of Elevation on Speech Denoising\nSubject 12, Channel 0")
+#axs4.set_xlim(minScore, maxScore)
+#axs4.set_yticks(range(0, 49, 8))
+#axs4.set_yticklabels(["" for deg in range(-45, 89, 45)] + [""] +  ["" for deg in range(45, -90, -45)])
+#axs4.set_ylim(0, 49)
+#axs4.set_xlabel("SI-SNR (dB)")
+#row_colors = np.zeros(50)
+#for i in range(50):
+#    val = row_means[i]
+#    scaled = cmap.N * (val - minScore) / (maxScore - minScore)
+#    row_colors[i] = int(round(scaled))
+#row_colors = np.array(row_colors, dtype=np.int32)
+#colors = cmap(row_colors) 
+#axs4.plot(row_means, range(0, 50), color='blue')
+#axs4.plot([row_means[i] + row_stddev[i] for i in range(row_means.size)], range(0, 50), color='orange')
+#axs4.plot([row_means[i] - row_stddev[i] for i in range(row_means.size)], range(0, 50), color='orange')
+divider = make_axes_locatable(axs3)
 colorbar_axes = divider.append_axes("right", 
                                     size="10%", 
                                     pad=0.1) 
 fig.colorbar(im, cax=colorbar_axes, label="SI-SNR (dB)", location='right')
 plt.savefig("sensitivity_baseline.png", bbox_inches="tight")
+
 print("Min:" + str(np.where(channel0 == np.min(channel0))))
 print("Max:" + str(np.where(channel0 == np.max(channel0))))
+
+col_colors = np.zeros(50)
+for i in range(50):
+    val = col_means[i]
+    scaled = cmap.N * (val - minScore) / (maxScore - minScore)
+    col_colors[i] = int(round(scaled))
+col_colors = np.array(col_colors, dtype=np.int32)
+colors = cmap(col_colors) 
+fig = plt.figure(figsize=(20,20))

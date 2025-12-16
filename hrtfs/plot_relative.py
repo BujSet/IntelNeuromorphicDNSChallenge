@@ -26,7 +26,7 @@ for i in range(50):
 
 np.seterr(divide='ignore', invalid='ignore', over='ignore')
 masked_array = np.ma.masked_where(channel0 == np.nan, channel0)
-cmap = matplotlib.cm.hot
+cmap = matplotlib.cm.winter
 cmap.set_bad('blue')
 fig, axs = plt.subplots(2, 2, figsize=(40,15))
 
@@ -42,6 +42,7 @@ axs3.set_yticklabels(["front " + str(deg)  + "°" for deg in range(-45, 89, 45)]
 axs3.set_ylim(0, 49)
 axs3.set_ylabel("Speech Elevation Angle")
 axs3.set_xlabel("Noise Elevation Angle")
+axs3.set_title("Relative Improvement from SNN\nSubject 12, Channel 0)")
 divider = make_axes_locatable(axs3)
 colorbar_axes = divider.append_axes("right", 
                                     size="10%", 

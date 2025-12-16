@@ -28,20 +28,22 @@ def getScores(results_dir):
             sys.exit(1)
         with open(path, 'r') as F:
             lines = F.readlines()
-            tokens = lines[-1].split()
             score = -1.0
+            validationScores = []
             for line in lines:
                 if "Valid" in line and "SI-SNR" in line and "dB" in line:
                     tokens = line.split()
                     score = float(tokens[-2])
-                    dists[i] = ((speech - noise) * 5.625)
-                    if (score > maxScore):
-                        maxScore = score
-                    if (score < minScore):
-                        minScore = score
+                    validationScores.append(score)
+            dists[i] = ((speech - noise) * 5.625)
+            finalScore = sum(validationScores)/len(validationScores)
+            if (finalScore > maxScore):
+                maxScore = finalScore
+            if (finalScore < minScore):
+                minScore = finalScore
 #                    print("Found " + str(score) + " for (" + str(speech) + "," + str(noise) + ")")
-                    break
+#                    break
 
-            scores[speech, noise] = score
-            flattened[i] = score
+            scores[speech, noise] = finalScore #score
+            flattened[i] = finalScore #score
     return (maxScore, minScore, scores, dists, flattened)
