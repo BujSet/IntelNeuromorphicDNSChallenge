@@ -108,10 +108,6 @@ if __name__ == '__main__':
                         type=int,
                         default=2,
                         help='prefetch factor for dataloader')
-    parser.add_argument('-exp',
-                        type=str,
-                        default='',
-                        help='experiment differentiater string')
     parser.add_argument('-seed',
                         type=int,
                         default=None,
@@ -192,6 +188,10 @@ if __name__ == '__main__':
                         dest='enableTorchCompile', 
                         action='store_true',
                         help='Switch flag to indicate whether to optimize with torch compile')
+    parser.add_argument('-roster',
+                        type=str,
+                        default='one_hour_noisy_seed_419572083.txt',
+                        help='Roster of noisy files, used when running only subset of validation set in optimized CHTC file transfers')
 
     args = parser.parse_args()
     if args.speechFilterOrientEnd == -1:
@@ -266,7 +266,9 @@ if __name__ == '__main__':
     # Input audio is recorded at 16 kHz, but CIPIC HRTFs are at 44.1 kHz
     downsampler= torchaudio.transforms.Resample(44100, 16000, dtype=torch.float32).to(device)
 
-    validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
+    validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/',
+                                     maxFiles=args.validation_samples,
+                                     noisyFileRoster=args.roster)
     validation_loader = DataLoader(validation_set,
                                batch_size=args.b,
                                shuffle=False,

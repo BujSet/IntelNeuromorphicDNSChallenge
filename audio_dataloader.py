@@ -309,7 +309,8 @@ class DNSAudioNoNoisy:
     root : str, optional
         Path of the dataset location, by default './'.
     """
-    def __init__(self, root: str = './', maxFiles: int = -1) -> None:
+    def __init__(self, root: str = './', maxFiles: int = -1,
+            noisyFileRoster: str = 'noisy_file_names.txt') -> None:
         self.root = root
         # Some of the noisy files has a non-standard character in the name:
         # 2
@@ -320,12 +321,13 @@ class DNSAudioNoNoisy:
         # in this way, the noisy wav can be safely ignored.
         self.noisy_files = None
         roster = os.path.join(root, "noisy")
-        roster = os.path.join(roster, "noisy_file_names.txt")
+        roster = os.path.join(roster, noisyFileRoster)
         with open(roster, "r") as fp:
             self.noisy_files = [line.rstrip('\n') for line in fp.readlines()]
+        self.noisy_files = [filename for filename in self.noisy_files if not filename.endswith('.txt')]
         assert(self.noisy_files != None)
-        if ("noisy_file_names.txt" in self.noisy_files):
-            self.noisy_files.remove("noisy_file_names.txt")
+        assert(not "noisy_file_names.txt" in self.noisy_files)
+        assert(not noisyFileRoster in self.noisy_files)
         if (maxFiles > len(self.noisy_files)):
             print("Too many files to subsample dataset "+ str(maxFiles) + "/" + str(len(self.noisy_files)))
             assert(False)
@@ -341,9 +343,14 @@ class DNSAudioNoNoisy:
         self.snr_from_name = re.compile('snr(-?\d+)')
         self.target_level_from_name = re.compile('tl(-?\d+)')
         self.source_info_from_name = re.compile('^(.*?)_snr')
+        for filename in self.noisy_files:
+            print(filename)
+        print(len(self.noisy_files))
 
     def _get_filenames(self, n: int) -> Tuple[str, str, Dict[str, Any]]:
         noisy_file = self.noisy_files[n % self.__len__()]
+        print(n)
+        print(noisy_file)
         filename = noisy_file.split(os.sep)[-1]
         file_id = int(self.file_id_from_name.findall(filename)[0])
         clean_file = self.root + f'clean/clean_fileid_{file_id}.wav'
