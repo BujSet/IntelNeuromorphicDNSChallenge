@@ -343,14 +343,9 @@ class DNSAudioNoNoisy:
         self.snr_from_name = re.compile('snr(-?\d+)')
         self.target_level_from_name = re.compile('tl(-?\d+)')
         self.source_info_from_name = re.compile('^(.*?)_snr')
-        for filename in self.noisy_files:
-            print(filename)
-        print(len(self.noisy_files))
 
     def _get_filenames(self, n: int) -> Tuple[str, str, Dict[str, Any]]:
         noisy_file = self.noisy_files[n % self.__len__()]
-        print(n)
-        print(noisy_file)
         filename = noisy_file.split(os.sep)[-1]
         file_id = int(self.file_id_from_name.findall(filename)[0])
         clean_file = self.root + f'clean/clean_fileid_{file_id}.wav'

@@ -190,7 +190,7 @@ if __name__ == '__main__':
                         help='Switch flag to indicate whether to optimize with torch compile')
     parser.add_argument('-roster',
                         type=str,
-                        default='one_hour_noisy_seed_419572083.txt',
+                        default='noisy_file_names.txt',
                         help='Roster of noisy files, used when running only subset of validation set in optimized CHTC file transfers')
 
     args = parser.parse_args()
