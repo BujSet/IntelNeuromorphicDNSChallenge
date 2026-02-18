@@ -11,6 +11,11 @@ def get_job_start():
 
 def get_gpu_job_length():
     with HTChirp() as chirp:
+        isInteractive = chirp.get_job_attr("InteractiveJob")
+        isInteractive = isInteractive == "true"
+        if isInteractive:
+            return 4*60*60 # 4 hour limit
+
         lengthStr = chirp.get_job_attr("GPUJobLength")
         if "short" in lengthStr:
             # 12 hour job length
