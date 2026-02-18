@@ -7,6 +7,8 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import griddata
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.animation import FuncAnimation
 
 csv_files = glob.glob('*.csv')
 out_files = glob.glob('*.out')
@@ -159,4 +161,62 @@ axs.set_axisbelow(True)
 
 # Display the plot
 plt.savefig("sub_3_chan_0_speech_sorted.pdf", bbox_inches='tight')
+plt.close()
+
+def get_cart_pos(row, sub, cart_axis):
+    cipicIndex = int(row['CipicIndex'])
+    carts = sub.getCartesianPositions()
+    pos = carts[cipicIndex]
+    return pos[cart_axis]
+
+speechAudioSphere['PlotCartX'] = speechAudioSphere.apply(
+        get_cart_pos,
+        axis=1,
+        args=(sub3, 0)
+        )
+speechAudioSphere['PlotCartY'] = speechAudioSphere.apply(
+        get_cart_pos,
+        axis=1,
+        args=(sub3, 1)
+        )
+speechAudioSphere['PlotCartZ'] = speechAudioSphere.apply(
+        get_cart_pos,
+        axis=1,
+        args=(sub3, 2)
+        )
+
+print(speechAudioSphere.head())
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+scatter = ax.scatter(speechAudioSphere['PlotCartX'], 
+        speechAudioSphere['PlotCartY'], 
+        speechAudioSphere['PlotCartZ'], 
+        c=speechAudioSphere['Final Validation Score SI-SNR (dB)'], cmap='viridis', s=50, alpha=0.8)
+
+# Set labels and title
+ax.set_xlabel('X axis')
+ax.set_ylabel('Y axis')
+ax.set_zlabel('Z axis')
+ax.set_title('Rotating 3D Scatter Plot')
+fig.colorbar(scatter, ax=ax, pad=0.1)
+def update(frame):
+    # Rotate the view (azim parameter controls the horizontal rotation)
+    ax.view_init(elev=20., azim=frame)
+    return fig,
+
+# Create the animation object
+# frames: iterates from 0 to 360 (degrees)
+# interval: delay between frames in milliseconds
+# blit=True means only things that have changed are drawn (can speed up animation)
+anim = FuncAnimation(fig, update, frames=np.arange(0, 361, 2), interval=50, blit=False)
+
+# 4. Save the animation as a GIF
+# Requires Pillow (or ImageMagick) as a writer
+print("Saving GIF... This might take a moment.")
+try:
+    anim.save('3d_plot_rotation.gif', writer='pillow', fps=20)
+    print("GIF saved successfully as '3d_plot_rotation.gif'")
+except Exception as e:
+    print(f"An error occurred while saving the GIF: {e}")
+    print("Make sure you have Pillow installed (pip install Pillow).")
 plt.close()
