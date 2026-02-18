@@ -71,9 +71,9 @@ rlines, rlabels = axs[0].set_rgrids(rticks, rlabels, angle=-90)
 for i, label in enumerate(rlabels):
     label.set_horizontalalignment('center') 
     if i == 0:
-        label.set_verticalalignment('bottom') 
-    elif i == 2:
         label.set_verticalalignment('top') 
+    elif i == 2:
+        label.set_verticalalignment('bottom') 
     else:
         label.set_verticalalignment('center') 
 
