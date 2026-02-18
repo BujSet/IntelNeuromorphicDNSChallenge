@@ -35,3 +35,4 @@ passive_pinna_*.pdf
 other_models/optimized_cpp/vector_add
 null_condor_config
 collated_results_*.csv
+sub_*_chan_*_*_audio_sphere.pdf
