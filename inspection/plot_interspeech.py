@@ -6,6 +6,7 @@ from hrtfs.cipic_db import CipicDatabase
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.interpolate import griddata
 
 csv_files = glob.glob('*.csv')
 out_files = glob.glob('*.out')
@@ -23,7 +24,6 @@ def get_plot_theta_r(sub, index, r_offset=0):
     elif modulo > 48:
         angle = 180.0 - angle
     return math.radians(angle), r
-
 
 # Load the CSV file into a DataFrame
 sub_3_chan_0_full_dataset = None
@@ -44,6 +44,7 @@ for i in range(1250):
             'PlotPolarThetaRadians':theta,
             'PlotPolarR':r})
 speechAudioSphere = pd.DataFrame(speechAudioSphere)
+speechAudioSphere['CipicIndex'] = speechAudioSphere['CipicIndex'].astype(int)
 
 noiseAudioSphere = []
 for i in range(1250):
@@ -57,7 +58,7 @@ for i in range(1250):
             'PlotPolarR':r})
 noiseAudioSphere = pd.DataFrame(noiseAudioSphere)
 
-fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6), subplot_kw={'projection': 'polar'},
+fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(12, 6), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.2})
 axs[0].set_axisbelow(True)
 scatter = axs[0].scatter(speechAudioSphere['PlotPolarThetaRadians'],
@@ -94,9 +95,8 @@ scatter = axs[1].scatter(noiseAudioSphere['PlotPolarThetaRadians'],
                      noiseAudioSphere['PlotPolarR'], 
                      c=noiseAudioSphere['Final Validation Score SI-SNR (dB)'],
                      cmap='hot', alpha=0.75, zorder=2)
-r_offset = 0
 axs[0].set_rorigin(-10)
-rticks = [0+r_offset, 12.5+r_offset, 25+r_offset]
+rticks = [0, 12.5, 25]
 rlabels = ['Right', 'Middle', 'Left']
 axs[1].set_rgrids(rticks, rlabels, angle=-91)
 
@@ -106,6 +106,57 @@ axs[1].set_xticks(custom_ticks_rad)
 axs[1].set_xticklabels(custom_labels)
 axs[1].set_title('b) Noise Audio Sphere')
 axs[1].grid(True)
+
+num_points = 500
+grid_r = np.linspace(speechAudioSphere['PlotPolarR'].min(), speechAudioSphere['PlotPolarR'].max(), num_points)
+grid_t = np.linspace(0, 360, num_points) * np.pi / 180
+R, T = np.meshgrid(grid_r, grid_t)
+points = speechAudioSphere[['PlotPolarR', 'PlotPolarThetaRadians']].values
+values = speechAudioSphere['Final Validation Score SI-SNR (dB)'].values
+low_theta = points[points[:, 1] < 0.1].copy()
+low_theta[:, 1] += 2 * np.pi
+
+high_theta = points[points[:, 1] > (2 * np.pi - 0.1)].copy()
+high_theta[:, 1] -= 2 * np.pi
+
+# Combine original data with the "wrapped" phantom points
+points_wrapped = np.vstack([points, low_theta, high_theta])
+values_wrapped = np.concatenate([values, values[points[:, 1] < 0.1], values[points[:, 1] > (2 * np.pi - 0.1)]])
+
+Z = griddata(points_wrapped, values_wrapped, (R,T), method='cubic')
+t_min_hide = 225 * np.pi / 180
+t_max_hide = 315 * np.pi / 180
+mask = (T > t_min_hide) & (T <= t_max_hide)
+
+# Set the Z values in that slice to NaN
+Z[mask] = np.nan
+CS = axs[2].contourf(T, R, Z, levels=5, cmap='hot')
+axs[2].set_rorigin(-10)
 fig.colorbar(scatter, ax=axs, label='Final Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.8)
 plt.savefig('sub_3_chan_0_speech_audio_sphere.pdf', bbox_inches='tight')
+plt.close()
+
+def get_dist_from_max(row, sub, maxIdx):
+    destIdx = row['CipicIndex']
+    return sub.chordDistBetweenIndices(maxIdx, int(destIdx))
+
+maxSpeechIdx = speechAudioSphere['Final Validation Score SI-SNR (dB)'].idxmax()
+maxRow = speechAudioSphere.loc[maxSpeechIdx]
+speechAudioSphere['DistFromMax'] = speechAudioSphere.apply(
+        get_dist_from_max,
+        axis=1,
+        args=(sub3, int(maxRow['CipicIndex']))
+        )
+fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(8, 6))
+axs.scatter(x=speechAudioSphere['DistFromMax'], y=speechAudioSphere['Final Validation Score SI-SNR (dB)'], zorder=3, s=2)
+
+# Optional: Add customizations
+axs.set_title('Scatter Plot using Matplotlib')
+axs.set_xlabel('X-axis Label')
+axs.set_ylabel('Y-axis Label')
+axs.grid(True)
+axs.set_axisbelow(True)
+
+# Display the plot
+plt.savefig("sub_3_chan_0_speech_sorted.pdf", bbox_inches='tight')
 plt.close()

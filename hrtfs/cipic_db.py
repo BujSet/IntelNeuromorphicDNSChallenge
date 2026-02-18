@@ -65,6 +65,16 @@ class CIPIC_Subject():
             pos = cart_positions[i]
             print(str(i) + str(pos) + str(sph_positions[i]))
 
+    def chordDistBetweenIndices(self, srcIdx, destIdx):
+        assert(0 <= srcIdx and srcIdx < 1250)
+        assert(0 <= destIdx and destIdx < 1250)
+        carts = self._sofa.Source.Position.get_values(system="cartesian")
+        srcPos = carts[srcIdx]
+        destPos = carts[destIdx]
+        dist = np.linalg.norm(srcPos - destPos)
+        return dist
+
+
     def getCartesianPositions(self):
         return  self._sofa.Source.Position.get_values(system="cartesian")
 
