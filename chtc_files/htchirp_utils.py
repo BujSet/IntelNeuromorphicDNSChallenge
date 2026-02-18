@@ -50,3 +50,13 @@ def get_cpu_time_remaining(rawValue=False):
     if rawValue == True:
         return remaining
     return str(datetime.timedelta(seconds=remaining))
+
+def requested_gpu_count():
+    with HTChirp() as chirp:
+        numRequestedGPUs = chirp.get_job_attr("RequestGPUs")
+        try:
+            numRequestedGPUs = int(numRequestedGPUs)
+        except:
+            numRequestedGPUs = 0
+            chirp.ulog("Unable to find RequestGPUs in Job Ad")
+        return numRequestedGPUs

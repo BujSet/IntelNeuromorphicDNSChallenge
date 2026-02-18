@@ -197,6 +197,15 @@ if __name__ == '__main__':
     if args.speechFilterOrientEnd == -1:
         args.speechFilterOrientEnd = args.speechFilterOrientStart + 1
 
+    if args.isCHTCJob:
+        numRequestedGPUs = requested_gpu_count()
+        if numRequestedGPUs > 0:
+            if torch.cuda.is_available():
+                chtc_print(args, "[INFO] Job requested " + str(numRequestedGPUs) + " GPUs and pytorch sees them")
+            else:
+                sys.exit(1)
+
+
     if args.seed is not None:
         torch.manual_seed(args.seed)
 
