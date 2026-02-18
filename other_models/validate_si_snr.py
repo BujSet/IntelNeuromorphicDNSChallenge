@@ -443,7 +443,7 @@ if __name__ == '__main__':
                 if torch.cuda.is_available():
                     headerString += ", "
                     headerString += "CUDA Peak Mem Allocated (MB), "
-                    headerString += "CUDA Peak Mem Cached (MB)"
+                    headerString += "CUDA Peak Mem Reserved (MB)"
                 print(headerString)
             resultString  = str(args.cipicSubject) + "," + str(args.cipicChannel) + "," 
             resultString += str(speechOrient) + "," + str(noiseOrient) + "," 
@@ -454,7 +454,7 @@ if __name__ == '__main__':
             if torch.cuda.is_available():
                 resultString += "," 
                 resultString += str(torch.cuda.max_memory_allocated(0)/ (1024.0*1024.0)) + ","
-                resultString += str(torch.cuda.max_memory_cached(0)/ (1024.0*1024.0))
+                resultString += str(torch.cuda.max_memory_reserved(0)/ (1024.0*1024.0))
             print(resultString)
             
             # Determine if ending condition is met
