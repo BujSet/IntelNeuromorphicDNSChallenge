@@ -9,6 +9,8 @@ import numpy as np
 from scipy.interpolate import griddata
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
 
 csv_files = glob.glob('*.csv')
 out_files = glob.glob('*.out')
@@ -224,3 +226,20 @@ except Exception as e:
     print(f"An error occurred while saving the GIF: {e}")
     print("Make sure you have Pillow installed (pip install Pillow).")
 plt.close()
+
+# DBSCAN stuff
+selected_columns = speechAudioSphere[['PlotCartX', 'PlotCartY', 'PlotCartZ', 'Final Validation Score SI-SNR (dB)']]
+print(selected_columns.head())
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(selected_columns)
+db = DBSCAN(eps=0.4, min_samples=8).fit(X_scaled)
+
+print(db.labels_)
+print(len(db.labels_))
+# 4. Save labels back to DataFrame (-1 indicates noise)
+selected_columns['DBSCANCluster'] = db.labels_
+
+print(selected_columns.head())
+#for i in range(len(db.labels_)):
+#    print(db.labels_[i])
+print(selected_columns['DBSCANCluster'].unique())
