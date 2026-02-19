@@ -29,11 +29,58 @@ def get_plot_theta_r(sub, index, r_offset=0):
         angle = 180.0 - angle
     return math.radians(angle), r
 
-# Load the CSV file into a DataFrame
-sub_3_chan_0_full_dataset = None
-for csv_file in csv_files:
-    if ("collated_results" in csv_file):
-        sub_3_chan_0_full_dataset = pd.read_csv(csv_file)
+def read_collated_results_csv():
+    df = pd.read_csv("collated_results_2026_02_18.csv")
+    df.columns = df.columns.str.strip()
+    df['UsesFullAudioDataset'] = True
+    df['AudioDataSubSetSize'] = 60000
+    df['AudioDataSubSetSeed'] = -1
+    return df
+
+def read_out_file(out_file):
+    df = pd.read_csv(out_file)
+    df.columns = df.columns.str.strip()
+    df = df.drop(
+        columns=[
+            'ExecTime',
+            'BatchSize',
+            'Dataloader Num Workers', 
+            'Dataloader Prefetch Factor',
+            'Sample Size (MB)', 
+            'CUDA Peak Mem Allocated (MB)',
+            'CUDA Peak Mem Cached (MB)',
+            'CUDA Peak Mem Reserved (MB)'],
+        errors='ignore')
+    df['UsesFullAudioDataset'] = False
+    df['AudioDataSubSetSize'] = 120
+    df['AudioDataSubSetSeed'] = 419572083
+    return df
+
+# First, read all data and concat into a single df
+all_data = read_collated_results_csv()
+print(f"All data conatains {len(all_data)} rows")
+for i, out_file in enumerate(out_files):
+    out_data = read_out_file(out_file)
+    all_data = pd.concat([all_data, out_data], ignore_index=True)
+    duplicate_rows_boolean = all_data.duplicated()
+    num_duplicates = duplicate_rows_boolean.sum()
+    print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
+
+sub_3_chan_0_full_dataset = read_collated_results_csv()
+print(sub_3_chan_0_full_dataset.head())
+print(len(sub_3_chan_0_full_dataset))
+print(out_files[0])
+
+out_files_0_pd = read_out_file(out_files[0])
+print(out_files_0_pd.head())
+print(len(out_files_0_pd))
+
+combined_df = pd.concat([sub_3_chan_0_full_dataset, out_files_0_pd], ignore_index=True)
+print(combined_df.head())
+print(len(combined_df))
+duplicate_rows_boolean = combined_df.duplicated()
+num_duplicates = duplicate_rows_boolean.sum()
+print(f"Total number of duplicate rows found: {num_duplicates}")
 
 sub3 = CipicDatabase.subjects[3]
 
