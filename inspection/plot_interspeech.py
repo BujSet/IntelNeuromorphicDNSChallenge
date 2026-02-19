@@ -169,6 +169,9 @@ def get_cart_pos(row, sub, cart_axis):
     cipicIndex = int(row['CipicIndex'])
     carts = sub.getCartesianPositions()
     pos = carts[cipicIndex]
+    # Y axis is flipped for some reason?
+    if cart_axis == 1:
+        return -1.0 * pos[cart_axis]
     return pos[cart_axis]
 
 speechAudioSphere['PlotCartX'] = speechAudioSphere.apply(
@@ -197,9 +200,9 @@ scatter = ax.scatter(speechAudioSphere['PlotCartX'],
 
 
 ax.set_xticks([-1.0, 0.0, 1.0])
-ax.set_xticklabels(["Left", "Middle", "Right"])
+ax.set_xticklabels(["Back", "Mid-\nCoronal", "Front"])
 ax.set_yticks([-1.0, 0.0, 1.0])
-ax.set_yticklabels(["Back", "Mid-\nCoronal", "Front"])
+ax.set_yticklabels(["Right", "Middle", "Left"])
 ax.set_zticks([-1.0, 0.0, 1.0])
 ax.set_zticklabels(["Below", "Eye\nLevel", "Above"])
 ax.set_title("Speech Audio Sphere\n(Subject 3, Right Ear)")
