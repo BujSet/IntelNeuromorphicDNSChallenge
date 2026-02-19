@@ -185,20 +185,24 @@ speechAudioSphere['PlotCartZ'] = speechAudioSphere.apply(
         args=(sub3, 2)
         )
 
-print(speechAudioSphere.head())
-fig = plt.figure(figsize=(10, 8))
+fig = plt.figure(figsize=(5, 4))
 ax = fig.add_subplot(111, projection='3d')
 scatter = ax.scatter(speechAudioSphere['PlotCartX'], 
         speechAudioSphere['PlotCartY'], 
         speechAudioSphere['PlotCartZ'], 
-        c=speechAudioSphere['Final Validation Score SI-SNR (dB)'], cmap='viridis', s=50, alpha=0.8)
+        c=speechAudioSphere['Final Validation Score SI-SNR (dB)'],
+        cmap='plasma', s=50, alpha=0.8)
 
-# Set labels and title
-ax.set_xlabel('X axis')
-ax.set_ylabel('Y axis')
-ax.set_zlabel('Z axis')
-ax.set_title('Rotating 3D Scatter Plot')
-fig.colorbar(scatter, ax=ax, pad=0.1)
+
+ax.set_xticks([-1.0, 0.0, 1.0])
+ax.set_xticklabels(["Left", "Middle", "Right"])
+ax.set_yticks([-1.0, 0.0, 1.0])
+ax.set_yticklabels(["Back", "Mid-\nCoronal", "Front"])
+ax.set_zticks([-1.0, 0.0, 1.0])
+ax.set_zticklabels(["Below", "Eye\nLevel", "Above"])
+ax.set_title("Speech Audio Sphere\n(Subject 3, Right Ear)")
+fig.colorbar(scatter, ax=ax, pad=0.1, label='Final Validation Score SI-SNR (dB)')
+#fig.tight_layout(pad=0)
 def update(frame):
     # Rotate the view (azim parameter controls the horizontal rotation)
     ax.view_init(elev=20., azim=frame)
@@ -214,7 +218,7 @@ anim = FuncAnimation(fig, update, frames=np.arange(0, 361, 2), interval=50, blit
 # Requires Pillow (or ImageMagick) as a writer
 print("Saving GIF... This might take a moment.")
 try:
-    anim.save('3d_plot_rotation.gif', writer='pillow', fps=20)
+    anim.save('sub_3_chan_0_rotating_speech_audiosphere.gif', writer='pillow', fps=20)
     print("GIF saved successfully as '3d_plot_rotation.gif'")
 except Exception as e:
     print(f"An error occurred while saving the GIF: {e}")
