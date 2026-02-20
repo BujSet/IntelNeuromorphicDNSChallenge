@@ -32,14 +32,18 @@ def get_plot_theta_r(sub, index, r_offset=0):
 def read_collated_results_csv():
     df = pd.read_csv("collated_results_2026_02_18.csv")
     df.columns = df.columns.str.strip()
+    df['Subject'] = df['Subject'].astype(int)
+    df['Channel'] = df['Channel'].astype(int)
     df['UsesFullAudioDataset'] = True
-    df['AudioDataSubSetSize'] = 60000
-    df['AudioDataSubSetSeed'] = -1
+    df['AudioDataSubsetSize'] = 60000
+    df['AudioDataSubsetSeed'] = -1
     return df
 
 def read_out_file(out_file):
     df = pd.read_csv(out_file)
     df.columns = df.columns.str.strip()
+    df['Subject'] = df['Subject'].astype(int)
+    df['Channel'] = df['Channel'].astype(int)
     df = df.drop(
         columns=[
             'ExecTime',
@@ -52,62 +56,107 @@ def read_out_file(out_file):
             'CUDA Peak Mem Reserved (MB)'],
         errors='ignore')
     df['UsesFullAudioDataset'] = False
-    df['AudioDataSubSetSize'] = 120
-    df['AudioDataSubSetSeed'] = 419572083
+    df['AudioDataSubsetSize'] = 120
+    df['AudioDataSubsetSeed'] = 419572083
     return df
 
 # First, read all data and concat into a single df
 all_data = read_collated_results_csv()
-print(f"All data conatains {len(all_data)} rows")
+print(f"All data conatains {len(all_data)} rows, pre merge")
 for i, out_file in enumerate(out_files):
     out_data = read_out_file(out_file)
     all_data = pd.concat([all_data, out_data], ignore_index=True)
     duplicate_rows_boolean = all_data.duplicated()
     num_duplicates = duplicate_rows_boolean.sum()
-    print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
+    if num_duplicates:
+        print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
+print(f"All data conatains {len(all_data)} rows, post merge")
 
-sub_3_chan_0_full_dataset = read_collated_results_csv()
-print(sub_3_chan_0_full_dataset.head())
-print(len(sub_3_chan_0_full_dataset))
-print(out_files[0])
+sub_3_chan_0_full_dataset = all_data[(all_data['Subject'] == 3) &
+        (all_data['Channel'] == 0) &
+        (all_data['UsesFullAudioDataset']) &
+        (all_data['AudioDataSubsetSize'] == 60000)]
 
-out_files_0_pd = read_out_file(out_files[0])
-print(out_files_0_pd.head())
-print(len(out_files_0_pd))
+def getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize=60000, speechAudioSphere=True):
+    filtered = all_data[(all_data['Subject'] == subject) &
+        (all_data['Channel'] == channel)]
+    if dataSubsetSize == 60000:
+        filtered = filtered[(filtered['UsesFullAudioDataset'] == True) &
+        (filtered['AudioDataSubsetSize'] == 60000)]
+    else:
+        filtered = filtered[(filtered['UsesFullAudioDataset'] == False) &
+        (filtered['AudioDataSubsetSize'] == datSubsetSize)]
+    searchString = 'Speech Orient'
+    if not speechAudioSphere:
+        searchString = 'Noise Orient'
 
-combined_df = pd.concat([sub_3_chan_0_full_dataset, out_files_0_pd], ignore_index=True)
-print(combined_df.head())
-print(len(combined_df))
-duplicate_rows_boolean = combined_df.duplicated()
-num_duplicates = duplicate_rows_boolean.sum()
-print(f"Total number of duplicate rows found: {num_duplicates}")
+    sphereData = []
+    for i in range(1250):
+        if ((sub_3_chan_0_full_dataset[searchString] == i).any()):
+            row = filtered[filtered[searchString] == i]
+            theta, r = get_plot_theta_r(CipicDatabase.subjects[subject], i)
+            sphereData.append({
+                'CipicIndex':i, 
+                'Final Validation Score SI-SNR (dB)':row['Final Validation Score SI-SNR (dB)'].mean(),
+                'PlotPolarThetaRadians':theta,
+                'PlotPolarR':r})
+    return pd.DataFrame(sphereData)
+
+
+def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
+    speech = getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize, True)
+    noise = getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize, False)
+    fig, axs = plt.subplots(nrows=1, ncols=2, 
+            figsize=(12, 6), subplot_kw={'projection': 'polar'},
+                               gridspec_kw={'wspace': -0.0}, layout="constrained")
+    def plotSphereOnAxis(ax, df, axTitle):
+        ax.set_axisbelow(True)
+        scatter = ax.scatter(df['PlotPolarThetaRadians'],
+                     df['PlotPolarR'], 
+                     c=df['Final Validation Score SI-SNR (dB)'],
+                     cmap='hot', alpha=0.75, zorder=2)
+        rticks = [0, 12.5, 25]
+        rlabels = ['Right', 'Middle', 'Left']
+        rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
+        for i, label in enumerate(rlabels):
+            label.set_horizontalalignment('center') 
+            if i == 0:
+                label.set_verticalalignment('top') 
+            elif i == 2:
+                label.set_verticalalignment('bottom') 
+            else:
+                label.set_verticalalignment('center') 
+        ax.tick_params(axis='y', labelsize=10, rotation=0)
+        ax.tick_params(axis='x', labelsize=10, pad=11)
+        custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
+        custom_labels = ['Front', 'Antero-\nSuperior', 'Up', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
+
+        ax.set_xticks(custom_ticks_rad)
+        ax.set_xticklabels(custom_labels)
+        ax.set_title(axTitle, fontweight="bold")
+        ax.grid(True)
+        ax.set_rorigin(-10)
+        return scatter
+    scatter = plotSphereOnAxis(axs[0], speech, "a) Speech Audiosphere")
+    scatter = plotSphereOnAxis(axs[1], noise, "a) Noise Audiosphere")
+    titleString = f"Subject {subject}'s Audio Spheres ("
+    if channel == 0:
+        titleString += "Right Ear"
+    else: 
+        titleString += "Left Ear"
+    titleString += ")"
+    fig.suptitle(titleString, fontsize=16, fontweight='bold')
+    fig.colorbar(scatter, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
+    plt.savefig(f'sub_{subject}_chan_{channel}_audio_spheres.pdf', bbox_inches='tight', transparent=True)
+    plt.savefig(f'sub_{subject}_chan_{channel}_audio_spheres.png', bbox_inches='tight', transparent=True)
+    plt.close()
+
 
 sub3 = CipicDatabase.subjects[3]
-
-speechAudioSphere = []
-for i in range(1250):
-    if ((sub_3_chan_0_full_dataset['Speech Orient'] == i).any()):
-        filtered = sub_3_chan_0_full_dataset[sub_3_chan_0_full_dataset['Speech Orient'] == i]
-        theta, r = get_plot_theta_r(sub3, i)
-        speechAudioSphere.append({
-            'CipicIndex':str(i), 
-            'Final Validation Score SI-SNR (dB)':filtered['Final Validation Score SI-SNR (dB)'].mean(),
-            'PlotPolarThetaRadians':theta,
-            'PlotPolarR':r})
-speechAudioSphere = pd.DataFrame(speechAudioSphere)
-speechAudioSphere['CipicIndex'] = speechAudioSphere['CipicIndex'].astype(int)
-
-noiseAudioSphere = []
-for i in range(1250):
-    if ((sub_3_chan_0_full_dataset['Noise Orient'] == i).any()):
-        filtered = sub_3_chan_0_full_dataset[sub_3_chan_0_full_dataset['Noise Orient'] == i]
-        theta, r = get_plot_theta_r(sub3, i)
-        noiseAudioSphere.append({
-            'CipicIndex':str(i), 
-            'Final Validation Score SI-SNR (dB)':filtered['Final Validation Score SI-SNR (dB)'].mean(),
-            'PlotPolarThetaRadians':theta,
-            'PlotPolarR':r})
-noiseAudioSphere = pd.DataFrame(noiseAudioSphere)
+speechAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, True)
+noiseAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, False)
+plotAudioSpheres(all_data, 3, 0, 60000)
+sys.exit(0)
 
 fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(12, 6), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.2})
