@@ -274,7 +274,7 @@ axs.set_axisbelow(True)
 #                     cmap='hot', alpha=0.75, zorder=2)
 rticks = [0, 12.5, 25]
 rlabels = ['Right', 'Middle', 'Left']
-rlines, rlabels = axs[0].set_rgrids(rticks, rlabels, angle=-90)
+rlines, rlabels = axs.set_rgrids(rticks, rlabels, angle=-90)
 for i, label in enumerate(rlabels):
     label.set_horizontalalignment('center') 
     if i == 0:
@@ -338,7 +338,7 @@ mask = (T > t_min_hide) & (T <= t_max_hide)
 Z[mask] = np.nan
 CS = axs.contourf(T, R, Z, levels=5, cmap='hot')
 axs.set_rorigin(-10)
-fig.colorbar(scatter, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.8)
+fig.colorbar(CS, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.8)
 plt.savefig('sub_3_chan_0_speech_contour.png', bbox_inches='tight')
 plt.close()
 
