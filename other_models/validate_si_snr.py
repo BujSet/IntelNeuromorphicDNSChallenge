@@ -477,7 +477,10 @@ if __name__ == '__main__':
                 avgIterationLatency = 1.0 * sum(iterationLatencies)/ len(iterationLatencies)
                 if "cuda" in deviceString:
                     timeLeft = 1.0 * get_gpu_time_remaining(rawValue=True)
-                    if timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
+                    # Some CHTC GPUs error and allow for infinite runtime, here
+                    # we take advantage of this to allow our jobs to run longer, and 
+                    # uninterrupted
+                    if timeLeft > 0 and timeLeft / avgIterationLatency < args.epochsEarlyEndBuffer:
                         enoughTimeForMoreWork = False
                 if "cpu" in deviceString:
                     timeLeft = 1.0 * get_cpu_time_remaining(rawValue=True)
