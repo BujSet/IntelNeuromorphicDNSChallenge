@@ -13,7 +13,7 @@ from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 
 csv_files = glob.glob('*.csv')
-out_files = glob.glob('*.out')
+out_files = sorted(glob.glob('*.out'))
 
 
 def get_plot_theta_r(sub, index, r_offset=0):
@@ -69,8 +69,8 @@ for i, out_file in enumerate(out_files):
     all_data = pd.concat([all_data, out_data], ignore_index=True)
     duplicate_rows_boolean = all_data.duplicated()
     num_duplicates = duplicate_rows_boolean.sum()
-    if num_duplicates:
-        print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
+#    if num_duplicates:
+#        print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
 print(f"All data conatains {len(all_data)} rows, post merge")
 
 sub_3_chan_0_full_dataset = all_data[(all_data['Subject'] == 3) &
@@ -166,6 +166,26 @@ for sub in availableSubjects:
     if numChannels == 2:
         subjectsWithBothChannels.add(sub)
 print(subjectsWithBothChannels)
+inspectSub = 8
+sub_3_chan_0 = getPlotDataForAudioSphere(all_data, inspectSub, 0, 120, True)
+sub_3_chan_1 = getPlotDataForAudioSphere(all_data, inspectSub, 1, 120, True)
+print(sub_3_chan_0.head())
+print(len(sub_3_chan_0))
+has_nan_A = sub_3_chan_0['Final Validation Score SI-SNR (dB)'].isna().any()
+print(f"Does sub_{inspectSub}_chan_0 have any NaNs? {has_nan_A}")
+if has_nan_A:
+    rows_with_nan = sub_3_chan_0[sub_3_chan_0['Final Validation Score SI-SNR (dB)'].isna()]
+    with pd.option_context('display.max_rows', None):
+        print(rows_with_nan)
+
+print(sub_3_chan_1.head())
+print(len(sub_3_chan_1))
+has_nan_B = sub_3_chan_1['Final Validation Score SI-SNR (dB)'].isna().any()
+print(f"Does sub_{inspectSub}_chan_1 have any NaNs? {has_nan_B}")
+if has_nan_B:
+    rows_with_nan = sub_3_chan_1[sub_3_chan_1['Final Validation Score SI-SNR (dB)'].isna()]
+    with pd.option_context('display.max_rows', None):
+        print(rows_with_nan)
 
 def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
     subList = sorted(list(subjectSet))
@@ -212,9 +232,9 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             else:
                 label.set_verticalalignment('center') 
         ax.tick_params(axis='y', labelsize=10, rotation=0)
-        ax.tick_params(axis='x', labelsize=10, pad=11)
+        ax.tick_params(axis='x', labelsize=10, pad=9)
         custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
-        custom_labels = ['Front', 'Antero-\nSuperior', '\nUp', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
+        custom_labels = ['Front', 'Antero-\nSuperior', 'Up', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
 
         ax.set_xticks(custom_ticks_rad)
         ax.set_xticklabels(custom_labels)
@@ -227,34 +247,35 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             figsize=(20, 10), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.0}, layout="constrained")
     titles = [
-            f"a) Subject {subList[0]}\n(Left)",
-            f"b) Subject {subList[0]}\n(Right)",
-            f"c) Subject {subList[1]}\n(Left)",
-            f"d) Subject {subList[1]}\n(Right)",
-            f"f) Subject {subList[2]}\n(Left)",
-            f"g) Subject {subList[2]}\n(Rightt)",
-            f"h) Subject {subList[3]}\n(Left)",
-            f"i) Subject {subList[3]}\n(Right)",
-            f"j) Subject {subList[4]}\n(Left)",
-            f"k) Subject {subList[4]}\n(Right)",
-            f"l) Subject {subList[5]}\n(Left)",
-            f"m) Subject {subList[5]}\n(Right)",
-            f"n) Subject {subList[6]}\n(Left)",
-            f"o) Subject {subList[6]}\n(Right)",
-            f"p) Subject {subList[7]}\n(Left)",
-            f"q) Subject {subList[7]}\n(Right)",
-            f"r) Subject {subList[8]}\n(Left)",
-            f"s) Subject {subList[8]}\n(Right)", 
-            f"t) Subject {subList[9]}\n(Left)",
-            f"u) Subject {subList[9]}\n(Right)",
-            f"v) Subject {subList[10]}\n(Left)",
-            f"w) Subject {subList[10]}\n(Right)",
-            f"x) Subject {subList[11]}\n(Left)",
-            f"y) Subject {subList[11]}\n(Right)"]
+            f"a) Subject {subList[0]} (Left Ear)",
+            f"b) Subject {subList[0]} (Right Ear)",
+            f"c) Subject {subList[1]} (Left Ear)",
+            f"d) Subject {subList[1]} (Right Ear)",
+            f"f) Subject {subList[2]} (Left Ear)",
+            f"g) Subject {subList[2]} (Right Ear)",
+            f"h) Subject {subList[3]} (Left Ear)",
+            f"i) Subject {subList[3]} (Right Ear)",
+            f"j) Subject {subList[4]} (Left Ear)",
+            f"k) Subject {subList[4]} (Right Ear)",
+            f"l) Subject {subList[5]} (Left Ear)",
+            f"m) Subject {subList[5]} (Right Ear)",
+            f"n) Subject {subList[6]} (Left Ear)",
+            f"o) Subject {subList[6]} (Right Ear)",
+            f"p) Subject {subList[7]} (Left Ear)",
+            f"q) Subject {subList[7]} (Right Ear)",
+            f"r) Subject {subList[8]} (Left Ear)",
+            f"s) Subject {subList[8]} (Right Ear)", 
+            f"t) Subject {subList[9]} (Left Ear)",
+            f"u) Subject {subList[9]} (Right Ear)",
+            f"v) Subject {subList[10]} (Left Ear)",
+            f"w) Subject {subList[10]} (Right Ear)",
+            f"x) Subject {subList[11]} (Left Ear)",
+            f"y) Subject {subList[11]} (Right Ear)"]
     for r in range(numRows):
         for c in range(numCols):
             idx = (r*numCols)+c
-            subIdx = idx - (idx%2)
+            subIdx = (idx//2)
+            print(f"Plotting axs[{r},{c}], subList[{subIdx}]={subList[subIdx]}, channel={(idx+1)%2}, titles[{idx}]={titles[idx]}")
             cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx])
     fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
     plt.savefig(f'contours.png', bbox_inches='tight')
