@@ -187,61 +187,63 @@ if has_nan_B:
     with pd.option_context('display.max_rows', None):
         print(rows_with_nan)
 
+def plotContourOnAxis(ax, subject, channel, axTitle):
+    global all_data
+    num_points = 500
+    speech = getPlotDataForAudioSphere(all_data, subject, channel, 120, True)
+    ax.set_axisbelow(True)
+
+    grid_r = np.linspace(speech['PlotPolarR'].min(), speech['PlotPolarR'].max(), num_points)
+    grid_t = np.linspace(0, 360, num_points) * np.pi / 180
+    R, T = np.meshgrid(grid_r, grid_t)
+    points = speech[['PlotPolarR', 'PlotPolarThetaRadians']].values
+    values = speech['Final Validation Score SI-SNR (dB)'].values
+    low_theta = points[points[:, 1] < 0.1].copy()
+    low_theta[:, 1] += 2 * np.pi
+
+    high_theta = points[points[:, 1] > (2 * np.pi - 0.1)].copy()
+    high_theta[:, 1] -= 2 * np.pi
+
+    # Combine original data with the "wrapped" phantom points
+    points_wrapped = np.vstack([points, low_theta, high_theta])
+    values_wrapped = np.concatenate([values, values[points[:, 1] < 0.1], values[points[:, 1] > (2 * np.pi - 0.1)]])
+
+    Z = griddata(points_wrapped, values_wrapped, (R,T), method='cubic')
+    t_min_hide = 225 * np.pi / 180
+    t_max_hide = 315 * np.pi / 180
+    mask = (T > t_min_hide) & (T <= t_max_hide)
+
+    # Set the Z values in that slice to NaN
+    Z[mask] = np.nan
+    CS = ax.contourf(T, R, Z, levels=5, cmap='hot')
+    rticks = [0, 12.5, 25]
+    rlabels = ['Right', 'Middle', 'Left']
+    rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
+    for i, label in enumerate(rlabels):
+        label.set_horizontalalignment('center') 
+        if i == 0:
+            label.set_verticalalignment('top') 
+        elif i == 2:
+            label.set_verticalalignment('bottom') 
+        else:
+            label.set_verticalalignment('center') 
+    ax.tick_params(axis='y', labelsize=10, rotation=0)
+    ax.tick_params(axis='x', labelsize=10, pad=9)
+    custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
+    custom_labels = ['Front', 'Antero-\nSuperior', 'Up', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
+
+    ax.set_xticks(custom_ticks_rad)
+    ax.set_xticklabels(custom_labels)
+    ax.set_title(axTitle, fontweight="bold")
+    ax.grid(True)
+    ax.set_rorigin(-10)
+    return CS
+
 def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
     subList = sorted(list(subjectSet))
     if len(subList) > (numRows*numCols):
         subLst = subList[0:numRows*numCols]
     print(len(subList))
-    def plotContourOnAxis(ax, subject, channel, axTitle):
-        num_points = 500
-        speech = getPlotDataForAudioSphere(df, subject, channel, 120, True)
-        ax.set_axisbelow(True)
-
-        grid_r = np.linspace(speech['PlotPolarR'].min(), speech['PlotPolarR'].max(), num_points)
-        grid_t = np.linspace(0, 360, num_points) * np.pi / 180
-        R, T = np.meshgrid(grid_r, grid_t)
-        points = speech[['PlotPolarR', 'PlotPolarThetaRadians']].values
-        values = speech['Final Validation Score SI-SNR (dB)'].values
-        low_theta = points[points[:, 1] < 0.1].copy()
-        low_theta[:, 1] += 2 * np.pi
-
-        high_theta = points[points[:, 1] > (2 * np.pi - 0.1)].copy()
-        high_theta[:, 1] -= 2 * np.pi
-
-        # Combine original data with the "wrapped" phantom points
-        points_wrapped = np.vstack([points, low_theta, high_theta])
-        values_wrapped = np.concatenate([values, values[points[:, 1] < 0.1], values[points[:, 1] > (2 * np.pi - 0.1)]])
-
-        Z = griddata(points_wrapped, values_wrapped, (R,T), method='cubic')
-        t_min_hide = 225 * np.pi / 180
-        t_max_hide = 315 * np.pi / 180
-        mask = (T > t_min_hide) & (T <= t_max_hide)
-
-        # Set the Z values in that slice to NaN
-        Z[mask] = np.nan
-        CS = ax.contourf(T, R, Z, levels=5, cmap='hot')
-        rticks = [0, 12.5, 25]
-        rlabels = ['Right', 'Middle', 'Left']
-        rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
-        for i, label in enumerate(rlabels):
-            label.set_horizontalalignment('center') 
-            if i == 0:
-                label.set_verticalalignment('top') 
-            elif i == 2:
-                label.set_verticalalignment('bottom') 
-            else:
-                label.set_verticalalignment('center') 
-        ax.tick_params(axis='y', labelsize=10, rotation=0)
-        ax.tick_params(axis='x', labelsize=10, pad=9)
-        custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
-        custom_labels = ['Front', 'Antero-\nSuperior', 'Up', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
-
-        ax.set_xticks(custom_ticks_rad)
-        ax.set_xticklabels(custom_labels)
-        ax.set_title(axTitle, fontweight="bold")
-        ax.grid(True)
-        ax.set_rorigin(-10)
-        return CS
 
     fig, axs = plt.subplots(nrows=numRows, ncols=numCols, 
             figsize=(20, 10), subplot_kw={'projection': 'polar'},
@@ -284,89 +286,27 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
 
 plotMonauralContourMaps(all_data, subjectsWithBothChannels, numRows=2, numCols=4)
 
-fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(12, 12), subplot_kw={'projection': 'polar'},
-                               gridspec_kw={'wspace': -0.0})
-axs.set_axisbelow(True)
-rticks = [0, 12.5, 25]
-rlabels = ['Right', 'Middle', 'Left']
-rlines, rlabels = axs.set_rgrids(rticks, rlabels, angle=-90)
-for i, label in enumerate(rlabels):
-    label.set_horizontalalignment('center') 
-    if i == 0:
-        label.set_verticalalignment('top') 
-    elif i == 2:
-        label.set_verticalalignment('bottom') 
+def plotSingletonContourMap(subject, channel):
+    fig, axs = plt.subplots(nrows=1, 
+        ncols=1, 
+        figsize=(12, 12),
+        subplot_kw={'projection': 'polar'})
+    titleString = f"Subject {subject} "
+    if (channel == 0):
+        titleString += "(Right Ear)"
     else:
-        label.set_verticalalignment('center') 
+        titleString += "(Left Ear)"
 
+    cf = plotContourOnAxis(axs, subject, channel, titleString)
+    fig.colorbar(cf, ax=axs,
+            label='Validation Score SI-SNR (dB)',
+            orientation='horizontal',
+            shrink=0.8, pad=0.01)
+    plt.savefig(f'sub_{subject}_chan_{channel}_speech_contour.png', bbox_inches='tight')
+    plt.close()
 
-axs.tick_params(axis='y', labelsize=10, rotation=0)
-axs.tick_params(axis='x', labelsize=10, pad=11)
-custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
-custom_labels = ['Front', 'Antero-\nSuperior', 'Up', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
-
-axs.set_xticks(custom_ticks_rad)
-axs.set_xticklabels(custom_labels)
-axs.set_title('Subject 3 (Left)')
-axs.grid(True)
-
-axs.set_rorigin(-10)
-
-num_points = 500
-grid_r = np.linspace(speechAudioSphere['PlotPolarR'].min(), speechAudioSphere['PlotPolarR'].max(), num_points)
-grid_t = np.linspace(0, 360, num_points) * np.pi / 180
-R, T = np.meshgrid(grid_r, grid_t)
-points = speechAudioSphere[['PlotPolarR', 'PlotPolarThetaRadians']].values
-values = speechAudioSphere['Final Validation Score SI-SNR (dB)'].values
-low_theta = points[points[:, 1] < 0.1].copy()
-low_theta[:, 1] += 2 * np.pi
-
-high_theta = points[points[:, 1] > (2 * np.pi - 0.1)].copy()
-high_theta[:, 1] -= 2 * np.pi
-
-# Combine original data with the "wrapped" phantom points
-points_wrapped = np.vstack([points, low_theta, high_theta])
-values_wrapped = np.concatenate([values, values[points[:, 1] < 0.1], values[points[:, 1] > (2 * np.pi - 0.1)]])
-
-Z = griddata(points_wrapped, values_wrapped, (R,T), method='cubic')
-t_min_hide = 225 * np.pi / 180
-t_max_hide = 315 * np.pi / 180
-mask = (T > t_min_hide) & (T <= t_max_hide)
-
-# Set the Z values in that slice to NaN
-Z[mask] = np.nan
-CS = axs.contourf(T, R, Z, levels=5, cmap='hot')
-axs.set_rorigin(-10)
-fig.colorbar(CS, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.8)
-plt.savefig('sub_3_chan_0_speech_contour.png', bbox_inches='tight')
-plt.close()
-
-sys.exit(0)
-
-def get_dist_from_max(row, sub, maxIdx):
-    destIdx = row['CipicIndex']
-    return sub.chordDistBetweenIndices(maxIdx, int(destIdx))
-
-maxSpeechIdx = speechAudioSphere['Final Validation Score SI-SNR (dB)'].idxmax()
-maxRow = speechAudioSphere.loc[maxSpeechIdx]
-speechAudioSphere['DistFromMax'] = speechAudioSphere.apply(
-        get_dist_from_max,
-        axis=1,
-        args=(sub3, int(maxRow['CipicIndex']))
-        )
-fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(8, 6))
-axs.scatter(x=speechAudioSphere['DistFromMax'], y=speechAudioSphere['Final Validation Score SI-SNR (dB)'], zorder=3, s=2)
-
-# Optional: Add customizations
-axs.set_title('Scatter Plot using Matplotlib')
-axs.set_xlabel('X-axis Label')
-axs.set_ylabel('Y-axis Label')
-axs.grid(True)
-axs.set_axisbelow(True)
-
-# Display the plot
-plt.savefig("sub_3_chan_0_speech_sorted.pdf", bbox_inches='tight')
-plt.close()
+plotSingletonContourMap(3, 0)
+plotSingletonContourMap(3, 1)
 
 def get_cart_pos(row, sub, cart_axis):
     cipicIndex = int(row['CipicIndex'])
@@ -410,7 +350,6 @@ ax.set_zticks([-1.0, 0.0, 1.0])
 ax.set_zticklabels(["Below", "Eye\nLevel", "Above"])
 ax.set_title("Speech Audio Sphere\n(Subject 3, Right Ear)")
 fig.colorbar(scatter, ax=ax, pad=0.1, label='Final Validation Score SI-SNR (dB)')
-#fig.tight_layout(pad=0)
 def update(frame):
     # Rotate the view (azim parameter controls the horizontal rotation)
     ax.view_init(elev=20., azim=frame)
@@ -433,6 +372,7 @@ except Exception as e:
     print("Make sure you have Pillow installed (pip install Pillow).")
 plt.close()
 
+sys.exit(0)
 # DBSCAN stuff
 selected_columns = speechAudioSphere[['PlotCartX', 'PlotCartY', 'PlotCartZ', 'Final Validation Score SI-SNR (dB)']]
 print(selected_columns.head())
