@@ -64,6 +64,7 @@ def read_out_file(out_file):
 all_data = read_collated_results_csv()
 print(f"All data conatains {len(all_data)} rows, pre merge")
 for i, out_file in enumerate(out_files):
+    print(out_file)
     out_data = read_out_file(out_file)
     all_data = pd.concat([all_data, out_data], ignore_index=True)
     duplicate_rows_boolean = all_data.duplicated()
@@ -173,9 +174,7 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
     print(len(subList))
     def plotContourOnAxis(ax, subject, channel, axTitle):
         num_points = 500
-        # TODO when we have more data on the subset data, samples=120, replace
-        # 60000 with 120
-        speech = getPlotDataForAudioSphere(df, subject, channel, 60000, True)
+        speech = getPlotDataForAudioSphere(df, subject, channel, 120, True)
         ax.set_axisbelow(True)
 
         grid_r = np.linspace(speech['PlotPolarR'].min(), speech['PlotPolarR'].max(), num_points)
@@ -219,7 +218,7 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
 
         ax.set_xticks(custom_ticks_rad)
         ax.set_xticklabels(custom_labels)
-        ax.set_title(axTitle)
+        ax.set_title(axTitle, fontweight="bold")
         ax.grid(True)
         ax.set_rorigin(-10)
         return CS
@@ -228,36 +227,35 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             figsize=(20, 10), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.0}, layout="constrained")
     titles = [
-            "a) Subject 3\n(Left)",
-            "b) Subject 3\n(Right)",
-            "c) Subject 3\n(Left)",
-            "d) Subject 3\n(Right)",
-            "f) Subject 3\n(Left)",
-            "g) Subject 3\n(Rightt)",
-            "h) Subject 3\n(Left)",
-            "i) Subject 3\n(Right)",
-            "j) Subject 3\n(Left)",
-            "k) Subject 3\n(Right)",
-            "l) Subject 3\n(Left)",
-            "m) Subject 3\n(Right)",
-            "n) Subject 3\n(Left)",
-            "o) Subject 3\n(Right)",
-            "p) Subject 3\n(Left)",
-            "q) Subject 3\n(Right)",
-            "r) Subject 3\n(Left)",
-            "s) Subject 3\n(Right)", 
-            "t) Subject 3\n(Left)",
-            "u) Subject 3\n(Right)",
-            "v) Subject 3\n(Left)",
-            "w) Subject 3\n(Right)",
-            "x) Subject 3\n(Left)",
-            "y) Subject 3\n(Right)"]
+            f"a) Subject {subList[0]}\n(Left)",
+            f"b) Subject {subList[0]}\n(Right)",
+            f"c) Subject {subList[1]}\n(Left)",
+            f"d) Subject {subList[1]}\n(Right)",
+            f"f) Subject {subList[2]}\n(Left)",
+            f"g) Subject {subList[2]}\n(Rightt)",
+            f"h) Subject {subList[3]}\n(Left)",
+            f"i) Subject {subList[3]}\n(Right)",
+            f"j) Subject {subList[4]}\n(Left)",
+            f"k) Subject {subList[4]}\n(Right)",
+            f"l) Subject {subList[5]}\n(Left)",
+            f"m) Subject {subList[5]}\n(Right)",
+            f"n) Subject {subList[6]}\n(Left)",
+            f"o) Subject {subList[6]}\n(Right)",
+            f"p) Subject {subList[7]}\n(Left)",
+            f"q) Subject {subList[7]}\n(Right)",
+            f"r) Subject {subList[8]}\n(Left)",
+            f"s) Subject {subList[8]}\n(Right)", 
+            f"t) Subject {subList[9]}\n(Left)",
+            f"u) Subject {subList[9]}\n(Right)",
+            f"v) Subject {subList[10]}\n(Left)",
+            f"w) Subject {subList[10]}\n(Right)",
+            f"x) Subject {subList[11]}\n(Left)",
+            f"y) Subject {subList[11]}\n(Right)"]
     for r in range(numRows):
         for c in range(numCols):
             idx = (r*numCols)+c
-            cf = plotContourOnAxis(axs[r,c], subList[idx], (idx+1)%2, titles[idx])
-    # TODO need to collect more data, will remove line below once I do
-    cf = plotContourOnAxis(axs[0,1], 3, 0, "b) Subject 3\n(Right)")
+            subIdx = idx - (idx%2)
+            cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx])
     fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
     plt.savefig(f'contours.png', bbox_inches='tight')
     plt.close()
@@ -268,10 +266,6 @@ plotMonauralContourMaps(all_data, subjectsWithBothChannels, numRows=2, numCols=4
 fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(12, 12), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.0})
 axs.set_axisbelow(True)
-#scatter = axs[0].scatter(speechAudioSphere['PlotPolarThetaRadians'],
-#                     speechAudioSphere['PlotPolarR'], 
-#                     c=speechAudioSphere['Final Validation Score SI-SNR (dB)'],
-#                     cmap='hot', alpha=0.75, zorder=2)
 rticks = [0, 12.5, 25]
 rlabels = ['Right', 'Middle', 'Left']
 rlines, rlabels = axs.set_rgrids(rticks, rlabels, angle=-90)
@@ -295,23 +289,7 @@ axs.set_xticklabels(custom_labels)
 axs.set_title('Subject 3 (Left)')
 axs.grid(True)
 
-
-#axs[1].set_axisbelow(True)
-#scatter = axs[1].scatter(noiseAudioSphere['PlotPolarThetaRadians'],
-#                     noiseAudioSphere['PlotPolarR'], 
-#                     c=noiseAudioSphere['Final Validation Score SI-SNR (dB)'],
-#                     cmap='hot', alpha=0.75, zorder=2)
 axs.set_rorigin(-10)
-#rticks = [0, 12.5, 25]
-#rlabels = ['Right', 'Middle', 'Left']
-#axs[1].set_rgrids(rticks, rlabels, angle=-91)
-#
-#custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
-#custom_labels = ['Front', '', 'Up', '', 'Back', '', '', ''] # Note: 360/0 overlap
-#axs[1].set_xticks(custom_ticks_rad)
-#axs[1].set_xticklabels(custom_labels)
-#axs[1].set_title('b) Noise Audio Sphere')
-#axs[1].grid(True)
 
 num_points = 500
 grid_r = np.linspace(speechAudioSphere['PlotPolarR'].min(), speechAudioSphere['PlotPolarR'].max(), num_points)
