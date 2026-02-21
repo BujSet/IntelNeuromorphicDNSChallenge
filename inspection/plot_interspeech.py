@@ -280,7 +280,7 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             print(f"Plotting axs[{r},{c}], subList[{subIdx}]={subList[subIdx]}, channel={(idx+1)%2}, titles[{idx}]={titles[idx]}")
             cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx])
     fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
-    plt.savefig(f'contours.png', bbox_inches='tight')
+    plt.savefig(f'contours.png', bbox_inches='tight', transparent=True)
     plt.close()
 
 
@@ -302,7 +302,7 @@ def plotSingletonContourMap(subject, channel):
             label='Validation Score SI-SNR (dB)',
             orientation='horizontal',
             shrink=0.8, pad=0.01)
-    plt.savefig(f'sub_{subject}_chan_{channel}_speech_contour.png', bbox_inches='tight')
+    plt.savefig(f'sub_{subject}_chan_{channel}_speech_contour.png', bbox_inches='tight', transparent=True)
     plt.close()
 
 plotSingletonContourMap(3, 0)
@@ -372,16 +372,21 @@ except Exception as e:
     print("Make sure you have Pillow installed (pip install Pillow).")
 plt.close()
 
-sys.exit(0)
-# DBSCAN stuff
-selected_columns = speechAudioSphere[['PlotCartX', 'PlotCartY', 'PlotCartZ', 'Final Validation Score SI-SNR (dB)']]
-print(selected_columns.head())
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(selected_columns)
-db = DBSCAN(eps=0.38, min_samples=12).fit(X_scaled)
+###############################
+# Clustering data with DBSCAN #
+###############################
 
-selected_columns['DBSCANCluster'] = db.labels_
+def cluster_data(df, dbscanEPS=0.38, dbscan_min_samples=12):
+    selected_columns = df[['PlotCartX', 'PlotCartY', 'PlotCartZ', 'Final Validation Score SI-SNR (dB)']]
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(selected_columns)
+    db = DBSCAN(eps=dbscanEPS, min_samples=dbscan_min_samples).fit(X_scaled)
+    selected_columns['DBSCANCluster'] = db.labels_
+    return selected_columns
 
+
+
+selected_columns = cluster_data(speechAudioSphere, dbscanEPS=0.38, dbscan_min_samples=12)
 print(selected_columns.head())
 print(selected_columns['DBSCANCluster'].unique())
 def dist_from_max_cart(row, sub, maxX, maxY, maxZ):
@@ -428,8 +433,6 @@ def angle_proj_plane(row, maxX, maxY, maxZ, planeIdxs):
     angle_deg = (angle_deg + 180) % 360 - 180
     return angle_deg
 
-maxSpeechIdx = selected_columns['Final Validation Score SI-SNR (dB)'].idxmax()
-maxRow = selected_columns.loc[maxSpeechIdx]
 selected_columns['XYProjAngleDegrees'] = selected_columns.apply(
         angle_proj_plane,
         axis=1,
@@ -458,15 +461,13 @@ selected_columns['YZProjAngleDegrees'] = selected_columns.apply(
             [1,2])
         )
 print(selected_columns.head())
-def plot_dbscan_results(df):
-    fig, axs = plt.subplots(1, 4, figsize=(30, 8))
-
-    # 1. Separate noise and clusters
+def plot_dbscan_singleton(df):
+    fig, axs = plt.subplots(1, 1, figsize=(6, 8))
     noise = df[df['DBSCANCluster'] == -1]
     clusters = df[df['DBSCANCluster'] != -1]
 
     # 2. Plot valid clusters (colored by label)
-    scatter = axs[0].scatter(
+    scatter = axs.scatter(
         clusters['DistFromMax'],
         clusters['Final Validation Score SI-SNR (dB)'],
         c=clusters['DBSCANCluster'],
@@ -477,107 +478,74 @@ def plot_dbscan_results(df):
     )
 
     # 3. Plot noise as black points
-    axs[0].scatter(
+    axs.scatter(
         noise['DistFromMax'],
         noise['Final Validation Score SI-SNR (dB)'],
         c='black',
         marker='x',
-        label='Noise (-1)',
+        label='Noise',
         alpha=0.5,
         s=20 # Smaller size for noise
     )
 
     # Formatting
-    axs[0].set_title('DBSCAN Clustering')
-    axs[0].set_xlabel('Angular Distance from Maximum (degree)')
-    axs[0].set_ylabel('Validation Score SI-SNR (dB)')
+    axs.set_title('DBSCAN Clustering')
+    axs.set_xlabel('Angular Distance from Optimal (°)')
+    axs.set_ylabel('Validation Score SI-SNR (dB)')
+    fig.colorbar(scatter, ax=axs, pad=0.1, label='ClusterId', orientation='horizontal', fraction=0.15, aspect=80)
+    axs.legend()
+    axs.grid(True, linestyle='--', alpha=0.5)
 
-    scatter = axs[1].scatter(
-        clusters['XYProjAngleDegrees'],
-        clusters['Final Validation Score SI-SNR (dB)'],
-        c=clusters['DBSCANCluster'],
-        cmap='turbo',
-        label='Clusters',
-        alpha=0.6,
-        edgecolors='none'
-    )
+    plt.savefig("dbscan_singleton.pdf", bbox_inches="tight")
+    plt.savefig("dbscan_singleton.png", bbox_inches="tight")
+    plt.close()
 
-    # 3. Plot noise as black points
-    axs[1].scatter(
-        noise['XYProjAngleDegrees'],
-        noise['Final Validation Score SI-SNR (dB)'],
-        c='black',
-        marker='x',
-        label='Noise (-1)',
-        alpha=0.5,
-        s=20 # Smaller size for noise
-    )
+plot_dbscan_singleton(selected_columns)
 
-    # Formatting
-    axs[1].set_title('DBSCAN Clustering XY Projection')
-    axs[1].set_xlabel('XY Planar Angular Distance from Maximum (degree)')
-    axs[1].set_ylabel('Validation Score SI-SNR (dB)')
-    scatter = axs[2].scatter(
-        clusters['XZProjAngleDegrees'],
-        clusters['Final Validation Score SI-SNR (dB)'],
-        c=clusters['DBSCANCluster'],
-        cmap='turbo',
-        label='Clusters',
-        alpha=0.6,
-        edgecolors='none'
-    )
+def plot_dbscan_results(df):
+    fig, axs = plt.subplots(1, 3, figsize=(20, 8))
 
-    # 3. Plot noise as black points
-    axs[2].scatter(
-        noise['XZProjAngleDegrees'],
-        noise['Final Validation Score SI-SNR (dB)'],
-        c='black',
-        marker='x',
-        label='Noise (-1)',
-        alpha=0.5,
-        s=20 # Smaller size for noise
-    )
+    # 1. Separate noise and clusters
+    noise = df[df['DBSCANCluster'] == -1]
+    clusters = df[df['DBSCANCluster'] != -1]
+    def plotDBSCANOnAxis(ax, projection, axTitle, invertAxis):
+        scatter = ax.scatter(
+            clusters[projection] * invertAxis,
+            clusters['Final Validation Score SI-SNR (dB)'],
+            c=clusters['DBSCANCluster'],
+            cmap='turbo',
+            label='Clusters',
+            alpha=0.6,
+            edgecolors='none'
+        )
 
-    # Formatting
-    axs[2].set_title('DBSCAN Clustering XZ Projection')
-    axs[2].set_xlabel('XZ Planar Angular Distance from Maximum (degree)')
-    axs[2].set_ylabel('Validation Score SI-SNR (dB)')
-    scatter = axs[3].scatter(
-        clusters['YZProjAngleDegrees'],
-        clusters['Final Validation Score SI-SNR (dB)'],
-        c=clusters['DBSCANCluster'],
-        cmap='turbo',
-        label='Clusters',
-        alpha=0.6,
-        edgecolors='none'
-    )
+        ax.scatter(
+            noise[projection] * invertAxis,
+            noise['Final Validation Score SI-SNR (dB)'],
+            c='black',
+            marker='x',
+            label='Noise',
+            alpha=0.5,
+            s=20 # Smaller size for noise
+        )
 
-    # 3. Plot noise as black points
-    axs[3].scatter(
-        noise['YZProjAngleDegrees'],
-        noise['Final Validation Score SI-SNR (dB)'],
-        c='black',
-        marker='x',
-        label='Noise (-1)',
-        alpha=0.5,
-        s=20 # Smaller size for noise
-    )
+        # Formatting
+        ax.set_title(axTitle, fontweight='bold')
+        ax.set_xlabel('Planar Angular Distance from Optimal (°)')
+        ax.set_ylabel('Validation Score SI-SNR (dB)')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.5)
+        return scatter
 
-    # Formatting
-    axs[3].set_title('DBSCAN Clustering YZ Projection')
-    axs[3].set_xlabel('YZ Planar Angular Distance from Maximum (degree)')
-    axs[3].set_ylabel('Validation Score SI-SNR (dB)')
+    scatter = plotDBSCANOnAxis(axs[0], 'XYProjAngleDegrees','a) Horizontal Plane Projection', 1.0)
+    scatter = plotDBSCANOnAxis(axs[1], 'XZProjAngleDegrees','b) Sagittal Plane Projection', 1.0)
+    scatter = plotDBSCANOnAxis(axs[2], 'YZProjAngleDegrees','c) Coronal Plane Projection', -1.0)
 
     # Add a colorbar for the clusters and a legend
     fig.colorbar(scatter, ax=axs, pad=0.1, label='ClusterId', orientation='horizontal', fraction=0.15, aspect=80)
-    axs[0].legend()
-    axs[0].grid(True, linestyle='--', alpha=0.5)
 
     plt.savefig("dbscan.pdf", bbox_inches="tight")
+    plt.savefig("dbscan.png", bbox_inches="tight")
     plt.close()
 
-# Run the plot
 plot_dbscan_results(selected_columns)
-print("Min XY: " + str(selected_columns['XYProjAngleDegrees'].min()))
-print("Min XZ: " + str(selected_columns['XZProjAngleDegrees'].min()))
-print("Min YZ: " + str(selected_columns['YZProjAngleDegrees'].min()))
