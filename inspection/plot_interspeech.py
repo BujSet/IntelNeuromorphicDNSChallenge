@@ -11,6 +11,10 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
+from matplotlib.cm import ScalarMappable
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+from matplotlib.colors import ListedColormap
 
 csv_files = glob.glob('*.csv')
 out_files = sorted(glob.glob('*.out'))
@@ -410,6 +414,7 @@ def dist_from_max_cart(row, sub, maxX, maxY, maxZ):
 
 maxSpeechIdx = selected_columns['Final Validation Score SI-SNR (dB)'].idxmax()
 maxRow = selected_columns.loc[maxSpeechIdx]
+print(maxRow)
 selected_columns['DistFromMax'] = selected_columns.apply(
         dist_from_max_cart,
         axis=1,
@@ -460,18 +465,37 @@ selected_columns['YZProjAngleDegrees'] = selected_columns.apply(
             float(maxRow['PlotCartZ']), 
             [1,2])
         )
+maxSpeechIdx = selected_columns['Final Validation Score SI-SNR (dB)'].idxmax()
+maxRow = selected_columns.loc[maxSpeechIdx]
+print(maxRow)
 print(selected_columns.head())
+XYpos = selected_columns[selected_columns['XYProjAngleDegrees'] > 0.0]
+XYneg = selected_columns[selected_columns['XYProjAngleDegrees'] < 0.0]
+XZpos = selected_columns[selected_columns['XZProjAngleDegrees'] > 0.0]
+XZneg = selected_columns[selected_columns['XZProjAngleDegrees'] < 0.0]
+YZpos = selected_columns[selected_columns['YZProjAngleDegrees'] > 0.0]
+YZneg = selected_columns[selected_columns['YZProjAngleDegrees'] < 0.0]
+print(f"Num points + to XY proj={len(XYpos)}, mean SI-SNR={XYpos['Final Validation Score SI-SNR (dB)'].mean()}, clusters={sorted(XYpos['DBSCANCluster'].unique())}")
+print(f"Num points - to XY proj={len(XYneg)}, mean SI-SNR={XYneg['Final Validation Score SI-SNR (dB)'].mean()}, clusters={sorted(XYneg['DBSCANCluster'].unique())}")
+print(f"Num points + to XZ proj={len(XZpos)}, mean SI-SNR={XZpos['Final Validation Score SI-SNR (dB)'].mean()}, clusters={sorted(XZpos['DBSCANCluster'].unique())}")
+print(f"Num points - to XZ proj={len(XZneg)}, mean SI-SNR={XZneg['Final Validation Score SI-SNR (dB)'].mean()}, clusters={sorted(XZneg['DBSCANCluster'].unique())}")
+print(f"Num points + to YZ proj={len(YZpos)}, mean SI-SNR={YZpos['Final Validation Score SI-SNR (dB)'].mean()}, clusters={sorted(YZpos['DBSCANCluster'].unique())}")
+print(f"Num points - to YZ proj={len(YZneg)}, mean SI-SNR={YZneg['Final Validation Score SI-SNR (dB)'].mean()}, clusters={sorted(YZneg['DBSCANCluster'].unique())}")
 def plot_dbscan_singleton(df):
     fig, axs = plt.subplots(1, 1, figsize=(6, 8))
     noise = df[df['DBSCANCluster'] == -1]
     clusters = df[df['DBSCANCluster'] != -1]
 
+    base_cmap = cm.get_cmap('tab20')
+    # Get 11 colors equally spaced from the 20
+    subset_colors = base_cmap(np.linspace(0, 0.55, len(clusters['DBSCANCluster'].unique()) - 1)) 
+    custom_cmap = ListedColormap(subset_colors)
     # 2. Plot valid clusters (colored by label)
     scatter = axs.scatter(
         clusters['DistFromMax'],
         clusters['Final Validation Score SI-SNR (dB)'],
         c=clusters['DBSCANCluster'],
-        cmap='turbo',
+        cmap=custom_cmap,
         label='Clusters',
         alpha=0.6,
         edgecolors='none'
@@ -508,12 +532,16 @@ def plot_dbscan_results(df):
     # 1. Separate noise and clusters
     noise = df[df['DBSCANCluster'] == -1]
     clusters = df[df['DBSCANCluster'] != -1]
+    base_cmap = cm.get_cmap('tab20')
+    # Get 11 colors equally spaced from the 20
+    subset_colors = base_cmap(np.linspace(0, 0.55, len(clusters['DBSCANCluster'].unique()) - 1)) 
+    custom_cmap = ListedColormap(subset_colors)
     def plotDBSCANOnAxis(ax, projection, axTitle, invertAxis):
         scatter = ax.scatter(
             clusters[projection] * invertAxis,
             clusters['Final Validation Score SI-SNR (dB)'],
             c=clusters['DBSCANCluster'],
-            cmap='turbo',
+            cmap=custom_cmap,
             label='Clusters',
             alpha=0.6,
             edgecolors='none'
