@@ -191,6 +191,37 @@ if has_nan_B:
     with pd.option_context('display.max_rows', None):
         print(rows_with_nan)
 
+def getZMinMax(subject, channel):
+    global all_data
+    num_points = 500
+    speech = getPlotDataForAudioSphere(all_data, subject, channel, 120, True)
+
+    grid_r = np.linspace(speech['PlotPolarR'].min(), speech['PlotPolarR'].max(), num_points)
+    grid_t = np.linspace(0, 360, num_points) * np.pi / 180
+    R, T = np.meshgrid(grid_r, grid_t)
+    points = speech[['PlotPolarR', 'PlotPolarThetaRadians']].values
+    values = speech['Final Validation Score SI-SNR (dB)'].values
+    low_theta = points[points[:, 1] < 0.1].copy()
+    low_theta[:, 1] += 2 * np.pi
+
+    high_theta = points[points[:, 1] > (2 * np.pi - 0.1)].copy()
+    high_theta[:, 1] -= 2 * np.pi
+
+    # Combine original data with the "wrapped" phantom points
+    points_wrapped = np.vstack([points, low_theta, high_theta])
+    values_wrapped = np.concatenate([values, values[points[:, 1] < 0.1], values[points[:, 1] > (2 * np.pi - 0.1)]])
+
+    Z = griddata(points_wrapped, values_wrapped, (R,T), method='cubic')
+    t_min_hide = 225 * np.pi / 180
+    t_max_hide = 315 * np.pi / 180
+    mask = (T > t_min_hide) & (T <= t_max_hide)
+
+    # Set the Z values in that slice to NaN
+    Z[mask] = np.nan
+    Zmin = Z[(T <= t_min_hide) | (T > t_max_hide)].min()
+    Zmax = Z[(T <= t_min_hide) | (T > t_max_hide)].max()
+    return Zmin, Zmax
+
 def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_levels):
     global all_data
     num_points = 500
@@ -220,25 +251,9 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
     # Set the Z values in that slice to NaN
     Z[mask] = np.nan
 
-    #levels = np.linspace(Z.min(), Z.max(), num_levels + 1)
+    level_list = np.linspace(cmapMin, cmapMax, num_levels + 1)
+    CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot')
 
-    # --- 3. Create a discrete colormap from the 'hot' colormap ---
-    # Get the 'hot' colormap
-    #cmap_hot = plt.get_cmap('hot')
-    # Select 6 colors evenly spaced from the continuous colormap
-    #colors = [cmap_hot(i) for i in np.linspace(0, 1, num_levels)]
-    # Create the listed colormap
-    #cmap = mcolors.ListedColormap(colors)
-    #cmap = plt.get_cmap('hot', num_levels) #len(levels) - 1)
-
-    # --- 4. Create a BoundaryNorm normalization object ---
-    # This maps the data values to the colors based on the levels
-    #norm = mcolors.BoundaryNorm(levels, cmap.N)
-    #CS = ax.contourf(T, R, Z, levels=num_levels, cmap=cmap, norm=norm)
-    #print(f"Making contour subplot with levels={num_levels}, vmin={cmapMin}, vmax={cmapMax}")
-    #CS = ax.contourf(T, R, Z, levels=num_levels, cmap='hot') #, vmin=cmapMin, vmax=cmapMax)
-    level_list = np.linspace(Z[(T <= t_min_hide) | (T > t_max_hide)].min(), Z[(T <= t_min_hide) | (T > t_max_hide)].max(), num_levels + 1)
-    CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot') #, vmin=cmapMin, vmax=cmapMax)
     rticks = [0, 12.5, 24]
     rlabels = ['Right', 'Middle', 'Left']
     rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
@@ -304,10 +319,7 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             subIdx = (idx//2)
             subject = subList[subIdx]
             channelVal = (idx+1)%2
-            filtered = all_data[(all_data['Subject'] == subject) & (all_data['Channel'] == channelVal)]
-            fmin = filtered['Final Validation Score SI-SNR (dB)'].min()
-            fmax = filtered['Final Validation Score SI-SNR (dB)'].max()
-            print(f"axs[{r}, {c}] for subject={subject}, channel={channelVal}, fmin={fmin}, fmax={fmax}")
+            fmin,fmax = getZMinMax(subject, channelVal)
             if contoursMin == None or fmin < contoursMin:
                 contoursMin = fmin
             if contoursMax == None or fmax > contoursMax:
@@ -317,18 +329,15 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
         for c in range(numCols):
             idx = (r*numCols)+c
             subIdx = (idx//2)
-            print(f"Plotting axs[{r},{c}], subList[{subIdx}]={subList[subIdx]}, channel={(idx+1)%2}, titles[{idx}]={titles[idx]}")
             cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx], contoursMin, contoursMax, 6)
-    #sm = ScalarMappable(cmap='hot', norm=plt.Normalize(contoursMin, contoursMax))
-    #fig.colorbar(sm, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
-    fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50) #, vmin=contoursMin, vmax=contoursMax)
+    fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
     plt.savefig(f'contours.png', bbox_inches='tight', transparent=True)
     plt.close()
 
 
 plotMonauralContourMaps(all_data, subjectsWithBothChannels, numRows=2, numCols=4)
 
-def plotSingletonContourMap(subject, channel):
+def plotSingletonContourMap(subject, channel, num_levels=6):
     fig, axs = plt.subplots(nrows=1, 
         ncols=1, 
         figsize=(12, 12),
@@ -339,22 +348,9 @@ def plotSingletonContourMap(subject, channel):
     else:
         titleString += "(Left Ear)"
 
-    filtered = all_data[(all_data['Subject'] == subject) & (all_data['Channel'] == channel)]
-    fmin = filtered['Final Validation Score SI-SNR (dB)'].min()
-    fmax = filtered['Final Validation Score SI-SNR (dB)'].max()
-    num_levels = 6
-    #levels = np.linspace(fmin, fmax, num_levels+1)
-    #cmap_name = 'hot'
-    # Create a ListedColormap with the desired number of colors (N) from the base colormap
-    #cmap = plt.get_cmap(cmap_name, len(levels) - 1)
-    # Create a BoundaryNorm to map data values to discrete color indices
-    #norm = mcolors.BoundaryNorm(levels, cmap.N)
 
-    print(f"Plotting singleton for subject={subject}, channel={channel}, fmin={fmin}, fmax={fmax}")
-    #print(levels)
+    fmin,fmax = getZMinMax(subject, channel)
     cf = plotContourOnAxis(axs, subject, channel, titleString, fmin, fmax, num_levels) 
-    #sm = ScalarMappable(cmap=cmap, norm=norm)
-    #sm.set_array([])
     fig.colorbar(cf, ax=axs,
             label='Validation Score SI-SNR (dB)',
             orientation='horizontal',
