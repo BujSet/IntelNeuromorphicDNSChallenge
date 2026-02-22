@@ -237,7 +237,7 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
     #CS = ax.contourf(T, R, Z, levels=num_levels, cmap=cmap, norm=norm)
     #print(f"Making contour subplot with levels={num_levels}, vmin={cmapMin}, vmax={cmapMax}")
     #CS = ax.contourf(T, R, Z, levels=num_levels, cmap='hot') #, vmin=cmapMin, vmax=cmapMax)
-    level_list = np.linspace(Z[(T<= t_min_hide) | (T > t_max_hide)].min(), Z[T <= t_min_hide) | (T > t_max_hide)].max(), num_levels + 1)
+    level_list = np.linspace(Z[(T <= t_min_hide) | (T > t_max_hide)].min(), Z[(T <= t_min_hide) | (T > t_max_hide)].max(), num_levels + 1)
     CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot') #, vmin=cmapMin, vmax=cmapMax)
     rticks = [0, 12.5, 24]
     rlabels = ['Right', 'Middle', 'Left']
