@@ -571,6 +571,14 @@ selected_columns['YZProjAngleDegrees'] = selected_columns.apply(
             float(maxRow['PlotCartZ']), 
             [1,2])
         )
+corr_angle_score = selected_columns['Final Validation Score SI-SNR (dB)'].corr(selected_columns['DistFromMax'])
+corr_XYangle_score = selected_columns['Final Validation Score SI-SNR (dB)'].corr(selected_columns['XYProjAngleDegrees'])
+corr_XZangle_score = selected_columns['Final Validation Score SI-SNR (dB)'].corr(selected_columns['XZProjAngleDegrees'])
+corr_YZangle_score = selected_columns['Final Validation Score SI-SNR (dB)'].corr(selected_columns['YZProjAngleDegrees'])
+print(f"Pearson correlation between SI-SNR and angular dist={corr_angle_score}")
+print(f"Pearson correlation between SI-SNR and XYangular dist={corr_XYangle_score}")
+print(f"Pearson correlation between SI-SNR and XZangular dist={corr_XZangle_score}")
+print(f"Pearson correlation between SI-SNR and YZangular dist={corr_YZangle_score}")
 maxSpeechIdx = selected_columns['Final Validation Score SI-SNR (dB)'].idxmax()
 maxRow = selected_columns.loc[maxSpeechIdx]
 XYpos = selected_columns[selected_columns['XYProjAngleDegrees'] > 0.0]
