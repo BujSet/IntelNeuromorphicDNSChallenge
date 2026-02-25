@@ -15,14 +15,20 @@ from matplotlib.cm import ScalarMappable
 import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 from matplotlib.colors import ListedColormap
+import matplotlib.image as mpimg
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 csv_files = glob.glob('*.csv')
 out_files = sorted(glob.glob('*.out'))
 
+left_ear_img_data = mpimg.imread('stock_images/left_ear.jpg')
+right_ear_img_data = mpimg.imread('stock_images/right_ear.jpg')
 
-def get_plot_theta_r(sub, index, r_offset=0):
+def get_plot_theta_r(sub, index, channel=0):
     modulo = index % 50
-    r = (index // 50 ) +r_offset
+    r = (index // 50 )
+    #if channel == 1:
+    #    r = 25 - r
     pos = sub.getSphericalPositionsFromIndex(600 + modulo)
     angle = pos[1]
     if modulo < 8:
@@ -99,7 +105,10 @@ def getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize=60000, speech
     for i in range(1250):
         if ((sub_3_chan_0_full_dataset[searchString] == i).any()):
             row = filtered[filtered[searchString] == i]
-            theta, r = get_plot_theta_r(CipicDatabase.subjects[subject], i)
+            #if dataSubsetSize != 60000:
+            #    print(row.head())
+            #    sys.exit(0)
+            theta, r = get_plot_theta_r(CipicDatabase.subjects[subject], i, channel)
             sphereData.append({
                 'CipicIndex':i, 
                 'Final Validation Score SI-SNR (dB)':row['Final Validation Score SI-SNR (dB)'].mean(),
@@ -114,7 +123,7 @@ def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
     fig, axs = plt.subplots(nrows=1, ncols=2, 
             figsize=(12, 6), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.0}, layout="constrained")
-    def plotSphereOnAxis(ax, df, axTitle):
+    def plotSphereOnAxis(ax, df, axTitle, channel=0):
         ax.set_axisbelow(True)
         scatter = ax.scatter(df['PlotPolarThetaRadians'],
                      df['PlotPolarR'], 
@@ -122,6 +131,8 @@ def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
                      cmap='hot', alpha=0.75, zorder=2)
         rticks = [0, 12.5, 25]
         rlabels = ['Right', 'Middle', 'Left']
+        #if (channel == 1):
+        #    rlabels = ['Left', 'Middle', 'Right']
         rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
         for i, label in enumerate(rlabels):
             label.set_horizontalalignment('center') 
@@ -142,9 +153,9 @@ def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
         ax.grid(True)
         ax.set_rorigin(-10)
         return scatter
-    scatter = plotSphereOnAxis(axs[0], speech, "a) Speech Audiosphere")
-    scatter = plotSphereOnAxis(axs[1], noise, "a) Noise Audiosphere")
-    titleString = f"Subject {subject}'s Audio Spheres ("
+    scatter = plotSphereOnAxis(axs[0], speech, "a) Speech Audiosphere", channel)
+    scatter = plotSphereOnAxis(axs[1], noise, "a) Noise Audiosphere", channel)
+    titleString = f"Subject {subject}'s Audiospheres ("
     if channel == 0:
         titleString += "Right Ear"
     else: 
@@ -252,10 +263,12 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
     Z[mask] = np.nan
 
     level_list = np.linspace(cmapMin, cmapMax, num_levels + 1)
-    CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot')
+    CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot', zorder=2)
 
     rticks = [0, 12.5, 24]
     rlabels = ['Right', 'Middle', 'Left']
+    #if (channel == 1):
+    #    rlabels = ['Left', 'Middle', 'Right']
     rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
     for i, label in enumerate(rlabels):
         label.set_horizontalalignment('center') 
@@ -275,6 +288,14 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
     ax.set_title(axTitle, fontweight="bold")
     ax.grid(True)
     ax.set_rorigin(-10)
+
+    imagebox = OffsetImage(right_ear_img_data, zoom=0.15)
+    #if channel == 1:
+    #    imagebox = OffsetImage(left_ear_img_data, zoom=0.15)
+    ab = AnnotationBbox(imagebox, (0.5, 0.5), xycoords='axes fraction',
+                    boxcoords="axes fraction", box_alignment=(0.5, 0.5), frameon=False)
+    ab.set_zorder(0) 
+    ax.add_artist(ab)
     return CS
 
 def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
@@ -284,8 +305,9 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
     print(len(subList))
 
     fig, axs = plt.subplots(nrows=numRows, ncols=numCols, 
-            figsize=(20, 10), subplot_kw={'projection': 'polar'},
-                               gridspec_kw={'wspace': -0.0}, layout="constrained")
+            figsize=(20, 8), 
+            subplot_kw={'projection': 'polar'}, 
+            layout="constrained")
     titles = [
             f"a) Subject {subList[0]} (Left Ear)",
             f"b) Subject {subList[0]} (Right Ear)",
@@ -330,12 +352,12 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             idx = (r*numCols)+c
             subIdx = (idx//2)
             cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx], contoursMin, contoursMax, 6)
-    fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
-    plt.savefig(f'contours.png', bbox_inches='tight', transparent=True)
+    fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.99, aspect=50)
+    plt.savefig('contours.png', bbox_inches='tight', transparent=True)
+    plt.savefig('contours.pdf', bbox_inches='tight', transparent=True)
     plt.close()
 
-
-plotMonauralContourMaps(all_data, subjectsWithBothChannels, numRows=2, numCols=4)
+plotMonauralContourMaps(all_data, subjectsWithBothChannels, numRows=2, numCols=6)
 
 def plotSingletonContourMap(subject, channel, num_levels=6):
     fig, axs = plt.subplots(nrows=1, 
@@ -386,6 +408,43 @@ speechAudioSphere['PlotCartZ'] = speechAudioSphere.apply(
         args=(sub3, 2)
         )
 
+def plot_3d_audiosphere_static():
+    fig, axs = plt.subplots(1, 2, subplot_kw=dict(projection='3d'))
+    scatter = axs[0].scatter(speechAudioSphere['PlotCartX'], 
+        speechAudioSphere['PlotCartY'], 
+        speechAudioSphere['PlotCartZ'], 
+        c=speechAudioSphere['Final Validation Score SI-SNR (dB)'],
+        cmap='plasma', s=50, alpha=0.8)
+
+    axs[0].set_xticks([-0.5, 0.5])
+    axs[0].set_xticklabels(["Back", "Front"])
+    axs[0].set_yticks([-0.5, 0.5])
+    axs[0].set_yticklabels(["Right", "Left"])
+    axs[0].set_zticks([-0.5, 0.5])
+    axs[0].set_zticklabels(["Below", "Above"])
+    axs[0].set_title("a) Viewing \u0398=315\u00b0", fontweight='bold')
+    axs[0].view_init(elev=20., azim=315)
+    scatter = axs[1].scatter(speechAudioSphere['PlotCartX'], 
+        speechAudioSphere['PlotCartY'], 
+        speechAudioSphere['PlotCartZ'], 
+        c=speechAudioSphere['Final Validation Score SI-SNR (dB)'],
+        cmap='plasma', s=50, alpha=0.8)
+
+    axs[1].set_xticks([-0.5, 0.5])
+    axs[1].set_xticklabels(["Back", "Front"])
+    axs[1].set_yticks([-0.5, 0.5])
+    axs[1].set_yticklabels(["Right", "Left"])
+    axs[1].set_zticks([-0.5, 0.5])
+    axs[1].set_zticklabels([])
+    axs[1].set_title("b) Viewing \u0398=45\u00b0", fontweight='bold')
+    axs[1].view_init(elev=20., azim=45)
+    fig.suptitle('Speech Audiosphere', fontsize=16, fontweight='bold', y=0.90)
+    fig.colorbar(scatter, ax=axs, pad=0.1, label='Validation Score SI-SNR (dB)', orientation='horizontal')
+    plt.savefig("passive_pinna_sub3_chan0_3D.pdf", bbox_inches="tight")
+    plt.close()
+
+plot_3d_audiosphere_static()
+
 fig = plt.figure(figsize=(5, 4))
 ax = fig.add_subplot(111, projection='3d')
 scatter = ax.scatter(speechAudioSphere['PlotCartX'], 
@@ -401,7 +460,7 @@ ax.set_yticks([-1.0, 0.0, 1.0])
 ax.set_yticklabels(["Right", "Middle", "Left"])
 ax.set_zticks([-1.0, 0.0, 1.0])
 ax.set_zticklabels(["Below", "Eye\nLevel", "Above"])
-ax.set_title("Speech Audio Sphere\n(Subject 3, Right Ear)")
+ax.set_title("Speech Audiosphere\n(Subject 3, Right Ear)")
 fig.colorbar(scatter, ax=ax, pad=0.1, label='Final Validation Score SI-SNR (dB)')
 def update(frame):
     # Rotate the view (azim parameter controls the horizontal rotation)
@@ -463,7 +522,6 @@ def dist_from_max_cart(row, sub, maxX, maxY, maxZ):
 
 maxSpeechIdx = selected_columns['Final Validation Score SI-SNR (dB)'].idxmax()
 maxRow = selected_columns.loc[maxSpeechIdx]
-print(maxRow)
 selected_columns['DistFromMax'] = selected_columns.apply(
         dist_from_max_cart,
         axis=1,
@@ -472,7 +530,6 @@ selected_columns['DistFromMax'] = selected_columns.apply(
             float(maxRow['PlotCartY']),
             float(maxRow['PlotCartZ']))
         )
-print(selected_columns.head())
 def angle_proj_plane(row, maxX, maxY, maxZ, planeIdxs):
     srcX = float(row['PlotCartX'])
     srcY = float(row['PlotCartY'])
@@ -516,8 +573,6 @@ selected_columns['YZProjAngleDegrees'] = selected_columns.apply(
         )
 maxSpeechIdx = selected_columns['Final Validation Score SI-SNR (dB)'].idxmax()
 maxRow = selected_columns.loc[maxSpeechIdx]
-print(maxRow)
-print(selected_columns.head())
 XYpos = selected_columns[selected_columns['XYProjAngleDegrees'] > 0.0]
 XYneg = selected_columns[selected_columns['XYProjAngleDegrees'] < 0.0]
 XZpos = selected_columns[selected_columns['XZProjAngleDegrees'] > 0.0]
