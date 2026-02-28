@@ -20,3 +20,5 @@ training_orients.txt
 validation_orients.txt
 Trained/
 runs/
+*.csv
+null_condor_config
