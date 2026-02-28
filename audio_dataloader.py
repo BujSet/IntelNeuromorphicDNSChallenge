@@ -335,10 +335,10 @@ class DNSAudioNoNoisy:
             assert(False)
 
         # Don't do anything if param isnt set or if we're using the entire dataset
-        if (maxFiles > 0 and maxFiles < len(self.noisy_files)):
+        if (maxFiles > 0 and maxFiles <= len(self.noisy_files)):
             self.noisy_files = random.sample(self.noisy_files, maxFiles)
         else:
-            print(f"Warning: maxFiles set to invlaid value of {maxFiles}, no sampling performed")
+            print(f"Warning: maxFiles set to invlaid value of {maxFiles}. Must be betweed 0 and {len(self.noisy_files)}. No sampling performed")
         
         self.file_id_from_name = re.compile('fileid_(\d+)')
         self.snr_from_name = re.compile('snr(-?\d+)')
