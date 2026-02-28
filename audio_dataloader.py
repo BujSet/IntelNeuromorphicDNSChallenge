@@ -309,7 +309,9 @@ class DNSAudioNoNoisy:
     root : str, optional
         Path of the dataset location, by default './'.
     """
-    def __init__(self, root: str = './', maxFiles: int = -1,
+    def __init__(self, 
+            root: str = './', 
+            maxFiles: int = -1,
             noisyFileRoster: str = 'noisy_file_names.txt') -> None:
         self.root = root
         # Some of the noisy files has a non-standard character in the name:
@@ -333,12 +335,11 @@ class DNSAudioNoNoisy:
             assert(False)
 
         # Don't do anything if param isnt set or if we're using the entire dataset
-        if (maxFiles > 0 and maxFiles != len(self.noisy_files)):
-            randStart = random.randint(0, len(self.noisy_files) - maxFiles - 1)
-            assert(randStart + maxFiles <= len(self.noisy_files))
-            self.noisy_files = self.noisy_files[randStart:randStart+maxFiles]
-            print("Using slice dataset[" + str(randStart) + ":" + str(randStart+maxFiles) + "] with "+str(len(self.noisy_files)) + " samples")
-
+        if (maxFiles > 0 and maxFiles < len(self.noisy_files)):
+            self.noisy_files = random.sample(self.noisy_files, maxFiles)
+        else:
+            print(f"Warning: maxFiles set to invlaid value of {maxFiles}, no sampling performed")
+        
         self.file_id_from_name = re.compile('fileid_(\d+)')
         self.snr_from_name = re.compile('snr(-?\d+)')
         self.target_level_from_name = re.compile('tl(-?\d+)')
