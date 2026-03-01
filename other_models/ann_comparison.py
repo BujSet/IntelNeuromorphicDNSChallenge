@@ -22,6 +22,7 @@ import torchaudio
 import random
 import pandas as pd
 import time
+from chtc_files.htchirp_utils import *
 
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
@@ -175,6 +176,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
                             'Epoch': epoch, 
                             'Batch':i,
                             'DeviceName':torch.cuda.get_device_name(0),
+                            'MachineName':get_machine_attr_name_0(),
                             'CUDATimeMS':elapsed_time_ms,
                             'CPUTimeMS':elapsed_cpu_time_ms}
             data_list.append(new_row_data)

@@ -34,3 +34,7 @@ def get_gpu_time_remaining(rawValue=False):
     if rawValue == True:
         return remaining
     return str(datetime.timedelta(seconds=remaining))
+
+def get_machine_attr_name_0():
+    with HTChirp() as chirp:
+        return chirp.get_job_attr("MachineAttrMachine0")
