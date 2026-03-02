@@ -591,5 +591,5 @@ if __name__ == '__main__':
     device_name = torch.cuda.get_device_name(0) # or use torch.cuda.current_device(
     print(f"Beginning training on {device_name}")
     stats = run_training_loop(args, net, optimizer, scheduler, train_loader)
-    stats.to_csv("SNN_data.csv", index=False)
+    stats.to_csv("SNN_data_detailed.csv", index=False)
     print("Completed training loop [epochs_completed:" + str(args.epochs) + "]")
