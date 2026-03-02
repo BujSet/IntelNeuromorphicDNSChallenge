@@ -46,6 +46,179 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
 
     return method(spec)
 
+class LIFCUBANetwork(torch.nn.Module):
+    """LIF network.
+
+    A network consisting of the following topology:
+
+    Layer
+    ===============
+    - BlockCubaInput
+    - BlockCubaDense
+    - BlockCubaDense
+    - BlockCubaAffine
+
+    """
+
+    def __init__(self):
+        """Initialize network."""
+        super(Network, self).__init__()
+
+        cuba_params = {
+            "threshold": 0.1,
+            "current_decay": 0.9,
+            "voltage_decay": 0.9,
+            "tau_grad": 1,
+            "scale_grad": 1,
+            "scale": 1 << 6,
+            "norm": None,
+            "dropout": None,
+            "shared_param": True,
+            "persistent_state": False,
+            "requires_grad": False,
+            "graded_spike": False,
+        }
+
+        width = 32
+
+        self.blocks = torch.nn.ModuleList(
+            [
+                slayer.block.cuba.Input(
+                    neuron_params=cuba_params, count_log=False
+                ),
+                slayer.block.cuba.Dense(
+                    neuron_params=cuba_params,
+                    in_neurons=2,
+                    out_neurons=width,
+                    count_log=False,
+                ),
+                slayer.block.cuba.Dense(
+                    neuron_params=cuba_params,
+                    in_neurons=width,
+                    out_neurons=width,
+                    count_log=False,
+                ),
+                slayer.block.cuba.Affine(
+                    neuron_params=cuba_params,
+                    in_neurons=width,
+                    out_neurons=1,
+                    dynamics=False,
+                    count_log=False,
+                ),
+            ]
+        )
+
+    def forward(self, x):
+        """Forward pass."""
+        count = []
+        for block in self.blocks:
+            x = block(x)
+            count.append(torch.mean(x).item())
+
+        return x, torch.as_tensor(count)
+
+class LinearANNNetwork(torch.nn.Module):
+    def __init__(self, 
+            hiddenLayerWidths=512,
+            n_fft=512): 
+        super().__init__()
+        self.hiddenLayerWidths = hiddenLayerWidths
+        self.n_fft = n_fft
+        self.stft_mean = 0.2
+
+        self.linear1 = torch.nn.Linear(n_fft//2 + 1, hiddenLayerWidths)
+        self.lrelu1  = torch.nn.LeakyReLU(negative_slope=1e-5)
+        self.linear2 = torch.nn.Linear(hiddenLayerWidths, hiddenLayerWidths)
+        self.lrelu2  = torch.nn.LeakyReLU(negative_slope=1e-5)
+        self.linear3 = torch.nn.Linear(hiddenLayerWidths, n_fft//2+1)
+        self.lrelu3  = torch.nn.LeakyReLU(negative_slope=1e-5)
+        self.forward_pass_stats = dict()
+
+    def name(self):
+        return f"LinearANN_depth2_widths{self.hiddenLayerWidths}_nfft{self.n_fft}"
+
+    def forward(self, noisy):
+        self.forward_pass_stats = dict()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+
+        x = noisy - self.stft_mean
+        x = x.transpose(1,2)
+        x = x.reshape(-1, self.n_fft//2 + 1)
+
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['CenteringMS'] = start.elapsed_time(end)
+        self.forward_pass_stats['CenteringPreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['CenteringPeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['CenteringPostAllocatedMB'] = mem_after / 1024**2
+
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+        x = self.linear1(x)
+        x = self.lrelu1(x)
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['Dense1MS'] = start.elapsed_time(end)
+        self.forward_pass_stats['Dense1PreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['Dense1PeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['Dense1PostAllocatedMB'] = mem_after / 1024**2
+
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+        x = self.linear2(x)
+        x = self.lrelu2(x)
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['Dense2MS'] = start.elapsed_time(end)
+        self.forward_pass_stats['Dense2PreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['Dense2PeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['Dense2PostAllocatedMB'] = mem_after / 1024**2
+
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+        x = self.linear3(x)
+        x = self.lrelu3(x)
+        result = x.view(32, 3751, 257).transpose(1,2)
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['OutputMS'] = start.elapsed_time(end)
+        self.forward_pass_stats['OutputPreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['OutputPeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['OutputPostAllocatedMB'] = mem_after / 1024**2
+
+        return result
+
+    def validate_gradients(self):
+        valid_gradients = True
+        for name, param in self.named_parameters():
+            if param.grad is not None:
+                valid_gradients = not (torch.isnan(param.grad).any()
+                                       or torch.isinf(param.grad).any())
+                if not valid_gradients:
+                    break
+        if not valid_gradients:
+            self.zero_grad()
+
 class Network(torch.nn.Module):
     def __init__(self, 
             threshold=0.1, 
@@ -55,6 +228,7 @@ class Network(torch.nn.Module):
             out_delay=0,
             hiddenLayerWidths=512,
             n_fft=512):
+            #profilingMemory=False):
         super().__init__()
         self.stft_mean = 0.2
         self.stft_var = 1.5
@@ -63,6 +237,7 @@ class Network(torch.nn.Module):
         self.EPS = 2.220446049250313e-16
         self.hiddenLayerWidths = hiddenLayerWidths
         self.n_fft = n_fft
+        #self.profilingMemory = profilingMemory
 
         sigma_params = { # sigma-delta neuron parameters
             'threshold'     : threshold,   # delta unit threshold
@@ -78,29 +253,85 @@ class Network(torch.nn.Module):
 
         self.input_quantizer = lambda x: slayer.utils.quantize(x, step=1 / 64)
 
-        self.blocks = torch.nn.ModuleList([
-            slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, n_fft//2 + 1, weight_norm=False),
-        ])
+        self.sd_input = slayer.block.sigma_delta.Input(sdnn_params)
+        self.sd_dense_1 = slayer.block.sigma_delta.Dense(sdnn_params, n_fft//2 + 1, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True)
+        self.sd_dense_2 = slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True)
+        self.sd_output = slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, n_fft//2 + 1, weight_norm=False)
 
-        self.blocks[0].pre_hook_fx = self.input_quantizer
+        self.sd_input.pre_hook_fx = self.input_quantizer
 
-        self.blocks[1].delay.max_delay = max_delay
-        self.blocks[2].delay.max_delay = max_delay
+        self.sd_dense_1.delay.max_delay = max_delay
+        self.sd_dense_2.delay.max_delay = max_delay
+        self.forward_pass_stats = dict()
 
     def name(self):
         return f"SigmaDelta_depth2_widths{self.hiddenLayerWidths}_nfft{self.n_fft}"
 
     def forward(self, noisy):
+        self.forward_pass_stats = dict()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
         x = noisy - self.stft_mean
+        x = self.sd_input(x)
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['CenteringMS'] = start.elapsed_time(end)
+        self.forward_pass_stats['CenteringPreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['CenteringPeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['CenteringPostAllocatedMB'] = mem_after / 1024**2
 
-        for block in self.blocks:
-            x = block(x)
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+        x = self.sd_dense_1(x)
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['Dense1MS'] = start.elapsed_time(end)
+        self.forward_pass_stats['Dense1PreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['Dense1PeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['Dense1PostAllocatedMB'] = mem_after / 1024**2
 
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+        x = self.sd_dense_2(x)
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['Dense2MS'] = start.elapsed_time(end)
+        self.forward_pass_stats['Dense2PreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['Dense2PeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['Dense2PostAllocatedMB'] = mem_after / 1024**2
+
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        mem_before = torch.cuda.memory_allocated(device)
+        start.record()
+        x = self.sd_output(x)
         mask = torch.relu(x + 1)
-        return slayer.axon.delay(noisy, self.out_delay) * mask
+        result =  slayer.axon.delay(noisy, self.out_delay) * mask
+        end.record()
+        torch.cuda.synchronize()
+        mem_after = torch.cuda.memory_allocated(device)
+        mem_peak = torch.cuda.max_memory_allocated()
+        self.forward_pass_stats['OutputMS'] = start.elapsed_time(end)
+        self.forward_pass_stats['OutputPreAllocatedMB'] = mem_before / 1024**2
+        self.forward_pass_stats['OutputPeakAllocatedMB'] = mem_peak / 1024**2
+        self.forward_pass_stats['OutputPostAllocatedMB'] = mem_after / 1024**2
+
+        return result
 
     def validate_gradients(self):
         valid_gradients = True
@@ -118,13 +349,14 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
     data_list = []
     for epoch in range(args.epochs):
         print(f"Beginning epoch: {epoch}")
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
-        start_CPU_time = None
-        end_CPU_time = None
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
         for i, (clean, noisy, idx) in enumerate(train_loader):
-            start_CPU_time = time.perf_counter()
-            start_event.record()
+            batch_stats = dict()
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+            mem_before = torch.cuda.memory_allocated(device)
+            start.record()
             ssl_noisy = noisy.to(device)
             ssl_clean = clean.to(device)
 
@@ -137,8 +369,22 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
             else:
                 noisy_abs, noisy_arg = stft_splitter(ssl_noisy, args.n_fft, mel_transform)
                 clean_abs, clean_arg = stft_splitter(ssl_clean, args.n_fft, mel_transform)
+            end.record()
+            torch.cuda.synchronize()
+            mem_after = torch.cuda.memory_allocated(device)
+            mem_peak = torch.cuda.max_memory_allocated()
+            batch_stats['STFTMS'] = start.elapsed_time(end)
+            batch_stats['STFTPreAllocatedMB'] = mem_before / 1024**2
+            batch_stats['STFTPeakAllocatedMB'] = mem_peak / 1024**2
+            batch_stats['STFTPostAllocatedMB'] = mem_after / 1024**2
 
             denoised_abs = net(noisy_abs)
+
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+            mem_before = torch.cuda.memory_allocated(device)
+            start.record()
+
             noisy_arg = slayer.axon.delay(noisy_arg, out_delay)
             clean_abs = slayer.axon.delay(clean_abs, out_delay)
             clean = slayer.axon.delay(ssl_clean, args.n_fft // 4 * out_delay)
@@ -166,23 +412,24 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader):
             if torch.isnan(score).any():
                 score[torch.isnan(score)] = 0
 
-            end_event.record()
+            end.record()
             torch.cuda.synchronize()
-            elapsed_time_ms = start_event.elapsed_time(end_event)
-            end_CPU_time = time.perf_counter()
-            elapsed_cpu_time_ms = (end_CPU_time - start_CPU_time) / 1000.0
+            mem_after = torch.cuda.memory_allocated(device)
+            mem_peak = torch.cuda.max_memory_allocated()
+            batch_stats['BackwardsMS'] = start.elapsed_time(end)
+            batch_stats['BackwardsPreAllocatedMB'] = mem_before / 1024**2
+            batch_stats['BackwardsPeakAllocatedMB'] = mem_peak / 1024**2
+            batch_stats['BackwardsPostAllocatedMB'] = mem_after / 1024**2
+
             new_row_data = {'Model': net.module.name(),
                             'BatchSize':args.b, 
                             'Epoch': epoch, 
                             'Batch':i,
                             'DeviceName':torch.cuda.get_device_name(0),
-                            'MachineName':get_machine_attr_name_0(),
-                            'CUDATimeMS':elapsed_time_ms,
-                            'CPUTimeMS':elapsed_cpu_time_ms}
-            data_list.append(new_row_data)
-            print(f"\tBatch {i} took: {elapsed_time_ms:.2f} ms")
+                            'MachineName':get_machine_attr_name_0()}
+            data_list.append(new_row_data | batch_stats | net.module.forward_pass_stats)
+            print(data_list[-1])
         scheduler.step()
-        # Updates only the last training epoch's loss is kept
     df = pd.DataFrame(data_list)
     return df
 
@@ -286,6 +533,11 @@ if __name__ == '__main__':
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
+    net = torch.nn.DataParallel(LinearANNNetwork(
+                args.hiddenLayerWidths,
+                args.n_fft).to(device),
+                    device_ids=args.gpu)
+    '''
     net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
@@ -295,6 +547,7 @@ if __name__ == '__main__':
                 args.hiddenLayerWidths,
                 args.n_fft).to(device),
                     device_ids=args.gpu)
+    '''
     module = net.module
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
@@ -336,5 +589,5 @@ if __name__ == '__main__':
     device_name = torch.cuda.get_device_name(0) # or use torch.cuda.current_device(
     print(f"Beginning training on {device_name}")
     stats = run_training_loop(args, net, optimizer, scheduler, train_loader)
-    stats.to_csv("SNN_data.csv")
+    stats.to_csv("ANN_data.csv", index=False)
     print("Completed training loop [epochs_completed:" + str(args.epochs) + "]")
