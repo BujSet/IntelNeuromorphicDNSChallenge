@@ -52,6 +52,12 @@ def get_traces(df):
         df['STFTMS'].median() + 0.05 + df['CenteringMS'].median() + df['Dense1MS'].median() + df['Dense2MS'].median() + df['OutputMS'].median() + (df['BackwardsMS'].median()/2.0),
         df['STFTMS'].median() + 0.05 + df['CenteringMS'].median() + df['Dense1MS'].median() + df['Dense2MS'].median() + df['OutputMS'].median() + df['BackwardsMS'].median()
         ]
+    print(f"STFT: {df['STFTMS'].median()} msec")
+    print(f"Input: {df['CenteringMS'].median()} msec")
+    print(f"Dense1: {df['Dense1MS'].median()} msec")
+    print(f"Dense2: {df['Dense2MS'].median()} msec")
+    print(f"Output: {df['OutputMS'].median()} msec")
+    print(f"Backwards: {df['BackwardsMS'].median()} msec")
     return (time_trace, m50)
 
 def axis_artistry(ax, t, m, title):
@@ -101,12 +107,18 @@ ann_t, ann_m50,  = get_traces(filtered)
 print('ANN stats:')
 print(f'\ttime:{ann_t}')
 print(f'\tmem:{ann_m50}')
+df = pd.read_csv('SNN_data_detailed.csv')
+filtered = df[df['Epoch'] == 1]
+snn_t, snn_m50,  = get_traces(filtered)
 print('SNN stats:')
+print(f'\ttime:{snn_t}')
+print(f'\tmem:{snn_m50}')
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 4))
 axis_artistry(ax1, ann_t, ann_m50, 'a) ANN Training Epoch ')
-ax2.set_title('b) Training Epoch for SNN', fontweight='bold')
-ax2.set_xlabel('Time (msec)')
-ax2.set_ylabel('GPU Memory Use (GB)')
+axis_artistry(ax2, snn_t, snn_m50, 'b) SNN Training Epoch ')
+#ax2.set_title('b) Training Epoch for SNN', fontweight='bold')
+#ax2.set_xlabel('Time (msec)')
+#ax2.set_ylabel('GPU Memory Use (GB)')
 
 plt.savefig("ann_vs_snn.pdf", bbox_inches='tight')
