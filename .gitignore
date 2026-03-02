@@ -22,3 +22,4 @@ Trained/
 runs/
 *.csv
 null_condor_config
+ann_vs_snn.pdf
