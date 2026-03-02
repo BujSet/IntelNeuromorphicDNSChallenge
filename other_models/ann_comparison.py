@@ -533,21 +533,23 @@ if __name__ == '__main__':
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
-    net = torch.nn.DataParallel(LinearANNNetwork(
-                args.hiddenLayerWidths,
-                args.n_fft).to(device),
-                    device_ids=args.gpu)
     '''
-    net = torch.nn.DataParallel(Network(
+    my_network = LinearANNNetwork(
+        args.hiddenLayerWidths,
+        args.n_fft)
+    '''
+    my_network = Network(
                 args.threshold,
                 args.tau_grad,
                 args.scale_grad,
                 args.dmax,
                 args.out_delay,
                 args.hiddenLayerWidths,
-                args.n_fft).to(device),
-                    device_ids=args.gpu)
-    '''
+                args.n_fft)
+    total_params = sum(p.numel() for p in my_network.parameters())
+    print(f"Total parameters: {total_params}")
+    net = torch.nn.DataParallel(my_network.to(device),device_ids=args.gpu)
+
     module = net.module
     stft_transform =torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
@@ -589,5 +591,5 @@ if __name__ == '__main__':
     device_name = torch.cuda.get_device_name(0) # or use torch.cuda.current_device(
     print(f"Beginning training on {device_name}")
     stats = run_training_loop(args, net, optimizer, scheduler, train_loader)
-    stats.to_csv("ANN_data.csv", index=False)
+    stats.to_csv("SNN_data.csv", index=False)
     print("Completed training loop [epochs_completed:" + str(args.epochs) + "]")
