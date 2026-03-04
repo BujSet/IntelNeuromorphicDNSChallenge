@@ -97,6 +97,8 @@ def getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize=60000, speech
     else:
         filtered = filtered[(filtered['UsesFullAudioDataset'] == False) &
         (filtered['AudioDataSubsetSize'] == dataSubsetSize)]
+
+
     searchString = 'Speech Orient'
     if not speechAudioSphere:
         searchString = 'Noise Orient'
@@ -168,6 +170,45 @@ def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
     plt.close()
 
 
+def check_for_nans(df, subject, channel, samples, isSpeech=True):
+    filtered = getPlotDataForAudioSphere(df, subject, channel, samples, isSpeech)
+    hasNan = filtered['Final Validation Score SI-SNR (dB)'].isna().any()
+    if hasNan:
+        rows_with_nan = filtered[filtered['Final Validation Score SI-SNR (dB)'].isna()]
+        with pd.option_context('display.max_rows', None):
+            print(rows_with_nan)
+    else:
+        print(f"Subject:{subject} channel:{channel} samples:{samples} speech:{isSpeech} has no Nans")
+
+def check_for_missing_data(df, subject, channel, samples):
+    filtered = df[(df['Subject'] == subject) & (df['Channel'] == channel)]
+    if samples == 60000:
+        filtered = filtered[(filtered['UsesFullAudioDataset'] == True) &
+        (filtered['AudioDataSubsetSize'] == 60000)]
+    else:
+        filtered = filtered[(filtered['UsesFullAudioDataset'] == False) &
+        (filtered['AudioDataSubsetSize'] == samples)]
+
+    num_rows = len(filtered)
+    print(f"Subject:{subject}, channel:{channel}, samples:{samples} has {num_rows} rows of data")
+    num_missing = 0
+    for so in range(1250):
+        row_data = filtered[filtered['Speech Orient'] == so]
+        print(f"Dataframe from speech orient:{so} containes {len(row_data)} rows")
+        for no in range(1250):
+            matches = len(filtered[(filtered['Speech Orient'] == so) & (filtered['Noise Orient'] == no)])
+            if (matches == 0):
+                print(f"({so},{no})")
+                num_missing += 1
+    if num_missing > 0:
+        print(f"Subject:{subject}, channel:{channel}, samples:{samples} missing {num_missing} data points")
+
+
+print("Checking for missing data...")
+check_for_missing_data(all_data, 3, 0, 120)
+sys.exit(0)
+
+
 sub3 = CipicDatabase.subjects[3]
 speechAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, True)
 noiseAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, False)
@@ -181,26 +222,17 @@ for sub in availableSubjects:
     if numChannels == 2:
         subjectsWithBothChannels.add(sub)
 print(subjectsWithBothChannels)
-inspectSub = 8
+
+check_for_nans(all_data, 8, 0, 120, True)
+check_for_nans(all_data, 8, 1, 120, True)
+
+inspectSub = 12
 sub_3_chan_0 = getPlotDataForAudioSphere(all_data, inspectSub, 0, 120, True)
 sub_3_chan_1 = getPlotDataForAudioSphere(all_data, inspectSub, 1, 120, True)
 print(sub_3_chan_0.head())
 print(len(sub_3_chan_0))
-has_nan_A = sub_3_chan_0['Final Validation Score SI-SNR (dB)'].isna().any()
-print(f"Does sub_{inspectSub}_chan_0 have any NaNs? {has_nan_A}")
-if has_nan_A:
-    rows_with_nan = sub_3_chan_0[sub_3_chan_0['Final Validation Score SI-SNR (dB)'].isna()]
-    with pd.option_context('display.max_rows', None):
-        print(rows_with_nan)
-
 print(sub_3_chan_1.head())
 print(len(sub_3_chan_1))
-has_nan_B = sub_3_chan_1['Final Validation Score SI-SNR (dB)'].isna().any()
-print(f"Does sub_{inspectSub}_chan_1 have any NaNs? {has_nan_B}")
-if has_nan_B:
-    rows_with_nan = sub_3_chan_1[sub_3_chan_1['Final Validation Score SI-SNR (dB)'].isna()]
-    with pd.option_context('display.max_rows', None):
-        print(rows_with_nan)
 
 def getZMinMax(subject, channel):
     global all_data
