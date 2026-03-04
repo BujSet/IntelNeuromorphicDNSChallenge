@@ -80,8 +80,8 @@ def read_out_file(out_file):
 
 # First, read all data and concat into a single df
 all_data = read_collated_results_csv()
-all_data.to_feather('collated_results_2026_02_10.feather')
-sys.exit(0)
+#all_data.to_feather('collated_results_2026_02_10.feather')
+#sys.exit(0)
 print(f"All data conatains {len(all_data)} rows, pre merge")
 for i, out_file in enumerate(out_files):
     print(out_file)
@@ -277,7 +277,7 @@ def getZMinMax(subject, channel):
     Zmax = Z[(T <= t_min_hide) | (T > t_max_hide)].max()
     return Zmin, Zmax
 
-def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_levels):
+def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_levels, imageBoxZoom=0.15):
     global all_data
     num_points = 500
     speech = getPlotDataForAudioSphere(all_data, subject, channel, 120, True)
@@ -333,7 +333,7 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
     ax.grid(True)
     ax.set_rorigin(-10)
 
-    imagebox = OffsetImage(right_ear_img_data, zoom=0.15)
+    imagebox = OffsetImage(right_ear_img_data, zoom=imageBoxZoom)
     #if channel == 1:
     #    imagebox = OffsetImage(left_ear_img_data, zoom=0.15)
     ab = AnnotationBbox(imagebox, (0.5, 0.5), xycoords='axes fraction',
@@ -395,7 +395,7 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
         for c in range(numCols):
             idx = (r*numCols)+c
             subIdx = (idx//2)
-            cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx], contoursMin, contoursMax, 6)
+            cf = plotContourOnAxis(axs[r,c], subList[subIdx], (idx+1)%2, titles[idx], contoursMin, contoursMax, 6, 0.15)
     fig.colorbar(cf, ax=axs, label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.99, aspect=50)
     plt.savefig('contours.png', bbox_inches='tight', transparent=True)
     plt.savefig('contours.pdf', bbox_inches='tight', transparent=True)
@@ -416,12 +416,13 @@ def plotSingletonContourMap(subject, channel, num_levels=6):
 
 
     fmin,fmax = getZMinMax(subject, channel)
-    cf = plotContourOnAxis(axs, subject, channel, titleString, fmin, fmax, num_levels) 
+    cf = plotContourOnAxis(axs, subject, channel, titleString, fmin, fmax, num_levels, 0.5) 
     fig.colorbar(cf, ax=axs,
             label='Validation Score SI-SNR (dB)',
             orientation='horizontal',
             shrink=0.8, pad=0.01) #, ticks=levels)
     plt.savefig(f'sub_{subject}_chan_{channel}_speech_contour.png', bbox_inches='tight', transparent=True)
+    plt.savefig(f'sub_{subject}_chan_{channel}_speech_contour.pdf', bbox_inches='tight', transparent=True)
     plt.close()
 
 plotSingletonContourMap(3, 0)
