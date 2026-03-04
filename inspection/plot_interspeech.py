@@ -17,7 +17,9 @@ import matplotlib.cm as cm
 from matplotlib.colors import ListedColormap
 import matplotlib.image as mpimg
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from pathlib import Path
 
+CollatedFilePrefix = "collated_results_2026_03_04"
 csv_files = glob.glob('*.csv')
 out_files = sorted(glob.glob('*.out'))
 
@@ -49,8 +51,14 @@ def set_df_raw_dtypes(df):
     df['AudioDataSubsetSize'] = df['AudioDataSubsetSize'].astype('uint16')
     df['AudioDataSubsetSeed'] = df['AudioDataSubsetSeed'].astype('int64')
 
-def read_collated_results_csv():
-    df = pd.read_csv("collated_results_2026_02_18.csv")
+def read_collated_results():
+    global CollatedFilePrefix
+    featherPath = Path(CollatedFilePrefix + ".feather")
+    if Path(featherPath).exists() and featherPath.is_file():
+        print(f"Reading {CollatedFilePrefix} data from feather instead of CSV")
+        return pd.read_feather(CollatedFilePrefix + ".feather")
+
+    df = pd.read_csv(CollatedFilePrefix + ".csv")
     df.columns = df.columns.str.strip()
     df['UsesFullAudioDataset'] = True
     df['AudioDataSubsetSize'] = 60000
@@ -79,9 +87,8 @@ def read_out_file(out_file):
     return df
 
 # First, read all data and concat into a single df
-all_data = read_collated_results_csv()
-#all_data.to_feather('collated_results_2026_02_10.feather')
-#sys.exit(0)
+all_data = read_collated_results()
+all_data.to_feather(CollatedFilePrefix + ".feather")
 print(f"All data conatains {len(all_data)} rows, pre merge")
 for i, out_file in enumerate(out_files):
     print(out_file)

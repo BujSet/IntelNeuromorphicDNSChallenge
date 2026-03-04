@@ -1,4 +1,12 @@
-from htcondor.htchirp import HTChirp
+try:
+    from htcondor.htchirp import HTChirp
+except ImportError:
+    try:
+        from htcondor2.htchirp import HTChirp
+    except ImportError as e:
+        print("Neither htcondor nor htcondor2 available for import")
+        raise e
+
 import os, time, datetime, sys
 
 def send_log_msg(message):
