@@ -39,21 +39,28 @@ def get_plot_theta_r(sub, index, channel=0):
         angle = 180.0 - angle
     return math.radians(angle), r
 
+def set_df_raw_dtypes(df):
+    df['Subject'] = df['Subject'].astype('uint8')
+    df['Channel'] = df['Channel'].astype('uint8')
+    df['Speech Orient'] = df['Speech Orient'].astype('uint16')
+    df['Noise Orient'] = df['Noise Orient'].astype('uint16')
+    df['Final Validation Score SI-SNR (dB)'] = df['Final Validation Score SI-SNR (dB)'].astype('float32')
+    df['UsesFullAudioDataset'] = df['UsesFullAudioDataset'].astype(bool)
+    df['AudioDataSubsetSize'] = df['AudioDataSubsetSize'].astype('uint16')
+    df['AudioDataSubsetSeed'] = df['AudioDataSubsetSeed'].astype('int64')
+
 def read_collated_results_csv():
     df = pd.read_csv("collated_results_2026_02_18.csv")
     df.columns = df.columns.str.strip()
-    df['Subject'] = df['Subject'].astype(int)
-    df['Channel'] = df['Channel'].astype(int)
     df['UsesFullAudioDataset'] = True
     df['AudioDataSubsetSize'] = 60000
     df['AudioDataSubsetSeed'] = -1
+    set_df_raw_dtypes(df)
     return df
 
 def read_out_file(out_file):
     df = pd.read_csv(out_file)
     df.columns = df.columns.str.strip()
-    df['Subject'] = df['Subject'].astype(int)
-    df['Channel'] = df['Channel'].astype(int)
     df = df.drop(
         columns=[
             'ExecTime',
@@ -68,10 +75,13 @@ def read_out_file(out_file):
     df['UsesFullAudioDataset'] = False
     df['AudioDataSubsetSize'] = 120
     df['AudioDataSubsetSeed'] = 419572083
+    set_df_raw_dtypes(df)
     return df
 
 # First, read all data and concat into a single df
 all_data = read_collated_results_csv()
+all_data.to_feather('collated_results_2026_02_10.feather')
+sys.exit(0)
 print(f"All data conatains {len(all_data)} rows, pre merge")
 for i, out_file in enumerate(out_files):
     print(out_file)
