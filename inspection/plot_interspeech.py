@@ -192,7 +192,9 @@ def check_for_missing_data(df, subject, channel, samples):
     num_rows = len(filtered)
     print(f"Subject:{subject}, channel:{channel}, samples:{samples} has {num_rows} rows of data")
     num_missing = 0
-    for so in range(1250):
+    # for subject 3, chan 0, samples 120, skipp the first 400 because we know
+    # these are already complete
+    for so in range(400,1250):
         row_data = filtered[filtered['Speech Orient'] == so]
         print(f"Dataframe from speech orient:{so} containes {len(row_data)} rows")
         for no in range(1250):
