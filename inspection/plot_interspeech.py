@@ -370,9 +370,9 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
 def plotAudioSpheresVSContour(df, subject, channel, dataSubsetSize=60000):
     speech = getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize, True)
     fig, axs = plt.subplots(nrows=1, ncols=2, 
-            figsize=(12, 6), subplot_kw={'projection': 'polar'},
+            figsize=(8, 4), subplot_kw={'projection': 'polar'},
                                gridspec_kw={'wspace': -0.0}, layout="constrained")
-    def plotSpherePointsOnAxis(ax, df, axTitle, channel=0):
+    def plotSpherePointsOnAxis(ax, df, axTitle, channel=0, imageBoxZoom=0.30):
         ax.set_axisbelow(True)
         scatter = ax.scatter(df['PlotPolarThetaRadians'],
                      df['PlotPolarR'], 
@@ -401,10 +401,16 @@ def plotAudioSpheresVSContour(df, subject, channel, dataSubsetSize=60000):
         ax.set_title(axTitle, fontweight="bold")
         ax.grid(True)
         ax.set_rorigin(-10)
+
+        imagebox = OffsetImage(right_ear_img_data, zoom=imageBoxZoom)
+        ab = AnnotationBbox(imagebox, (0.5, 0.5), xycoords='axes fraction',
+                    boxcoords="axes fraction", box_alignment=(0.5, 0.5), frameon=False)
+        ab.set_zorder(0) 
+        ax.add_artist(ab)
         return scatter
-    scatter = plotSpherePointsOnAxis(axs[0], speech, "a) Discrete Speech Audiosphere", channel)
+    scatter = plotSpherePointsOnAxis(axs[0], speech, "a) Discrete Speech Audiosphere", channel, 0.15)
     fmin,fmax = getZMinMax(subject, channel)
-    cf = plotContourOnAxis(axs[1], subject, channel, "b) Extrapolated Contour Map", fmin, fmax, 6, 0.30) 
+    cf = plotContourOnAxis(axs[1], subject, channel, "b) Extrapolated Contour Map", fmin, fmax, 6, 0.15) 
     titleString = f"Subject {subject}'s Audiospheres ("
     if channel == 0:
         titleString += "Right Ear"
