@@ -19,6 +19,8 @@ import matplotlib.image as mpimg
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from pathlib import Path
 import re
+import miniball
+import matplotlib.ticker as ticker
 
 CollatedFilePrefix = "collated_results_2026_03_04"
 csv_files = glob.glob('*.csv')
@@ -333,21 +335,119 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
 
     level_list = np.linspace(cmapMin, cmapMax, num_levels + 1)
     CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot', zorder=2)
+
     all_paths = CS.get_paths()
-    def get_area_by_level(level):
-        highest_path = all_paths[-1]
+    highest_path = all_paths[-1]
+    points = highest_path.vertices
+    theta_rad = points[:, 0]
+    r = points[:, 1]
 
-        def get_polygon_area(vertices):
-            x, y = vertices[:, 0], vertices[:, 1]
-            return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+    # 2. Shift the phase so that -45 is the "new 0"
+    # This maps the range [0, 2pi] to [-pi, pi] or similar,
+    # effectively moving the wrap-around point to the middle of your hidden slice.
+    # We use np.unwrap or a simple shift:
+    theta_deg = np.degrees(theta_rad)
+    shifted_theta = (theta_deg - 315) % 360 - 45
+    # This logic:
+    # 315 becomes -45
+    # 360 becomes 0
+    # 225 becomes 225
 
-        # 3. Sum areas of all polygons in this path
-        # to_polygons() handles cases where one level has multiple separate regions
-        total_area = sum(get_polygon_area(poly) for poly in highest_path.to_polygons())
-        return total_area
+    # 3. Define the hidden range in this new shifted space
+    # In this shifted space, the gap is now from -45 to some value.
+    # But since you specifically want the range -45 to 225:
+    visible_mask = (shifted_theta >= -45) & (shifted_theta <= 225)
+    v_theta = shifted_theta[visible_mask]
+    v_r = r[visible_mask]
 
-    for i in range(num_levels):
-        print(f"Area of the level {i}: {get_area_by_level(i)}")
+    if len(v_theta) > 0:
+        print(f"Visible Angle Range: [{v_theta.min():.2f}°, {v_theta.max():.2f}°]")
+        print(f"Visible Radial Range: [{v_r.min():.2f}, {v_r.max():.2f}]")
+    def polar_to_3d_custom(angles_deg, radii):
+        # 1. Calculate the 'tilt' away from the front center (Y-axis)
+        # 12 units = 90 degrees (pi/2 radians)
+        gamma = np.radians(np.abs(radii - 12.0) * (90.0 / 12.0))
+
+        # 2. Angular elevation/direction
+        phi = np.radians(angles_deg)
+
+        # 3. Calculate 3D Coordinates
+        # Y is Front-Back (Front is +1, Back/Side is 0)
+        y = np.cos(gamma)
+
+       # X and Z are the projections onto the vertical/lateral plane
+       # If R < 12, it's 'Right' (+X). If R > 12, it's 'Left' (-X).
+       # We use a direction multiplier based on your R definition
+        direction = np.where(radii <= 12, 1, -1)
+
+        # Lateral displacement magnitude
+        mag = np.sin(gamma)
+
+        x = mag * np.cos(phi) * direction  # Left-Right
+        z = mag * np.sin(phi)             # Up-Down
+
+        return x, y, z
+    x, y, z = polar_to_3d_custom(theta_deg, r)
+    print(f'[0] = {x[0]}, {y[0]}, {z[0]}')
+    print(f'min = {x.min()}, {y.min()}, {z.min()}')
+    print(f'max = {x.max()}, {y.max()}, {z.max()}')
+    pts = np.vstack((x, y, z)).T
+
+    # 2. Get the minimum enclosing ball
+    # Returns: center (C) and squared radius (r2)
+    C, r2 = miniball.get_bounding_ball(pts)
+    radius_ball = np.sqrt(r2)
+
+    # 2. Calculate distance from origin (d)
+    d = np.linalg.norm(C)
+
+    # 3. Calculate Angular Diameter (delta)
+    # If d < r, the origin is inside the ball (field of view is 180+)
+    if d > radius_ball:
+        angular_diameter_rad = 2 * np.arcsin(radius_ball / d)
+        angular_diameter_deg = np.degrees(angular_diameter_rad)
+    else:
+        angular_diameter_deg = 180.0
+        print("Warning: Origin is inside or on the boundary of the miniball.")
+
+    print(f"Distance to Ball Center: {d:.4f}")
+    print(f"Ball Radius: {radius_ball:.4f}")
+    print(f"Angular Diameter: {angular_diameter_deg:.2f}°")
+
+    # 3. Determine the Conic Angle
+    # For points on a unit sphere (R=1), the conic half-angle alpha
+    # is related to the miniball's radius by: radius_ball = sin(alpha)
+    # Or more robustly, using the center vector:
+    center_vec = C / np.linalg.norm(C)
+    # The conic angle is the max angular distance from the cone axis to the points
+    cos_alpha = np.dot(pts, center_vec)
+    conic_angle_rad = np.arccos(np.clip(cos_alpha, -1.0, 1.0)).max()
+
+    print(f"Miniball Center: {C}")
+    print(f"Miniball Radius: {radius_ball:.4f}")
+    print(f"Conic Half-Angle: {np.degrees(conic_angle_rad):.2f}°")
+    xc, yc, zc = C
+
+    # 2. Calculate the distance from origin to center (magnitude)
+    magnitude = np.sqrt(xc**2 + yc**2 + zc**2)
+
+    # 3. Calculate Elevation (Z-axis relative to XY plane)
+    # Returns values in range [-90, 90]
+    elevation_rad = np.arcsin(zc / magnitude)
+    elevation_deg = np.degrees(elevation_rad)
+
+    # 4. Calculate Horizontal Angle (X relative to Y-front)
+    # Using atan2(x, y) so that 0 degrees is 'Front' (Y-axis)
+    # Returns values in range [-180, 180]
+    horizontal_rad = np.arctan2(yc, xc)
+    horizontal_deg = np.degrees(horizontal_rad)
+
+    # 5. Adjust Horizontal to your 0-360 scale if preferred
+    horizontal_360 = horizontal_deg % 360
+
+    print(f"Miniball Center Vector: [{xc:.4f}, {yc:.4f}, {zc:.4f}]")
+    print(f"Elevation Angle: {elevation_deg:.2f}°")
+    print(f"Horizontal Angle: {horizontal_deg:.2f}° (or {horizontal_360:.2f}°)")
 
 
     rticks = [0, 12.5, 24]
@@ -393,7 +493,7 @@ def plotAudioSpheresVSContour(df, subject, channel, dataSubsetSize=60000):
         scatter = ax.scatter(df['PlotPolarThetaRadians'],
                      df['PlotPolarR'], 
                      c=df['Final Validation Score SI-SNR (dB)'],
-                     cmap='hot', alpha=0.75, zorder=2)
+                     cmap='hot', alpha=0.75, zorder=2, s=10)
         rticks = [0, 12.5, 25]
         rlabels = ['Right', 'Middle', 'Left']
         #if (channel == 1):
@@ -426,7 +526,7 @@ def plotAudioSpheresVSContour(df, subject, channel, dataSubsetSize=60000):
         return scatter
     scatter = plotSpherePointsOnAxis(axs[0], speech, "a) Discrete Speech Audiosphere", channel, 0.15)
     fmin,fmax = getZMinMax(subject, channel)
-    cf = plotContourOnAxis(axs[1], subject, channel, "b) Extrapolated Contour Map", fmin, fmax, 6, 0.15) 
+    cf = plotContourOnAxis(axs[1], subject, channel, "b) Extrapolated Contour Map", fmin, fmax, 100, 0.15) 
     titleString = f"Subject {subject}'s Audiospheres ("
     if channel == 0:
         titleString += "Right Ear"
@@ -435,10 +535,11 @@ def plotAudioSpheresVSContour(df, subject, channel, dataSubsetSize=60000):
     titleString += ")"
     fig.suptitle(titleString, fontsize=16, fontweight='bold')
     fig.colorbar(scatter, ax=axs[0], label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
-    fig.colorbar(cf, ax=axs[1], label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
+    fig.colorbar(cf, ax=axs[1], label='Validation Score SI-SNR (dB)', orientation='horizontal', format=ticker.FormatStrFormatter('%.1f'), shrink=0.9, aspect=50)
     plt.savefig(f'sub_{subject}_chan_{channel}_audio_sphere_vs_contour.pdf', bbox_inches='tight', transparent=True)
     plt.savefig(f'sub_{subject}_chan_{channel}_audio_sphere_vs_contour.png', bbox_inches='tight', transparent=True)
     plt.close()
+    sys.exit(0)
 
 plotAudioSpheresVSContour(all_data, 3, 0, 60000)
 
@@ -457,26 +558,26 @@ def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
             f"b) Subject {subList[0]} (Right Ear)",
             f"c) Subject {subList[1]} (Left Ear)",
             f"d) Subject {subList[1]} (Right Ear)",
-            f"f) Subject {subList[2]} (Left Ear)",
-            f"g) Subject {subList[2]} (Right Ear)",
-            f"h) Subject {subList[3]} (Left Ear)",
-            f"i) Subject {subList[3]} (Right Ear)",
-            f"j) Subject {subList[4]} (Left Ear)",
-            f"k) Subject {subList[4]} (Right Ear)",
-            f"l) Subject {subList[5]} (Left Ear)",
-            f"m) Subject {subList[5]} (Right Ear)",
-            f"n) Subject {subList[6]} (Left Ear)",
-            f"o) Subject {subList[6]} (Right Ear)",
-            f"p) Subject {subList[7]} (Left Ear)",
-            f"q) Subject {subList[7]} (Right Ear)",
-            f"r) Subject {subList[8]} (Left Ear)",
-            f"s) Subject {subList[8]} (Right Ear)", 
-            f"t) Subject {subList[9]} (Left Ear)",
-            f"u) Subject {subList[9]} (Right Ear)",
-            f"v) Subject {subList[10]} (Left Ear)",
-            f"w) Subject {subList[10]} (Right Ear)",
-            f"x) Subject {subList[11]} (Left Ear)",
-            f"y) Subject {subList[11]} (Right Ear)"]
+            f"e) Subject {subList[2]} (Left Ear)",
+            f"f) Subject {subList[2]} (Right Ear)",
+            f"g) Subject {subList[3]} (Left Ear)",
+            f"h) Subject {subList[3]} (Right Ear)",
+            f"i) Subject {subList[4]} (Left Ear)",
+            f"j) Subject {subList[4]} (Right Ear)",
+            f"k) Subject {subList[5]} (Left Ear)",
+            f"l) Subject {subList[5]} (Right Ear)",
+            f"m) Subject {subList[6]} (Left Ear)",
+            f"n) Subject {subList[6]} (Right Ear)",
+            f"o) Subject {subList[7]} (Left Ear)",
+            f"p) Subject {subList[7]} (Right Ear)",
+            f"q) Subject {subList[8]} (Left Ear)",
+            f"r) Subject {subList[8]} (Right Ear)", 
+            f"s) Subject {subList[9]} (Left Ear)",
+            f"t) Subject {subList[9]} (Right Ear)",
+            f"u) Subject {subList[10]} (Left Ear)",
+            f"v) Subject {subList[10]} (Right Ear)",
+            f"w) Subject {subList[11]} (Left Ear)",
+            f"x) Subject {subList[11]} (Right Ear)"]
     contoursMin = None
     contoursMax = None
     for r in range(numRows):
