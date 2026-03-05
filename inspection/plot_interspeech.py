@@ -367,6 +367,59 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
     ax.add_artist(ab)
     return CS
 
+def plotAudioSpheresVSContour(df, subject, channel, dataSubsetSize=60000):
+    speech = getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize, True)
+    fig, axs = plt.subplots(nrows=1, ncols=2, 
+            figsize=(12, 6), subplot_kw={'projection': 'polar'},
+                               gridspec_kw={'wspace': -0.0}, layout="constrained")
+    def plotSpherePointsOnAxis(ax, df, axTitle, channel=0):
+        ax.set_axisbelow(True)
+        scatter = ax.scatter(df['PlotPolarThetaRadians'],
+                     df['PlotPolarR'], 
+                     c=df['Final Validation Score SI-SNR (dB)'],
+                     cmap='hot', alpha=0.75, zorder=2)
+        rticks = [0, 12.5, 25]
+        rlabels = ['Right', 'Middle', 'Left']
+        #if (channel == 1):
+        #    rlabels = ['Left', 'Middle', 'Right']
+        rlines, rlabels = ax.set_rgrids(rticks, rlabels, angle=-90)
+        for i, label in enumerate(rlabels):
+            label.set_horizontalalignment('center') 
+            if i == 0:
+                label.set_verticalalignment('top') 
+            elif i == 2:
+                label.set_verticalalignment('bottom') 
+            else:
+                label.set_verticalalignment('center') 
+        ax.tick_params(axis='y', labelsize=10, rotation=0)
+        ax.tick_params(axis='x', labelsize=10, pad=11)
+        custom_ticks_rad = np.array([0, 45, 90, 135, 180, 225, 270, 315]) * np.pi / 180.0
+        custom_labels = ['Front', 'Antero-\nSuperior', 'Up', 'Postero-\nSuperior', 'Back', 'Postero-\nInferior', '', 'Antero-\nInferior'] # Note: 360/0 overlap
+
+        ax.set_xticks(custom_ticks_rad)
+        ax.set_xticklabels(custom_labels)
+        ax.set_title(axTitle, fontweight="bold")
+        ax.grid(True)
+        ax.set_rorigin(-10)
+        return scatter
+    scatter = plotSpherePointsOnAxis(axs[0], speech, "a) Discrete Speech Audiosphere", channel)
+    fmin,fmax = getZMinMax(subject, channel)
+    cf = plotContourOnAxis(axs[1], subject, channel, "b) Extrapolated Contour Map", fmin, fmax, 6, 0.30) 
+    titleString = f"Subject {subject}'s Audiospheres ("
+    if channel == 0:
+        titleString += "Right Ear"
+    else: 
+        titleString += "Left Ear"
+    titleString += ")"
+    fig.suptitle(titleString, fontsize=16, fontweight='bold')
+    fig.colorbar(scatter, ax=axs[0], label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
+    fig.colorbar(cf, ax=axs[1], label='Validation Score SI-SNR (dB)', orientation='horizontal', shrink=0.9, aspect=50)
+    plt.savefig(f'sub_{subject}_chan_{channel}_audio_sphere_vs_contour.pdf', bbox_inches='tight', transparent=True)
+    plt.savefig(f'sub_{subject}_chan_{channel}_audio_sphere_vs_contour.png', bbox_inches='tight', transparent=True)
+    plt.close()
+
+plotAudioSpheresVSContour(all_data, 3, 0, 60000)
+
 def plotMonauralContourMaps(df, subjectSet, numRows=3, numCols=8):
     subList = sorted(list(subjectSet))
     if len(subList) > (numRows*numCols):
