@@ -18,6 +18,7 @@ from matplotlib.colors import ListedColormap
 import matplotlib.image as mpimg
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from pathlib import Path
+import re
 
 CollatedFilePrefix = "collated_results_2026_03_04"
 csv_files = glob.glob('*.csv')
@@ -80,25 +81,42 @@ def read_out_file(out_file):
             'CUDA Peak Mem Cached (MB)',
             'CUDA Peak Mem Reserved (MB)'],
         errors='ignore')
-    df['UsesFullAudioDataset'] = False
-    df['AudioDataSubsetSize'] = 120
-    df['AudioDataSubsetSeed'] = 419572083
+    pattern = r"^sub_\d+_chan_\d+_samples_\d+_seed_\d+(?:_\d+)+\.out$"
+
+    if re.match(pattern, out_file):
+        toks = re.findall(r'\d+', out_file)
+        nums = [int(n) for n in toks]
+        df['UsesFullAudioDataset'] = False
+        df['AudioDataSubsetSize'] = nums[2]
+        df['AudioDataSubsetSeed'] = nums[3]
+    else: 
+        df['UsesFullAudioDataset'] = False
+        df['AudioDataSubsetSize'] = 120
+        df['AudioDataSubsetSeed'] = 419572083
     set_df_raw_dtypes(df)
     return df
 
 # First, read all data and concat into a single df
 all_data = read_collated_results()
 all_data.to_feather(CollatedFilePrefix + ".feather")
-print(f"All data conatains {len(all_data)} rows, pre merge")
-for i, out_file in enumerate(out_files):
-    print(out_file)
-    out_data = read_out_file(out_file)
-    all_data = pd.concat([all_data, out_data], ignore_index=True)
-    duplicate_rows_boolean = all_data.duplicated()
-    num_duplicates = duplicate_rows_boolean.sum()
-#    if num_duplicates:
-#        print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
+print(f"collated data conatains {len(all_data)} rows, pre merge")
+
+allDataFeather = "all_data_2026_03_04.feather"
+if Path(allDataFeather).exists() and Path(allDataFeather).is_file():
+    print(f"Detected exisiting feather, reading from that instead of CSVs")
+    all_data = pd.read_feather(allDataFeather)
+else:
+    print("Not feather files found, reading all CSVs")
+    for i, out_file in enumerate(out_files):
+        print(out_file)
+        out_data = read_out_file(out_file)
+        all_data = pd.concat([all_data, out_data], ignore_index=True)
+        duplicate_rows_boolean = all_data.duplicated()
+        num_duplicates = duplicate_rows_boolean.sum()
+#        if num_duplicates:
+#            print(f"All data conatains {len(all_data)} rows after merge {i}, {num_duplicates} duplicates")
 print(f"All data conatains {len(all_data)} rows, post merge")
+all_data.to_feather(allDataFeather)
 
 sub_3_chan_0_full_dataset = all_data[(all_data['Subject'] == 3) &
         (all_data['Channel'] == 0) &
@@ -134,7 +152,6 @@ def getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize=60000, speech
                 'PlotPolarThetaRadians':theta,
                 'PlotPolarR':r})
     return pd.DataFrame(sphereData)
-
 
 def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
     speech = getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize, True)
@@ -187,6 +204,9 @@ def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
     plt.close()
 
 
+
+
+
 def check_for_nans(df, subject, channel, samples, isSpeech=True):
     filtered = getPlotDataForAudioSphere(df, subject, channel, samples, isSpeech)
     hasNan = filtered['Final Validation Score SI-SNR (dB)'].isna().any()
@@ -222,11 +242,9 @@ def check_for_missing_data(df, subject, channel, samples):
     if num_missing > 0:
         print(f"Subject:{subject}, channel:{channel}, samples:{samples} missing {num_missing} data points")
 
-
-print("Checking for missing data...")
-check_for_missing_data(all_data, 3, 0, 120)
-sys.exit(0)
-
+#print("Checking for missing data...")
+#check_for_missing_data(all_data, 3, 0, 120)
+#sys.exit(0)
 
 sub3 = CipicDatabase.subjects[3]
 speechAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, True)
