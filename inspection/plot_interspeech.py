@@ -333,6 +333,22 @@ def plotContourOnAxis(ax, subject, channel, axTitle, cmapMin, cmapMax, num_level
 
     level_list = np.linspace(cmapMin, cmapMax, num_levels + 1)
     CS = ax.contourf(T, R, Z, levels=level_list, cmap='hot', zorder=2)
+    all_paths = CS.get_paths()
+    def get_area_by_level(level):
+        highest_path = all_paths[-1]
+
+        def get_polygon_area(vertices):
+            x, y = vertices[:, 0], vertices[:, 1]
+            return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+
+        # 3. Sum areas of all polygons in this path
+        # to_polygons() handles cases where one level has multiple separate regions
+        total_area = sum(get_polygon_area(poly) for poly in highest_path.to_polygons())
+        return total_area
+
+    for i in range(num_levels):
+        print(f"Area of the level {i}: {get_area_by_level(i)}")
+
 
     rticks = [0, 12.5, 24]
     rlabels = ['Right', 'Middle', 'Left']
