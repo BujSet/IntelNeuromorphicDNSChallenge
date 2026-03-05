@@ -98,6 +98,20 @@ def read_out_file(out_file):
     set_df_raw_dtypes(df)
     return df
 
+def merge_out_files():
+    global out_files
+    merged = None
+    for i, out_file in enumerate(out_files):
+        out_data = read_out_file(out_file)
+        if isinstance(merged, pd.DataFrame):
+            merged = pd.concat([merged, out_data], ignore_index=True)
+        else:
+            merged = out_data
+    return merged
+
+#sub3_chan0_samples120 = merge_out_files()
+#sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
+
 # First, read all data and concat into a single df
 all_data = read_collated_results()
 all_data.to_feather(CollatedFilePrefix + ".feather")
@@ -204,10 +218,6 @@ def plotAudioSpheres(df, subject, channel, dataSubsetSize=60000):
     plt.savefig(f'sub_{subject}_chan_{channel}_audio_spheres.pdf', bbox_inches='tight', transparent=True)
     plt.savefig(f'sub_{subject}_chan_{channel}_audio_spheres.png', bbox_inches='tight', transparent=True)
     plt.close()
-
-
-
-
 
 def check_for_nans(df, subject, channel, samples, isSpeech=True):
     filtered = getPlotDataForAudioSphere(df, subject, channel, samples, isSpeech)
