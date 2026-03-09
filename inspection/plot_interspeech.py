@@ -25,9 +25,37 @@ import matplotlib.ticker as ticker
 CollatedFilePrefix = "collated_results_2026_03_04"
 csv_files = glob.glob('*.csv')
 out_files = sorted(glob.glob('*.out'))
+feather_files = sorted(glob.glob('*.feather'))
 
 left_ear_img_data = mpimg.imread('stock_images/left_ear.jpg')
 right_ear_img_data = mpimg.imread('stock_images/right_ear.jpg')
+
+def check_for_missing_data(df, subject, channel, samples):
+    filtered = df[(df['Subject'] == subject) & (df['Channel'] == channel)]
+    if samples == 60000:
+        filtered = filtered[(filtered['UsesFullAudioDataset'] == True) &
+        (filtered['AudioDataSubsetSize'] == 60000)]
+    else:
+        filtered = filtered[(filtered['UsesFullAudioDataset'] == False) &
+        (filtered['AudioDataSubsetSize'] == samples)]
+
+    num_rows = len(filtered)
+    print(f"Subject:{subject}, channel:{channel}, samples:{samples} has {num_rows} rows of data")
+    num_missing = 0
+    # for subject 3, chan 0, samples 120, skipp the first 400 because we know
+    # these are already complete
+    for so in range(400,1250):
+        row_data = filtered[filtered['Speech Orient'] == so]
+        print(f"Dataframe from speech orient:{so} containes {len(row_data)} rows")
+        for no in range(1250):
+            matches = len(filtered[(filtered['Speech Orient'] == so) & (filtered['Noise Orient'] == no)])
+            if (matches == 0):
+                print(f"({so},{no})")
+                num_missing += 1
+    if num_missing > 0:
+        print(f"Subject:{subject}, channel:{channel}, samples:{samples} missing {num_missing} data points")
+
+#sys.exit(0)
 
 def get_plot_theta_r(sub, index, channel=0):
     modulo = index % 50
@@ -98,19 +126,50 @@ def read_out_file(out_file):
     set_df_raw_dtypes(df)
     return df
 
-def merge_out_files():
+def merge_out_files(srcDF=None):
     global out_files
     merged = None
+    print(f"Reading {len(out_files)} out files...")
     for i, out_file in enumerate(out_files):
         out_data = read_out_file(out_file)
         if isinstance(merged, pd.DataFrame):
             merged = pd.concat([merged, out_data], ignore_index=True)
         else:
             merged = out_data
+    print(f"Loaded {len(merged)} unique rows from out files.")
+    if isinstance(srcDF, pd.DataFrame):
+        merged = pd.concat([merged, srcDF], ignore_index=True)
+        merged = merged.drop_duplicates()
+        print(f"After merge, data has {len(merged)} unique rows")
     return merged
 
-#sub3_chan0_samples120 = merge_out_files()
-#sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
+def load_feather_files():
+    global feather_files
+    merged = None
+    print(f"Reading {len(feather_files)} feather files...")
+    for i, feather_file in enumerate(feather_files):
+        df = pd.read_feather(feather_file)
+        if isinstance(merged, pd.DataFrame):
+            merged = pd.concat([merged, df], ignore_index=True)
+        else:
+            merged = df
+    merged = merged.drop_duplicates()
+    print(f"Loaded {len(merged)} unique rows from feather files.")
+    return merged
+
+clean = load_feather_files()
+clean = merge_out_files(srcDF=clean)
+
+sub3_chan0_samples120 = clean[
+        (clean['Subject'] == 3) &
+        (clean['Channel'] == 0) &
+        (clean['UsesFullAudioDataset'] == False) &
+        (clean['AudioDataSubsetSize'] == 120)]
+print(f"sub3_chan0_samples120 has {len(sub3_chan0_samples120)} unique rows")
+sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
+print("Checking for missing data...")
+check_for_missing_data(clean, 3, 0, 120)
+sys.exit(0)
 
 # First, read all data and concat into a single df
 all_data = read_collated_results()
@@ -229,34 +288,6 @@ def check_for_nans(df, subject, channel, samples, isSpeech=True):
     else:
         print(f"Subject:{subject} channel:{channel} samples:{samples} speech:{isSpeech} has no Nans")
 
-def check_for_missing_data(df, subject, channel, samples):
-    filtered = df[(df['Subject'] == subject) & (df['Channel'] == channel)]
-    if samples == 60000:
-        filtered = filtered[(filtered['UsesFullAudioDataset'] == True) &
-        (filtered['AudioDataSubsetSize'] == 60000)]
-    else:
-        filtered = filtered[(filtered['UsesFullAudioDataset'] == False) &
-        (filtered['AudioDataSubsetSize'] == samples)]
-
-    num_rows = len(filtered)
-    print(f"Subject:{subject}, channel:{channel}, samples:{samples} has {num_rows} rows of data")
-    num_missing = 0
-    # for subject 3, chan 0, samples 120, skipp the first 400 because we know
-    # these are already complete
-    for so in range(400,1250):
-        row_data = filtered[filtered['Speech Orient'] == so]
-        print(f"Dataframe from speech orient:{so} containes {len(row_data)} rows")
-        for no in range(1250):
-            matches = len(filtered[(filtered['Speech Orient'] == so) & (filtered['Noise Orient'] == no)])
-            if (matches == 0):
-                print(f"({so},{no})")
-                num_missing += 1
-    if num_missing > 0:
-        print(f"Subject:{subject}, channel:{channel}, samples:{samples} missing {num_missing} data points")
-
-#print("Checking for missing data...")
-#check_for_missing_data(all_data, 3, 0, 120)
-#sys.exit(0)
 
 sub3 = CipicDatabase.subjects[3]
 speechAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, True)
