@@ -44,7 +44,7 @@ def check_for_missing_data(df, subject, channel, samples):
     num_missing = 0
     # for subject 3, chan 0, samples 120, skipp the first 400 because we know
     # these are already complete
-    for so in range(400,1250):
+    for so in range(0,1250):
         row_data = filtered[filtered['Speech Orient'] == so]
         print(f"Dataframe from speech orient:{so} containes {len(row_data)} rows")
         for no in range(1250):
@@ -54,8 +54,6 @@ def check_for_missing_data(df, subject, channel, samples):
                 num_missing += 1
     if num_missing > 0:
         print(f"Subject:{subject}, channel:{channel}, samples:{samples} missing {num_missing} data points")
-
-#sys.exit(0)
 
 def get_plot_theta_r(sub, index, channel=0):
     modulo = index % 50
@@ -168,7 +166,7 @@ sub3_chan0_samples120 = clean[
 print(f"sub3_chan0_samples120 has {len(sub3_chan0_samples120)} unique rows")
 sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
 print("Checking for missing data...")
-check_for_missing_data(clean, 3, 0, 120)
+check_for_missing_data(clean, 3, 1, 120)
 sys.exit(0)
 
 # First, read all data and concat into a single df
