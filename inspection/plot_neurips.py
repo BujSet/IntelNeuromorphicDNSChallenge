@@ -188,7 +188,20 @@ def csvs_to_feather(clean_df, sub, chan, samples, seed):
     print(f"Success, converted CSVs to feather {featherFileOut}")
 
 
-csvs_to_feather(clean, 8, 0, 120, 419572083)
+#csvs_to_feather(clean,   8, 0, 120, 419572083)
+#csvs_to_feather(clean,   8, 1, 120, 419572083)
+#csvs_to_feather(clean,   9, 1, 120, 419572083)
+#csvs_to_feather(clean,  12, 0, 120, 419572083)
+#csvs_to_feather(clean,  12, 1, 120, 419572083)
+#csvs_to_feather(clean,  17, 0, 120, 419572083)
+#csvs_to_feather(clean,  17, 1, 120, 419572083)
+#csvs_to_feather(clean,  18, 0, 120, 419572083)
+#csvs_to_feather(clean,  18, 1, 120, 419572083)
+csvs_to_feather(clean,  19, 0, 120, 419572083)
+csvs_to_feather(clean,  19, 1, 120, 419572083)
+csvs_to_feather(clean,  44, 0, 120, 419572083)
+csvs_to_feather(clean,  44, 1, 120, 419572083)
+csvs_to_feather(clean, 165, 1, 120, 419572083)
 #sub3_chan0_samples120 = clean[
 #        (clean['Subject'] == 3) &
 #        (clean['Channel'] == 0) &
