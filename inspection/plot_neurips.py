@@ -197,33 +197,24 @@ def csvs_to_feather(clean_df, sub, chan, samples, seed):
 #csvs_to_feather(clean,  17, 1, 120, 419572083)
 #csvs_to_feather(clean,  18, 0, 120, 419572083)
 #csvs_to_feather(clean,  18, 1, 120, 419572083)
-csvs_to_feather(clean,  19, 0, 120, 419572083)
-csvs_to_feather(clean,  19, 1, 120, 419572083)
-csvs_to_feather(clean,  44, 0, 120, 419572083)
-csvs_to_feather(clean,  44, 1, 120, 419572083)
-csvs_to_feather(clean, 165, 1, 120, 419572083)
-#sub3_chan0_samples120 = clean[
-#        (clean['Subject'] == 3) &
-#        (clean['Channel'] == 0) &
-#        (clean['UsesFullAudioDataset'] == False) &
-#        (clean['AudioDataSubsetSize'] == 120)]
-#print(f"sub3_chan0_samples120 has {len(sub3_chan0_samples120)} unique rows")
-#sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
-#print("Checking for missing data...")
-#check_for_missing_data(clean, 3, 1, 120)
-sys.exit(0)
+#csvs_to_feather(clean,  19, 0, 120, 419572083)
+##csvs_to_feather(clean,  19, 1, 120, 419572083)
+##csvs_to_feather(clean,  44, 0, 120, 419572083)
+##csvs_to_feather(clean,  44, 1, 120, 419572083)
+##csvs_to_feather(clean, 165, 1, 120, 419572083)
+##sys.exit(0)
 
 # First, read all data and concat into a single df
 all_data = read_collated_results()
 all_data.to_feather(CollatedFilePrefix + ".feather")
-print(f"collated data conatains {len(all_data)} rows, pre merge")
+print(f"Collated data contains {len(all_data)} rows, pre merge. Writing results to {CollatedFilePrefix}.feather")
 
-allDataFeather = "all_data_2026_03_04.feather"
+allDataFeather = "all_data_2026_05_06.feather"
 if Path(allDataFeather).exists() and Path(allDataFeather).is_file():
     print(f"Detected exisiting feather, reading from that instead of CSVs")
     all_data = pd.read_feather(allDataFeather)
 else:
-    print("Not feather files found, reading all CSVs")
+    print(f"Feather file {allDataFeather} not found, reading all CSVs")
     for i, out_file in enumerate(out_files):
         print(out_file)
         out_data = read_out_file(out_file)
@@ -239,6 +230,19 @@ sub_3_chan_0_full_dataset = all_data[(all_data['Subject'] == 3) &
         (all_data['Channel'] == 0) &
         (all_data['UsesFullAudioDataset']) &
         (all_data['AudioDataSubsetSize'] == 60000)]
+
+print(f"Sub3_chan0_samples_60000 has {len(sub_3_chan_0_full_dataset)} unique rows")
+def compare_sampling_errors(df, full):
+    sampleOptions = [12000]
+    for sampleOpt in sampleOptions:
+        sliced_df = df[(df['Subject'] == 3) &
+                       (df['Channel'] == 0) &
+                       (df['UsesFullAudioDataset'] == False) &
+                       (df['AudioDataSubsetSize'] == sampleOpt)]
+        print(f"Sliced dataframe with samples={sampleOpt} has {len(sliced_df)} rows")
+
+
+compare_sampling_errors(all_data, sub_3_chan_0_full_dataset)
 
 def getPlotDataForAudioSphere(df, subject, channel, dataSubsetSize=60000, speechAudioSphere=True):
     filtered = all_data[(all_data['Subject'] == subject) &
@@ -331,6 +335,7 @@ def check_for_nans(df, subject, channel, samples, isSpeech=True):
         print(f"Subject:{subject} channel:{channel} samples:{samples} speech:{isSpeech} has no Nans")
 
 
+sys.exit(0)
 sub3 = CipicDatabase.subjects[3]
 speechAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, True)
 noiseAudioSphere = getPlotDataForAudioSphere(all_data, 3, 0, 60000, False)
