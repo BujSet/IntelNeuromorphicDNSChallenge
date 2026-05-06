@@ -22,7 +22,7 @@ import re
 import miniball
 import matplotlib.ticker as ticker
 
-CollatedFilePrefix = "collated_results_2026_03_04"
+CollatedFilePrefix = "collated_results_2026_05_06"
 csv_files = glob.glob('*.csv')
 out_files = sorted(glob.glob('*.out'))
 feather_files = sorted(glob.glob('*.feather'))
@@ -30,7 +30,7 @@ feather_files = sorted(glob.glob('*.feather'))
 left_ear_img_data = mpimg.imread('stock_images/left_ear.jpg')
 right_ear_img_data = mpimg.imread('stock_images/right_ear.jpg')
 
-def check_for_missing_data(df, subject, channel, samples):
+def check_for_missing_data(df, subject, channel, samples, printMissing=False):
     filtered = df[(df['Subject'] == subject) & (df['Channel'] == channel)]
     if samples == 60000:
         filtered = filtered[(filtered['UsesFullAudioDataset'] == True) &
@@ -42,18 +42,20 @@ def check_for_missing_data(df, subject, channel, samples):
     num_rows = len(filtered)
     print(f"Subject:{subject}, channel:{channel}, samples:{samples} has {num_rows} rows of data")
     num_missing = 0
-    # for subject 3, chan 0, samples 120, skipp the first 400 because we know
-    # these are already complete
     for so in range(0,1250):
         row_data = filtered[filtered['Speech Orient'] == so]
-        print(f"Dataframe from speech orient:{so} containes {len(row_data)} rows")
+        print(f"Dataframe from speech orient:{so} contains {len(row_data)} rows")
         for no in range(1250):
             matches = len(filtered[(filtered['Speech Orient'] == so) & (filtered['Noise Orient'] == no)])
             if (matches == 0):
-                print(f"({so},{no})")
+                if printMissing:
+                    print(f"({so},{no})")
                 num_missing += 1
     if num_missing > 0:
         print(f"Subject:{subject}, channel:{channel}, samples:{samples} missing {num_missing} data points")
+    else: 
+        print(f"Subject:{subject}, channel:{channel}, samples:{samples} contains all data points")
+    return num_missing
 
 def get_plot_theta_r(sub, index, channel=0):
     modulo = index % 50
@@ -158,15 +160,44 @@ def load_feather_files():
 clean = load_feather_files()
 clean = merge_out_files(srcDF=clean)
 
-sub3_chan0_samples120 = clean[
-        (clean['Subject'] == 3) &
-        (clean['Channel'] == 0) &
-        (clean['UsesFullAudioDataset'] == False) &
-        (clean['AudioDataSubsetSize'] == 120)]
-print(f"sub3_chan0_samples120 has {len(sub3_chan0_samples120)} unique rows")
-sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
-print("Checking for missing data...")
-check_for_missing_data(clean, 3, 1, 120)
+def csvs_to_feather(clean_df, sub, chan, samples, seed):
+    df = clean_df[
+        (clean_df['Subject'] == sub) &
+        (clean_df['Channel'] == chan) &
+        (clean_df['UsesFullAudioDataset'] == (samples == 60000)) &
+        (clean_df['AudioDataSubsetSize'] == samples)]
+    if len(df) == 0:
+        print(f"ERROR: No rows detected for sub{sub}_chan{chan}_samples{samples}")
+        return
+    print(f"sub{sub}_chan{chan}_samples{samples} has {len(df)} unique rows")
+
+    # Do the real work
+    print("Checking for missing data...")
+    numDataMissing = check_for_missing_data(clean_df, sub, chan, samples)
+    featherFileOut = f"sub_{sub}_chan_{chan}_samples_{samples}_seed_{seed}"
+    if numDataMissing == 0: 
+        featherFileOut += "_full"
+    else:
+        featherFileOut += f"_missing_{numDataMissing}"
+    featherFileOut += ".feather"
+    featherFilePath = Path(featherFileOut)
+    if featherFilePath.is_file():
+        print(f"Detected existing file for {featherFileOut}, aborting CSV to Feather conversion")
+        return
+    df.to_feather(featherFileOut)
+    print(f"Success, converted CSVs to feather {featherFileOut}")
+
+
+csvs_to_feather(clean, 8, 0, 120, 419572083)
+#sub3_chan0_samples120 = clean[
+#        (clean['Subject'] == 3) &
+#        (clean['Channel'] == 0) &
+#        (clean['UsesFullAudioDataset'] == False) &
+#        (clean['AudioDataSubsetSize'] == 120)]
+#print(f"sub3_chan0_samples120 has {len(sub3_chan0_samples120)} unique rows")
+#sub3_chan0_samples120.to_feather("sub_3_chan_0_samples_120_seed_419572083.feather")
+#print("Checking for missing data...")
+#check_for_missing_data(clean, 3, 1, 120)
 sys.exit(0)
 
 # First, read all data and concat into a single df
