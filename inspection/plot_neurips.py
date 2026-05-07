@@ -233,13 +233,82 @@ sub_3_chan_0_full_dataset = all_data[(all_data['Subject'] == 3) &
 
 print(f"Sub3_chan0_samples_60000 has {len(sub_3_chan_0_full_dataset)} unique rows")
 def compare_sampling_errors(df, full):
-    sampleOptions = [12000]
+    sampleOptions = [12000, 6000, 3000, 1200, 600, 120]
+    errors_by_sample = {}
     for sampleOpt in sampleOptions:
         sliced_df = df[(df['Subject'] == 3) &
                        (df['Channel'] == 0) &
                        (df['UsesFullAudioDataset'] == False) &
                        (df['AudioDataSubsetSize'] == sampleOpt)]
         print(f"Sliced dataframe with samples={sampleOpt} has {len(sliced_df)} rows")
+        errors = []
+        match_count = 0
+
+        # Nested loop: compare SI-SNR values for each Speech Orient and Noise Orient pair
+        for speech_orient in sliced_df['Speech Orient'].unique():
+            for noise_orient in sliced_df[sliced_df['Speech Orient'] == speech_orient]['Noise Orient'].unique():
+                # Find matching rows in both sliced and full datasets
+                slice_match = sliced_df[(sliced_df['Speech Orient'] == speech_orient) &
+                                        (sliced_df['Noise Orient'] == noise_orient)]
+
+                full_match = full[(full['Subject'] == 3) &
+                                 (full['Channel'] == 0) &
+                                 (full['Speech Orient'] == speech_orient) &
+                                 (full['Noise Orient'] == noise_orient)]
+
+                # Only count matches if pair exists in both datasets
+                if len(slice_match) > 0 and len(full_match) > 0:
+                    slice_sisnr = slice_match['Final Validation Score SI-SNR (dB)'].values[0]
+                    full_sisnr = full_match['Final Validation Score SI-SNR (dB)'].values[0]
+                    error = abs(slice_sisnr - full_sisnr)
+                    errors.append(error)
+                    match_count += 1
+
+        errors_by_sample[sampleOpt] = errors
+
+        # Print error statistics for this sample size
+        if errors:
+            errors_array = np.array(errors)
+            print(f"  Matching pairs found: {match_count}")
+            print(f"  Mean error: {np.mean(errors_array):.6f} dB")
+            print(f"  Median error: {np.median(errors_array):.6f} dB")
+            print(f"  Std Dev: {np.std(errors_array):.6f} dB")
+            print(f"  Min error: {np.min(errors_array):.6f} dB")
+            print(f"  Max error: {np.max(errors_array):.6f} dB")
+            print(f"  Q1 (25th percentile): {np.percentile(errors_array, 25):.6f} dB")
+            print(f"  Q3 (75th percentile): {np.percentile(errors_array, 75):.6f} dB")
+        else:
+            print(f"  No matching pairs found for sample size {sampleOpt}")
+    # Generate box and whisker plot comparing all sample options
+    print("\n" + "="*60)
+    print("Generating box and whisker plot...")
+    print("="*60)
+
+    valid_samples = [opt for opt in sampleOptions if opt in errors_by_sample and len(errors_by_sample[opt]) > 0]
+    if valid_samples:
+        data_to_plot = [errors_by_sample[opt] for opt in valid_samples]
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+        bp = ax.boxplot(data_to_plot, labels=[f"{opt} samples" for opt in valid_samples],
+                         patch_artist=True, widths=0.6)
+
+        # Customize box plot colors
+        for patch in bp['boxes']:
+            patch.set_facecolor('lightblue')
+            patch.set_alpha(0.7)
+
+        ax.set_ylabel('Absolute SI-SNR Error (dB)', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Sample Size', fontsize=12, fontweight='bold')
+        ax.set_title('SI-SNR Error Distribution Across Sample Sizes\n(Subject 3, Channel 0)',
+                     fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        plt.tight_layout()
+        plt.savefig('sisnr_error_boxplot.pdf', bbox_inches='tight', dpi=300)
+        plt.savefig('sisnr_error_boxplot.png', bbox_inches='tight', dpi=300)
+        plt.close()
+
+        print("Box plot saved as 'sisnr_error_boxplot.pdf' and 'sisnr_error_boxplot.png'")
 
 
 compare_sampling_errors(all_data, sub_3_chan_0_full_dataset)
