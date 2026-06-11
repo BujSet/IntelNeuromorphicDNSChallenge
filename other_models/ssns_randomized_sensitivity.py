@@ -13,13 +13,19 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import soundfile as sf
-
+import time
 from lava.lib.dl import slayer
 from snr import si_snr
 import torchaudio
 from noisyspeech_synthesizer import segmental_snr_mixer
 import random
 from chtc_files.htchirp_utils import *
+
+def chtc_print(args, string):
+    if args.isCHTCJob:
+        send_log_msg(string)
+    else:
+        print(string)
 
 def stft_splitter(audio, n_fft=512, method=None):
     with torch.no_grad():
@@ -166,30 +172,13 @@ class Network(torch.nn.Module):
         if not valid_gradients:
             self.zero_grad()
 
-def plot_weights(data):
-    for name in data.keys():
-        num_epochs = max(data[name].keys()) + 1
-        num_neurons = data[name][0].size()[0]
-        matrix = np.zeros(shape=(num_epochs, num_neurons))
-        for i in range(num_epochs):
-            for j in range(num_neurons):
-                matrix[i,j] = data[name][i][j]
-
-        plt.figure(figsize=(20,20))
-        plt.imshow(np.transpose(matrix), cmap='hot', interpolation='nearest')
-        plt.xlabel("Training Epochs")
-        plt.ylabel("Axons")
-        plt.savefig(name + ".png", bbox_inches="tight")
-        plt.close()
-
-def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList):
+def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader):
 
     for i, (clean, noise, idx) in enumerate(train_loader):
         net.train()
-        speechFilterOrient, noiseFilterOrient = random.choice(orientList)
-        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
+        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
         speechFilter  = speechFilter.to(device)
-        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
+        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
         noiseFilter   = noiseFilter.to(device)
         noise = noise.to(device)
         clean = clean.to(device)
@@ -237,20 +226,24 @@ def run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, or
         optimizer.step()
         return
 
-def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList, startingEpoch=0):
+def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     delay_weights = dict()
     averageTrainingLoss = 0
     averageTrainingScore = 0
+    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
+    speechFilter  = speechFilter.to(device)
+    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
+    noiseFilter   = noiseFilter.to(device)
+    epochLatencies = []
+    chtc_print(args, "Beginning training epochs...")
     for epoch in range(args.epochs):
+        epoch_start_time = time.perf_counter()
         trainingLosses = []
         trainingScores = []
+        mini_batch_iter = 0
         for i, (clean, noise, idx) in enumerate(train_loader):
+            mini_batch_start_time = time.perf_counter()
             net.train()
-            speechFilterOrient, noiseFilterOrient = random.choice(orientList)
-            speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
-            speechFilter  = speechFilter.to(device)
-            noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
-            noiseFilter   = noiseFilter.to(device)
             noise = noise.to(device)
             clean = clean.to(device)
             ssl_noise = torch.zeros(args.b, 480000).to(device)
@@ -320,29 +313,29 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
                 statString += str(speechFilterOrient) + "," + str(noiseFilterOrient) + ") -> "
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
-                print(statString)
+                chtc_print(args, statString)
+            mini_batch_end_time = time.perf_counter()
+            mini_batch_duration = mini_batch_end_time - mini_batch_start_time
+            #chtc_print(args, f"Mini Batch Iteration {mini_batch_iter+1} completed in {mini_batch_duration:.2f} seconds")
+            mini_batch_iter += 1
         scheduler.step()
-        if args.trackDelayWhileTraining:
-            for param_tensor in net.state_dict():
-                if ("delay.delay" in param_tensor):
-                    if not param_tensor in delay_weights.keys():
-                        delay_weights[param_tensor] = dict()
-                    delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
-                    #print(param_tensor + "," + str(epoch) + "," + str(delay_weights[param_tensor][epoch]))
+        epoch_end_time = time.perf_counter()
+        epoch_duration = epoch_end_time - epoch_start_time
+        epochLatencies.append(epoch_duration)
+        chtc_print(args, f"Epoch {epoch+1} completed in {epoch_duration:.2f} seconds")
         # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
         averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
     return delay_weights, averageTrainingLoss, averageTrainingScore
 
-def run_validation_loop_with_cipic(args, net, validation_loader, orientList):
+def run_validation_loop_with_cipic(args, net, validation_loader):
     net.eval()
     validationLosses = []
     validationScores = []
     for i, (clean, noise, idx) in enumerate(validation_loader):
-        speechFilterOrient, noiseFilterOrient = random.choice(orientList)
-        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(speechFilterOrient, args.filterChannel)).float()
+        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
         speechFilter  = speechFilter.to(device)
-        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(noiseFilterOrient, args.filterChannel)).float()
+        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
         noiseFilter   = noiseFilter.to(device)
 
         noise = noise.to(device)
@@ -498,10 +491,6 @@ if __name__ == '__main__':
                         dest='trackDelayWhileTraining', 
                         action='store_true',
                         help='Switch flag to track updates to delay weights while training')
-    parser.add_argument('-useCheckpoint',
-                        type=str,
-                        default='',
-                        help='Checkpoint to continue training from')
     parser.add_argument('-saveCheckpoint',
                         dest='saveCheckpoint', 
                         action='store_true',
@@ -511,30 +500,14 @@ if __name__ == '__main__':
     # ID:21 ==> Mannequin with large pinna
     # ID 165 ==> Mannequin with small pinna
     # The rest are real subjects
-    parser.add_argument('-fixedOrients',
-                        dest='fixedOrients', 
-                        action='store_true',
-                        help='Switch flag to manually configure which orients will be selected')
-    parser.add_argument('-numFixedOrients',
-                        type=int,
-                        default=1,
-                        help='Number of manually set orientation pairs to use if fixedOrients switch is set')
     parser.add_argument('-cipicSubject',
                         type=int,
                         default=12,
                         help='Cipic subject ID for pinna filters')
-    parser.add_argument('-filterChannel',
-                        type=int,
-                        default=0,
-                        help='Channel used for speech and noise separation')
     parser.add_argument('-hiddenLayerWidths',
                         type=int,
                         default=512,
                         help='# of nuerons in hidden layers')
-    parser.add_argument('-numOrients',
-                        type=int,
-                        default=8,
-                        help='Number of additional orientations, must be >= 8')
     parser.add_argument('-speechFilterOrient',
                         type=int,
                         default=608,
@@ -551,6 +524,10 @@ if __name__ == '__main__':
                         type=int,
                         default=0,
                         help='Channel for noise filter')
+    parser.add_argument('-is_CHTC_job',
+                        dest='isCHTCJob',
+                        action='store_true',
+                        help='Switch flag to indicate if this job was run on CHTC')
 
     args = parser.parse_args()
 
@@ -573,7 +550,7 @@ if __name__ == '__main__':
 
     lam = args.lam
 
-    print('Using GPUs {}'.format(args.gpu))
+    chtc_print(args, 'Using GPUs {}'.format(args.gpu))
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
@@ -615,69 +592,18 @@ if __name__ == '__main__':
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
-    orientList = []
+    # 316 center of front upper  right hemisphere
+    # 300 center of front bottom right hemisphere
+    # 332 center of back  upper  right hemisphere
+    # 348 center of back  bottom right hemisphere
+    # 916 center of front upper  left  hemisphere
+    # 900 center of front bottom left  hemisphere
+    # 932 center of back  upper  left  hemisphere
+    # 948 center of back  bottom left  hemisphere
+    # 608 midsaggittal in front
+    # 640 midsaggittal in back 
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
-    print("Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
-    if not args.fixedOrients:
-        orientSet = set()
-        orientSet.add(316) # center of front upper  right hemisphere
-        orientSet.add(300) # center of front bottom right hemisphere
-        orientSet.add(332) # center of back  upper  right hemisphere
-        orientSet.add(348) # center of back  bottom right hemisphere
-        orientSet.add(916) # center of front upper  left  hemisphere
-        orientSet.add(900) # center of front bottom left  hemisphere
-        orientSet.add(932) # center of back  upper  left  hemisphere
-        orientSet.add(948) # center of back  bottom left  hemisphere
-        allPossibleOrients = set(range(0, 1250)).difference(orientSet)
-        for _ in range(8, args.numOrients):
-            randOrient = list(allPossibleOrients)[random.randint(0, len(allPossibleOrients) - 1)]
-            orientSet.add(randOrient)
-            allPossibleOrients.remove(randOrient)
-        selectedOrients = list(orientSet)
-        orientPairSet = set()
-        for o1 in selectedOrients:
-            for o2 in selectedOrients:
-                orientPairSet.add( (o1, o2) )
-        orientList = list(orientPairSet)
-    else:
-        assert(args.fixedOrients and args.numFixedOrients >= 1)
-        if args.numFixedOrients == 1:
-            orientList.append( (608, 640) ) # speech in front, noise in back, medial plane
-        if args.numFixedOrients == 2:
-            orientList.append( (608, 640) ) # speech in front, noise in back, medial plane
-            orientList.append( (640, 608) ) # speech in back, noise in front, medial plane
-        if args.numFixedOrients == 4:
-            # Speech constrained to frontal hemisphere, noise to back
-            orientList.append( (316, 948) )
-            orientList.append( (300, 932) )
-            orientList.append( (916, 348) )
-            orientList.append( (900, 332) )
-        if args.numFixedOrients == 5:
-            # Speech constrained to dorsal hemisphere, noise to front
-            orientList.append( (948, 316) )
-            orientList.append( (932, 300) )
-            orientList.append( (348, 916) )
-            orientList.append( (332, 900) )
-        if args.numFixedOrients == 6:
-            # Speech constrained to frontal, right hemisphere, noise to back
-            orientList.append( (316, 948) )
-            orientList.append( (300, 932) )
-        if args.numFixedOrients == 7:
-            # Speech constrained to frontal, upper hemisphere, noise to back
-            orientList.append( (316, 948) )
-            orientList.append( (916, 348) )
-        if args.numFixedOrients == 8:
-            # Speech constrained to upper, right hemisphere, noise to back
-            orientList.append( (316, 948) )
-            orientList.append( (332, 900) )
-        if args.numFixedOrients == 9:
-            # Speech constrained to right hemisphere
-            orientList.append( (316, 948) )
-            orientList.append( (300, 932) )
-            orientList.append( (332, 900) )
-            orientList.append( (348, 916) )
-
-    print("Orient list contains " + str(len(orientList)) + " orientation pairs")
+    chtc_print(args, "Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
 
     train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
     
@@ -688,46 +614,10 @@ if __name__ == '__main__':
                           num_workers=4,
                           pin_memory=True)
 
-    startingEpoch = 0
     trackingInfo = dict()
-    if args.useCheckpoint != "":
-        run_warm_up_training_cipic(args, net, optimizer, scheduler, train_loader, orientList)
-        checkpoint = torch.load(args.useCheckpoint, weights_only=True)
-        module.load_state_dict(checkpoint['module_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        startingEpoch = checkpoint['epochs_completed']
-        trackingInfo = checkpoint['tracking_info']
-        print("Current Tracking info:")
-        print("Epoch | Training Loss | Training Score (dB) | Validation Loss | Validation Score (dB)")
-        for i in range(0, startingEpoch+1):
-            if i in trackingInfo.keys():
-                tloss = trackingInfo[i]['training_loss']
-                tScore = trackingInfo[i]['training_score']
-                vLoss = trackingInfo[i]['validation_loss']
-                vScore = trackingInfo[i]['validation_score']
-                checkpointStr  = str(i) + " | "
-                checkpointStr += str(tloss) + " | " + str(tScore) + " | "
-                checkpointStr += str(vLoss) + " | " + str(vScore)
-                print(checkpointStr)
-        startingTrainingLoss = trackingInfo[startingEpoch]['training_loss']
-        startingTrainingScore = trackingInfo[startingEpoch]['training_score']
-        startingValidationLoss = trackingInfo[startingEpoch]['validation_loss']
-        startingValidationScore = trackingInfo[startingEpoch]['validation_score']
-        statusString  = "Resuming from checkpoint [epochs_completed:" 
-        statusString += str(startingEpoch) + ", training loss=" 
-        statusString += str(startingTrainingLoss) + ", training si-snr:" 
-        statusString += str(startingTrainingScore) + ", validation loss="
-        statusString += str(startingValidationLoss) + ", validation si-snr:" 
-        statusString += str(startingValidationScore) + "]"
-        print(statusString)
-
-    delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList, startingEpoch)
+    delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader)
     
-    if args.trackDelayWhileTraining:
-    	plot_weights(delay_weights)
-
-    print("Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
+    chtc_print(args, "Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
 
     validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     
@@ -737,26 +627,26 @@ if __name__ == '__main__':
                                collate_fn=validation_set.collate_fn,
                                num_workers=4,
                                pin_memory=True)
-    finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader, orientList)
+    finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader)
     statusString  = "Completed training and validation [epochs_completed:" 
-    statusString += str(startingEpoch+args.epochs) + ", training loss=" 
+    statusString += str(args.epochs) + ", training loss=" 
     statusString += str(lastTrainingLoss) + ", training si-snr:" 
     statusString += str(lastTrainingScore) + ", validation loss="
     statusString += str(finalValidationLoss) + ", validation si-snr:" 
     statusString += str(finalValidationScore) + "]"
-    print(statusString)
+    chtc_print(args, statusString)
     if (args.saveCheckpoint):
-        trackingInfo[startingEpoch+args.epochs] = dict()
-        currEpochStats = trackingInfo[startingEpoch+args.epochs]
+        trackingInfo[args.epochs] = dict()
+        currEpochStats = trackingInfo[args.epochs]
         currEpochStats['training_loss'] = lastTrainingLoss
         currEpochStats['training_score'] = lastTrainingScore
         currEpochStats['validation_loss'] = finalValidationLoss
         currEpochStats['validation_score'] = finalValidationScore
         torch.save({
-                'epochs_completed': startingEpoch + args.epochs,
+                'epochs_completed': args.epochs,
                 'module_state_dict': module.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
                 }, trained_folder + '/network.pt')
-    print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
+    chtc_print(args, "Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
