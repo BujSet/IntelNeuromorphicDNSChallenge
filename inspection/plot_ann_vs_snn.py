@@ -95,10 +95,10 @@ def axis_artistry(ax, t, m, title):
     handles.append(vspan_proxy)
     labels.append("Backwards")
 
-    ax.set_title(title, fontweight='bold')
-    ax.set_xlabel('Time (msec)')
-    ax.set_ylabel('GPU Memory Usage (GB)')
-    ax.legend(handles=handles, labels=labels)
+    ax.set_title(title, fontweight='bold', fontsize=14)
+    ax.set_xlabel('Time (msec)', fontsize=12)
+    ax.set_ylabel('GPU Memory Usage (GB)', fontsize=12)
+    ax.legend(handles=handles, labels=labels, loc='upper left')
     ax.set_xlim(t[0], t[-1])
 
 df = pd.read_csv('ANN_data.csv')
@@ -114,11 +114,8 @@ print('SNN stats:')
 print(f'\ttime:{snn_t}')
 print(f'\tmem:{snn_m50}')
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 4))
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 4))
 axis_artistry(ax1, ann_t, ann_m50, 'a) ANN Training Epoch ')
 axis_artistry(ax2, snn_t, snn_m50, 'b) SNN Training Epoch ')
-#ax2.set_title('b) Training Epoch for SNN', fontweight='bold')
-#ax2.set_xlabel('Time (msec)')
-#ax2.set_ylabel('GPU Memory Use (GB)')
 
 plt.savefig("ann_vs_snn.pdf", bbox_inches='tight')
