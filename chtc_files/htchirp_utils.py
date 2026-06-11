@@ -1,5 +1,14 @@
-from htcondor.htchirp import HTChirp
 import os, time, datetime, sys
+try:
+    import htcondor2 as htcondor
+except ModuleNotFoundError:
+    import htcondor
+
+try:
+    from htcondor2.htchirp import HTChirp
+except ModuleNotFoundError:
+    # Fallback to older environments if necessary
+    from htcondor.htchirp import HTChirp
 
 def send_log_msg(message):
     with HTChirp() as chirp:
