@@ -608,6 +608,15 @@ if __name__ == '__main__':
     # 640 midsaggittal in back 
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
     #chtc_print(args, "Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
+    validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
+    
+    validation_loader = DataLoader(validation_set,
+                               batch_size=args.b,
+                               shuffle=True,
+                               collate_fn=validation_set.collate_fn,
+                               num_workers=4,
+                               pin_memory=True)
+    finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader)
 
     train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
     
@@ -623,15 +632,6 @@ if __name__ == '__main__':
     
     #chtc_print(args, "Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
 
-    validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
-    
-    validation_loader = DataLoader(validation_set,
-                               batch_size=args.b,
-                               shuffle=True,
-                               collate_fn=validation_set.collate_fn,
-                               num_workers=4,
-                               pin_memory=True)
-    finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader)
     #statusString  = "Completed training and validation [epochs_completed:" 
     #statusString += str(args.epochs) + ", training loss=" 
     #statusString += str(lastTrainingLoss) + ", training si-snr:" 
