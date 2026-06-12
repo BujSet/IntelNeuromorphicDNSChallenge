@@ -235,7 +235,7 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
     noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
     noiseFilter   = noiseFilter.to(device)
     epochLatencies = []
-    chtc_print(args, "Beginning training epochs...")
+    #chtc_print(args, "Beginning training epochs...")
     for epoch in range(args.epochs):
         epoch_start_time = time.perf_counter()
         trainingLosses = []
@@ -316,13 +316,13 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
                 chtc_print(args, statString)
             mini_batch_end_time = time.perf_counter()
             mini_batch_duration = mini_batch_end_time - mini_batch_start_time
-            #chtc_print(args, f"Mini Batch Iteration {mini_batch_iter+1} completed in {mini_batch_duration:.2f} seconds")
+            #chtc_print(args, f"Mini Batch Iteration {mini_batch_iter+1} completed in {mini_batch_duration:.5f} seconds")
             mini_batch_iter += 1
         scheduler.step()
         epoch_end_time = time.perf_counter()
         epoch_duration = epoch_end_time - epoch_start_time
         epochLatencies.append(epoch_duration)
-        chtc_print(args, f"Epoch {epoch+1} completed in {epoch_duration:.2f} seconds")
+        chtc_print(args, f"Epoch {epoch+1}:{epoch_duration:.5f}")
         # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
         averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
@@ -332,12 +332,13 @@ def run_validation_loop_with_cipic(args, net, validation_loader):
     net.eval()
     validationLosses = []
     validationScores = []
+    speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
+    speechFilter  = speechFilter.to(device)
+    noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
+    noiseFilter   = noiseFilter.to(device)
+    #chtc_print(args, "Beginning validation pass...")
+    epoch_start_time = time.perf_counter()
     for i, (clean, noise, idx) in enumerate(validation_loader):
-        speechFilter  = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.speechFilterOrient, args.speechFilterChannel)).float()
-        speechFilter  = speechFilter.to(device)
-        noiseFilter   = torch.from_numpy(CIPICSubject.getHRIRFromIndex(args.noiseFilterOrient, args.noiseFilterChannel)).float()
-        noiseFilter   = noiseFilter.to(device)
-
         noise = noise.to(device)
         clean = clean.to(device)
         ssl_noise = torch.zeros(args.b, 480000).to(device)
@@ -400,6 +401,9 @@ def run_validation_loop_with_cipic(args, net, validation_loader):
                 statString += str(loss.item()) + " " 
                 statString += str(torch.mean(score).item()) + " SI-SNR dB"
                 print(statString)
+    epoch_end_time = time.perf_counter()
+    epoch_duration = epoch_end_time - epoch_start_time
+    chtc_print(args, f"Validation pass:{epoch_duration:.5f}")
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
     averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
     return averageValidationLoss, averageValidationScore
@@ -537,7 +541,7 @@ if __name__ == '__main__':
         identifier += '_{}{}'.format(args.optim, args.seed)
 
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
-    trained_folder = 'Trained' + identifier
+    trained_folder = 'Trained'
     logs_folder = 'Logs' + identifier
     writer = SummaryWriter('runs/' + identifier)
 
@@ -550,7 +554,7 @@ if __name__ == '__main__':
 
     lam = args.lam
 
-    chtc_print(args, 'Using GPUs {}'.format(args.gpu))
+    chtc_print(args, f'Using GPUs {args.gpu} with name {torch.cuda.get_device_name(args.gpu)}')
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
@@ -603,7 +607,7 @@ if __name__ == '__main__':
     # 608 midsaggittal in front
     # 640 midsaggittal in back 
     CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
-    chtc_print(args, "Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
+    #chtc_print(args, "Using Subject " + str(args.cipicSubject) + " for spatial sound separation...")
 
     train_set = DNSAudioNoNoisy(root=args.path + 'training_set/', maxFiles=args.training_samples)
     
@@ -617,7 +621,7 @@ if __name__ == '__main__':
     trackingInfo = dict()
     delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader)
     
-    chtc_print(args, "Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
+    #chtc_print(args, "Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
 
     validation_set = DNSAudioNoNoisy(root=args.path + 'validation_set/', maxFiles=args.validation_samples)
     
@@ -628,13 +632,14 @@ if __name__ == '__main__':
                                num_workers=4,
                                pin_memory=True)
     finalValidationLoss, finalValidationScore = run_validation_loop_with_cipic(args, net, validation_loader)
-    statusString  = "Completed training and validation [epochs_completed:" 
-    statusString += str(args.epochs) + ", training loss=" 
-    statusString += str(lastTrainingLoss) + ", training si-snr:" 
-    statusString += str(lastTrainingScore) + ", validation loss="
-    statusString += str(finalValidationLoss) + ", validation si-snr:" 
-    statusString += str(finalValidationScore) + "]"
-    chtc_print(args, statusString)
+    #statusString  = "Completed training and validation [epochs_completed:" 
+    #statusString += str(args.epochs) + ", training loss=" 
+    #statusString += str(lastTrainingLoss) + ", training si-snr:" 
+    #statusString += str(lastTrainingScore) + ", validation loss="
+    #statusString += str(finalValidationLoss) + ", validation si-snr:" 
+    #statusString += str(finalValidationScore) + "]"
+    #chtc_print(args, statusString)
+    checkpoint_start_time = time.perf_counter()
     if (args.saveCheckpoint):
         trackingInfo[args.epochs] = dict()
         currEpochStats = trackingInfo[args.epochs]
@@ -648,5 +653,8 @@ if __name__ == '__main__':
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
-                }, trained_folder + '/network.pt')
-    chtc_print(args, "Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
+                }, trained_folder + '/network_' + args.exp + '.pt')
+    checkpoint_end_time = time.perf_counter()
+    checkpoint_duration = checkpoint_end_time - checkpoint_start_time
+    chtc_print(args, f"Checkpoint:{checkpoint_duration:.5f}")
+    #chtc_print(args, "Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
