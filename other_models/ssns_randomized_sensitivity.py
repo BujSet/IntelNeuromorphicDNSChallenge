@@ -595,6 +595,17 @@ if __name__ == '__main__':
                                   weight_decay=1e-5)
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
+    checkpoint_start_time = time.perf_counter()
+    if (args.saveCheckpoint):
+        torch.save({
+                'epochs_completed': args.epochs,
+                'module_state_dict': module.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict()
+                }, trained_folder + '/network_' + args.exp + '.pt')
+    checkpoint_end_time = time.perf_counter()
+    checkpoint_duration = checkpoint_end_time - checkpoint_start_time
+    chtc_print(args, f"Checkpoint:{checkpoint_duration:.5f}")
 
     # 316 center of front upper  right hemisphere
     # 300 center of front bottom right hemisphere
@@ -627,7 +638,6 @@ if __name__ == '__main__':
                           num_workers=4,
                           pin_memory=True)
 
-    trackingInfo = dict()
     delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader)
     
     #chtc_print(args, "Completed training loop [epochs_completed:" + str(args.epochs) + ", training loss=" + str(lastTrainingLoss) + ", si-snr:" + str(lastTrainingScore) + "]")
@@ -639,22 +649,4 @@ if __name__ == '__main__':
     #statusString += str(finalValidationLoss) + ", validation si-snr:" 
     #statusString += str(finalValidationScore) + "]"
     #chtc_print(args, statusString)
-    checkpoint_start_time = time.perf_counter()
-    if (args.saveCheckpoint):
-        trackingInfo[args.epochs] = dict()
-        currEpochStats = trackingInfo[args.epochs]
-        currEpochStats['training_loss'] = lastTrainingLoss
-        currEpochStats['training_score'] = lastTrainingScore
-        currEpochStats['validation_loss'] = finalValidationLoss
-        currEpochStats['validation_score'] = finalValidationScore
-        torch.save({
-                'epochs_completed': args.epochs,
-                'module_state_dict': module.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'tracking_info': trackingInfo,
-                }, trained_folder + '/network_' + args.exp + '.pt')
-    checkpoint_end_time = time.perf_counter()
-    checkpoint_duration = checkpoint_end_time - checkpoint_start_time
-    chtc_print(args, f"Checkpoint:{checkpoint_duration:.5f}")
     #chtc_print(args, "Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
