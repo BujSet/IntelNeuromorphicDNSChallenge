@@ -1,0 +1,36 @@
+# musdb_hq_snn_training.sub
+# My HTCondor submit file
+docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
+universe = docker
+
+arguments = $(set)
+executable = musdb_hq_snn_training.sh
+log = musdb_hq_snn_training_$(Cluster)_$(Process).log
+error = musdb_hq_snn_training_$(Cluster)_$(Process).err
+output = musdb_hq_snn_training_$(Cluster)_$(Process).out
+
+transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT_OR_EVICT
+max_idle = 10
+want_io_proxy = true
+priority = 10
+batch_name = "musdb_snn_train"
+
++WantGPULab = true
++GPUJobLength = "long"
+
+# Tell HTCondor requirements (e.g., operating system) your job needs,
+# what amount of compute resources each job will need on the computer where it runs.
+request_gpus = 1
+request_cpus = 1
+request_memory = 36GB
+request_disk = 180GB
+require_gpus = (Capability >= 8.0) && (DriverVersion >= 12.4)
+requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
+
+
+notify_user = elise.song@wisc.edu
+notification = always
+
+queue set from musdb_hq_snn_training_sets.txt

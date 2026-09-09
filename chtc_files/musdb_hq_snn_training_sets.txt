@@ -1,0 +1,1 @@
+-exp musdb_snn_baseline -epochs 50 -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test

@@ -5,9 +5,9 @@ universe = docker
    
 arguments = $(set)
 executable = hybrid_demucs.sh
-log = hybrid_demucs_$(Cluster).log
-error = hybrid_demucs_$(Cluster).err
-output = hybrid_demucs_$(Cluster).out
+log = hybrid_demucs_$(Cluster)_$(Process).log
+error = hybrid_demucs_$(Cluster)_$(Process).err
+output = hybrid_demucs_$(Cluster)_$(Process).out
    
 transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip, file:///staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz
 should_transfer_files = YES
