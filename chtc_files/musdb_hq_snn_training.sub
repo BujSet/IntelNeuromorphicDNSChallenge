@@ -3,7 +3,7 @@
 docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
 universe = docker
 
-arguments = $(set)
+arguments = -exp musdb_snn_baseline -epochs 50 -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
 executable = musdb_hq_snn_training.sh
 log = musdb_hq_snn_training_$(Cluster)_$(Process).log
 error = musdb_hq_snn_training_$(Cluster)_$(Process).err
@@ -33,4 +33,4 @@ requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
 notify_user = elise.song@wisc.edu
 notification = always
 
-queue set from musdb_hq_snn_training_sets.txt
+queue 1
