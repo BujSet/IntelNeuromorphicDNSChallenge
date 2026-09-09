@@ -12,6 +12,12 @@ output = musdb_hq_snn_training_$(Cluster)_$(Process).out
 transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT_OR_EVICT
+# Without this, HTCondor's default "transfer back everything new" would also
+# re-upload the freshly cloned repo and the unzipped musdb18hq dataset.
+# NOTE: these paths encode -exp musdb_snn_baseline (Trained/Logs + that
+# identifier, no separator, per musdb_snn_training.py); update them if the
+# -exp value in `arguments` above changes.
+transfer_output_files = IntelNeuromorphicDNSChallenge/Logsmusdb_snn_baseline, IntelNeuromorphicDNSChallenge/Trainedmusdb_snn_baseline
 max_idle = 10
 want_io_proxy = true
 priority = 10
