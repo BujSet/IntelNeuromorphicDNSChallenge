@@ -119,6 +119,8 @@ def separate_sources(
     segment=10.0,
     overlap=0.1,
     device=None,
+    num_sources=4,
+    enableTraining=False
 ):
     """
     Apply model to a given mixture. Use fade, and add segments together in order to add model segment by segment.
@@ -136,6 +138,7 @@ def separate_sources(
         device = torch.device(device)
 
     batch, channels, length = mix.shape
+    print("Batch: " + str(batch))
 
     chunk_len = int(sample_rate * segment * (1 + overlap))
     start = 0
@@ -143,7 +146,7 @@ def separate_sources(
     overlap_frames = overlap * sample_rate
     fade = Fade(fade_in_len=0, fade_out_len=int(overlap_frames), fade_shape="linear")
 
-    final = torch.zeros(batch, len(model.sources), channels, length, device=device)
+    final = torch.zeros(batch, num_sources, channels, chunk_len*(length//chunk_len + 1), device=device)
     first_pad = (int(overlap_frames), 0) # padding for first chunk
 
     while start < length - overlap_frames:
@@ -154,14 +157,18 @@ def separate_sources(
             last_pad = (0, end - length)
             chunk = F.pad(chunk, last_pad, "constant", 0)
         print("chunk dims: " + str(chunk.size()))
-        with torch.no_grad():
+        if enableTraining:
             out = model.forward(chunk)
+            print("out dims after network: " + str(out.size()))
+        else:
+            with torch.no_grad():
+                out = model.forward(chunk)
         out = fade(out)
         if start == 0:
             final[:, :, :, start:end + int(overlap_frames)] += out
         elif fade.fade_out_len == 0: # last chunk padding
-            print(final[:, :, :, start:length].size())
-            print(out.size())
+#            print(final[:, :, :, start:end + int(overlap_frames)].size())
+#            print(out.size())
             final[:, :, :, start:end + int(overlap_frames)] += out
         else:
             final[:, :, :, start:end] += out
@@ -254,29 +261,29 @@ class Net(nn.Module):
       super(Net, self).__init__()
     #   self.conv1 = nn.Conv2d(1, 32, 3, 1)
     #   self.conv2 = nn.Conv2d(32, 64, 3, 1)
-      self.conv1 = nn.Conv1d(2, 32, 2, 1)
-      self.conv2 = nn.Conv1d(32, 64, 2, 1)
-      self.dropout1 = nn.Dropout1d(0.25) # dropout rate - higher rate is more robust
+#      self.conv1 = nn.Conv1d(2, 32, 2, 1)
+#      self.conv2 = nn.Conv1d(32, 64, 2, 1)
+#      self.dropout1 = nn.Dropout1d(0.25) # dropout rate - higher rate is more robust
       self.dropout2 = nn.Dropout1d(0.5)
-      self.fc1 = nn.Linear(9216, 128) # TODO: need constant width 
-      self.fc2 = nn.Linear(128, 10)
+      self.fc1 = nn.Linear(489510, 4) # TODO: need constant width 
+      self.fc2 = nn.Linear(4, 489510)
 
     # x represents our data
     def forward(self, x):
       # Pass data through conv1
-      x = self.conv1(x)
+#      x = self.conv1(x)
       # Use the rectified-linear activation function over x
-      x = F.relu(x)
+#      x = F.relu(x)
 
-      x = self.conv2(x)
-      x = F.relu(x)
+#      x = self.conv2(x)
+#      x = F.relu(x)
 
       # Run max pooling over x
-      x = F.max_pool2d(x, 2)
+#      x = F.max_pool2d(x, 2)
       # Pass data through dropout1
-      x = self.dropout1(x)
+#      x = self.dropout1(x)
       # Flatten x with start_dim=1
-      x = torch.flatten(x, 1)
+#      x = torch.flatten(x, 1)
       # Pass data through ``fc1``
       x = self.fc1(x)
       x = F.relu(x)
@@ -312,13 +319,29 @@ for epoch in range(num_epochs):
         print("mix has dims " + str(mix.size()))
         print("mix[None] has dims " + str(mix[None].size()))
         
-        
-
-
         # pass to network 
-        # prediction = net(mix[None])
-        # print("prediction dims: " + prediction.size())
-        # output is tensor with 4 tracks
+        predSources = separate_sources(
+            net.module,
+            mix[None],
+            device=device,
+            segment=segment,
+            overlap=overlap,
+            num_sources=len(model.sources),
+            enableTraining=True
+        )[0]
+        print(waveform.size())
+        print(predSources.size())
+        extraPadding = predSources.size()[-1] - waveform.size()[-1]
+        predSources = predSources[:,:,int(overlap*sample_rate):int(overlap*sample_rate) + int(waveform.size()[-1])]
+        print(predSources.size())
+        sdr_scores = []
+        for j in range(len(model.sources)):
+            print(model.sources[j])
+
+            sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), predSources[j,:,:].cpu().detach().numpy())[0].mean()
+            sdr_scores.append(sdr_score)
+        print(sdr_scores)
+        sys.exit(0)
 
         sources = separate_sources(
             model,
@@ -326,6 +349,8 @@ for epoch in range(num_epochs):
             device=device,
             segment=segment,
             overlap=overlap,
+            num_sources=len(model.sources),
+            enableTraining=False
         )[0]
         sources = sources * ref.std() + ref.mean()
         print("sources has dims " + str(sources.size())) # (4, 2, numFrames)
