@@ -21,7 +21,7 @@ import random
 # MUSDB18-HQ always stacks sources in the order they are requested. Fixing
 # this order lets every stem be recovered by a simple index into the
 # batch/stem dimension instead of doing a name lookup per sample.
-SOURCES = ['mixture', 'drums', 'bass', 'other', 'vocals']
+SOURCES = ['mixture', 'vocals']
 TARGET_STEMS = SOURCES[1:]
 NUM_STEMS = len(TARGET_STEMS)
 
@@ -339,11 +339,12 @@ def run_validation_loop(args, net, validation_loader, csv_path=None, subset_labe
     averagePerStemScore = [sum(scores) / (1.0 * len(scores)) for scores in perStemScores]
     return averageValidationLoss, averageValidationScore, averagePerStemScore
 
-def run_test_loop(args, net, test_loader, csv_path=None):
+def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
     '''Evaluates on MUSDB18-HQ's real held-out "test" subset -- the same 50
     tracks hybrid_demucs_test.txt was generated from -- and writes a CSV in
     that file's exact format, reporting SDR (via mir_eval) rather than
-    SI-SNR so the two are a direct, same-metric baseline comparison.'''
+    SI-SNR so the two are a direct, same-metric baseline comparison. Also
+    writes a second CSV in the same format with the SI-SNR scores.'''
     net.eval()
     testLosses = []
     testScores = []
@@ -354,6 +355,11 @@ def run_test_loop(args, net, test_loader, csv_path=None):
     if csv_path is not None:
         score_file = open(csv_path, "w")
         score_file.write("track ID, train/test set, " + ", ".join(TARGET_STEMS))
+
+    sisnr_score_file = None
+    if sisnr_csv_path is not None:
+        sisnr_score_file = open(sisnr_csv_path, "w")
+        sisnr_score_file.write("track ID, train/test set, " + ", ".join(TARGET_STEMS))
 
     for i, (waveform, sr, num_frames, name) in enumerate(test_loader):
         with torch.no_grad():
@@ -375,6 +381,10 @@ def run_test_loop(args, net, test_loader, csv_path=None):
                 row = str(i) + ", test, "
                 row += ", ".join(str(sdr_per_stem[s]) for s in range(NUM_STEMS))
                 score_file.write("\n" + row)
+            if sisnr_score_file is not None:
+                row = str(i) + ", test, "
+                row += ", ".join(str(score_per_stem[s].item()) for s in range(NUM_STEMS))
+                sisnr_score_file.write("\n" + row)
             if args.printOutputWhileTest:
                 statString = "Test [" + str(i) + "] (" + name[0] + ") -> "
                 statString += str(loss.item()) + " "
@@ -387,6 +397,8 @@ def run_test_loop(args, net, test_loader, csv_path=None):
 
     if score_file is not None:
         score_file.close()
+    if sisnr_score_file is not None:
+        sisnr_score_file.close()
 
     averageTestLoss = sum(testLosses) / (1.0 * len(testLosses))
     averageTestScore = sum(testScores) / (1.0 * len(testScores))
@@ -402,7 +414,7 @@ if __name__ == '__main__':
                         help='which gpu(s) to use', nargs='+')
     parser.add_argument('-b',
                         type=int,
-                        default=16,
+                        default=32, #TODO increase batch size
                         help='number of random crops taken from each track per training step')
     parser.add_argument('-lr',
                         type=float,
@@ -571,7 +583,7 @@ if __name__ == '__main__':
                                   lr=args.lr,
                                   weight_decay=1e-5)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=500) #TODO increase T_max
 
     # Full tracks vary in length, so the DataLoader must use batch_size=1;
     # each training step instead draws args.b random crops out of the one
@@ -673,8 +685,9 @@ if __name__ == '__main__':
                           num_workers=4,
                           pin_memory=True)
     test_csv_path = os.path.join(logs_folder, 'musdb_snn_test_sdr_scores.csv')
+    test_sisnr_csv_path = os.path.join(logs_folder, 'musdb_snn_test_sisnr_scores.csv')
     finalTestLoss, finalTestScore, finalPerStemSiSnr, finalPerStemSdr = run_test_loop(
-        args, net, test_loader, csv_path=test_csv_path)
+        args, net, test_loader, csv_path=test_csv_path, sisnr_csv_path=test_sisnr_csv_path)
 
     if (args.saveCheckpoint):
         trackingInfo[startingEpoch+args.epochs] = dict()
@@ -703,3 +716,4 @@ if __name__ == '__main__':
         statString += str(finalPerStemSdr[i]) + " SDR (dB)"
         print(statString)
     print("Per-track SDR scores written to " + test_csv_path + " in the same format as hybrid_demucs_test.txt")
+    print("Per-track SI-SNR scores written to " + test_sisnr_csv_path)
