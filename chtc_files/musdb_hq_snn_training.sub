@@ -35,7 +35,10 @@ request_gpus = 1
 request_cpus = 1
 request_memory = 36GB
 request_disk = 180GB
-require_gpus = (Capability >= 8.0) && (DriverVersion >= 12.4)
+# Capability < 9.0 excludes Hopper (H100/H200) GPUs: this container's
+# PyTorch build has no compiled CUDA kernels for compute capability 9.0,
+# so landing on one crashes with "no kernel image is available".
+require_gpus = (Capability >= 8.0) && (Capability < 9.0) && (DriverVersion >= 12.4)
 requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
 
 

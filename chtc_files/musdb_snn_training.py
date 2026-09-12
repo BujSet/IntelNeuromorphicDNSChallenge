@@ -16,6 +16,7 @@ from lava.lib.dl import slayer
 from snr import si_snr
 from mir_eval import separation
 import torchaudio
+from torchaudio.transforms import Fade
 import random
 
 # MUSDB18-HQ always stacks sources in the order they are requested. Fixing
@@ -202,12 +203,14 @@ def stem_breakdown_string(score_per_stem):
         for i in range(NUM_STEMS))
 
 def compute_sdr_per_stem(clean_rec_flat, target_waveform_flat, b):
-    '''mir_eval SDR (the same metric hybrid_demucs_test.txt reports),
-    computed per crop on the mono waveforms and averaged across crops, so
-    the SNN's test-set CSV is directly comparable to the Hybrid Demucs
-    baseline. bss_eval_sources is called with a single (1, samples) "source"
-    per stem, since our pipeline works on downmixed mono audio rather than
-    the stereo channels-as-sources trick the baseline script used.'''
+    '''mir_eval SDR (the same metric hybrid_demucs_test.txt reports), so the
+    SNN's test-set CSV is directly comparable to the Hybrid Demucs baseline.
+    bss_eval_sources is called with a single (1, samples) "source" per stem,
+    since our pipeline works on downmixed mono audio rather than the stereo
+    channels-as-sources trick the baseline script used. Callers pass the
+    full, stitched-together track (b=1) so SDR is computed once per track,
+    mirroring hybrid_demucs_full_dataset.py rather than averaging per-chunk
+    scores.'''
     estimate = clean_rec_flat.reshape(b, NUM_STEMS, -1).detach().cpu().numpy()
     reference = target_waveform_flat.reshape(b, NUM_STEMS, -1).detach().cpu().numpy()
     sdr_per_stem = []
@@ -243,6 +246,25 @@ def iterate_track_chunks(total_len, chunk_len, overlap_frames):
             start += chunk_len
         end += chunk_len
 
+def stitch_chunks(chunk_waveforms, chunks, total_len, overlap_frames, device):
+    '''Overlap-adds per-chunk (NUM_STEMS, chunk_len) waveforms back into one
+    full-length (NUM_STEMS, total_len) track, crossfading the overlaps with
+    the same linear Fade hybrid_demucs' separate_sources uses (see
+    chtc_files/hybrid_demucs_full_dataset.py), so a track's SI-SNR/SDR is
+    scored once on the whole track instead of averaging independent
+    per-chunk scores.'''
+    num_stems = chunk_waveforms[0].size(0)
+    stitched = torch.zeros(num_stems, total_len, device=device)
+    fade = Fade(fade_in_len=0, fade_out_len=int(overlap_frames), fade_shape="linear")
+    last = len(chunks) - 1
+    for idx, (waveform, (start, _end)) in enumerate(zip(chunk_waveforms, chunks)):
+        length = waveform.size(-1)
+        end = min(start + length, total_len)
+        fade.fade_in_len = 0 if idx == 0 else int(overlap_frames)
+        fade.fade_out_len = 0 if idx == last else int(overlap_frames)
+        stitched[:, start:end] += fade(waveform[:, :end - start])
+    return stitched
+
 def run_warm_up_training(args, net, optimizer, train_loader):
     net.train()
     # Run a single mini-batch just to set the network dimensions (needed
@@ -263,7 +285,7 @@ def run_warm_up_training(args, net, optimizer, train_loader):
         optimizer.step()
         return
 
-def run_training_loop(args, net, optimizer, train_loader, startingEpoch=0):
+def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     '''Trains on whole tracks, but processes each one as a sequence of
     overlapping chunks (see iterate_track_chunks, mirroring hybrid_demucs'
     chunked inference) rather than one giant forward pass, since a full
@@ -288,22 +310,31 @@ def run_training_loop(args, net, optimizer, train_loader, startingEpoch=0):
 
             chunks = list(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
             chunkLosses = []
-            chunkScores = []
-            chunkStemScores = []
+            chunkEstimates = []
+            chunkTargets = []
             for start, end in chunks:
                 mixture = mono[0:1, start:end]
                 stems = mono[1:, start:end].unsqueeze(0)
 
-                loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
+                loss, score_flat, score_per_stem, clean_rec_flat, target_waveform_flat = \
+                    compute_loss_and_score(args, net, mixture, stems, return_waveforms=True)
                 (loss / (len(chunks) * args.b)).backward()
 
                 chunkLosses.append(loss.item())
-                chunkScores.append(torch.mean(score_flat).item())
-                chunkStemScores.append(score_per_stem.detach())
+                chunkEstimates.append(clean_rec_flat.detach().reshape(NUM_STEMS, -1))
+                chunkTargets.append(target_waveform_flat.detach().reshape(NUM_STEMS, -1))
 
             trackLoss = sum(chunkLosses) / len(chunkLosses)
-            trackScore = sum(chunkScores) / len(chunkScores)
-            trackStemScore = torch.stack(chunkStemScores).mean(dim=0)
+            # Stitch the chunk-level estimate/target waveforms into full
+            # tracks and score once, mirroring hybrid_demucs' separate_sources
+            # (chtc_files/hybrid_demucs_full_dataset.py) rather than averaging
+            # independent per-chunk SI-SNR scores.
+            stitched_estimate = stitch_chunks(chunkEstimates, chunks, mono.size(-1), overlap_frames, device)
+            stitched_target = stitch_chunks(chunkTargets, chunks, mono.size(-1), overlap_frames, device)
+            trackStemScore = si_snr(stitched_estimate, stitched_target)
+            if torch.isnan(trackStemScore).any():
+                trackStemScore[torch.isnan(trackStemScore)] = 0
+            trackScore = trackStemScore.mean().item()
 
             accumulated += 1
             if accumulated == args.b:
@@ -327,6 +358,7 @@ def run_training_loop(args, net, optimizer, train_loader, startingEpoch=0):
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
             optimizer.zero_grad()
+        scheduler.step()
         if args.trackDelayWhileTraining:
             for param_tensor in net.state_dict():
                 if ("delay.delay" in param_tensor):
@@ -356,20 +388,29 @@ def run_validation_loop(args, net, validation_loader, csv_path=None, subset_labe
 
             chunks = list(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
             chunkLosses = []
-            chunkScores = []
-            chunkStemScores = []
+            chunkEstimates = []
+            chunkTargets = []
             for start, end in chunks:
                 mixture = mono[0:1, start:end]
                 stems = mono[1:, start:end].unsqueeze(0)
 
-                loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
+                loss, score_flat, score_per_stem, clean_rec_flat, target_waveform_flat = \
+                    compute_loss_and_score(args, net, mixture, stems, return_waveforms=True)
                 chunkLosses.append(loss.item())
-                chunkScores.append(torch.mean(score_flat).item())
-                chunkStemScores.append(score_per_stem)
+                chunkEstimates.append(clean_rec_flat.reshape(NUM_STEMS, -1))
+                chunkTargets.append(target_waveform_flat.reshape(NUM_STEMS, -1))
 
             trackLoss = sum(chunkLosses) / len(chunkLosses)
-            trackScore = sum(chunkScores) / len(chunkScores)
-            trackStemScore = torch.stack(chunkStemScores).mean(dim=0)
+            # Stitch the chunk-level estimate/target waveforms into full
+            # tracks and score once, mirroring hybrid_demucs' separate_sources
+            # (chtc_files/hybrid_demucs_full_dataset.py) rather than averaging
+            # independent per-chunk SI-SNR scores.
+            stitched_estimate = stitch_chunks(chunkEstimates, chunks, mono.size(-1), overlap_frames, device)
+            stitched_target = stitch_chunks(chunkTargets, chunks, mono.size(-1), overlap_frames, device)
+            trackStemScore = si_snr(stitched_estimate, stitched_target)
+            if torch.isnan(trackStemScore).any():
+                trackStemScore[torch.isnan(trackStemScore)] = 0
+            trackScore = trackStemScore.mean().item()
 
             validationScores.append(trackScore)
             validationLosses.append(trackLoss)
@@ -423,26 +464,33 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
 
             chunks = list(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
             chunkLosses = []
-            chunkScores = []
-            chunkStemScores = []
-            chunkSdrPerStem = []
+            chunkEstimates = []
+            chunkTargets = []
             for start, end in chunks:
                 mixture = mono[0:1, start:end]
                 stems = mono[1:, start:end].unsqueeze(0)
 
                 loss, score_flat, score_per_stem, clean_rec_flat, target_waveform_flat = \
                     compute_loss_and_score(args, net, mixture, stems, return_waveforms=True)
-                sdr_per_stem = compute_sdr_per_stem(clean_rec_flat, target_waveform_flat, mixture.size(0))
 
                 chunkLosses.append(loss.item())
-                chunkScores.append(torch.mean(score_flat).item())
-                chunkStemScores.append(score_per_stem)
-                chunkSdrPerStem.append(sdr_per_stem)
+                chunkEstimates.append(clean_rec_flat.reshape(NUM_STEMS, -1))
+                chunkTargets.append(target_waveform_flat.reshape(NUM_STEMS, -1))
 
             trackLoss = sum(chunkLosses) / len(chunkLosses)
-            trackScore = sum(chunkScores) / len(chunkScores)
-            trackStemScore = torch.stack(chunkStemScores).mean(dim=0)
-            trackSdrPerStem = [np.nanmean([c[s] for c in chunkSdrPerStem]) for s in range(NUM_STEMS)]
+            # Stitch the chunk-level estimate/target waveforms into full
+            # tracks and score once (both SI-SNR and SDR), mirroring
+            # hybrid_demucs' separate_sources + single bss_eval_sources call
+            # (chtc_files/hybrid_demucs_full_dataset.py) rather than averaging
+            # independent per-chunk scores.
+            stitched_estimate = stitch_chunks(chunkEstimates, chunks, mono.size(-1), overlap_frames, device)
+            stitched_target = stitch_chunks(chunkTargets, chunks, mono.size(-1), overlap_frames, device)
+            trackStemScore = si_snr(stitched_estimate, stitched_target)
+            if torch.isnan(trackStemScore).any():
+                trackStemScore[torch.isnan(trackStemScore)] = 0
+            trackScore = trackStemScore.mean().item()
+            trackSdrPerStem = compute_sdr_per_stem(
+                stitched_estimate.unsqueeze(0), stitched_target.unsqueeze(0), 1)
 
             testLosses.append(trackLoss)
             testScores.append(trackScore)
@@ -492,8 +540,8 @@ if __name__ == '__main__':
                              '(via gradient accumulation, since tracks vary in length)')
     parser.add_argument('-lr',
                         type=float,
-                        default=0.0001,
-                        help='learning rate (fixed for the whole run, no scheduler)')
+                        default=0.001,
+                        help='initial learning rate, cosine-annealed to ~0 over args.epochs')
     parser.add_argument('-lam',
                         type=float,
                         default=0.001,
@@ -667,6 +715,9 @@ if __name__ == '__main__':
     optimizer = torch.optim.RAdam(net.parameters(),
                                   lr=args.lr,
                                   weight_decay=1e-5)
+    # Cosine-anneals lr from args.lr down to ~0 over this run's args.epochs
+    # epochs (stepped once per epoch in run_training_loop).
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
     train_set = torchaudio.datasets.MUSDB_HQ(args.path,
             subset="train",
@@ -694,6 +745,8 @@ if __name__ == '__main__':
         checkpoint = torch.load(args.useCheckpoint, weights_only=True)
         module.load_state_dict(checkpoint['module_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if 'scheduler_state_dict' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         startingEpoch = checkpoint['epochs_completed']
         trackingInfo = checkpoint['tracking_info']
         print("Current Tracking info:")
@@ -720,7 +773,7 @@ if __name__ == '__main__':
         statusString += str(startingValidationScore) + "]"
         print(statusString)
 
-    delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop(args, net, optimizer, train_loader, startingEpoch)
+    delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch)
 
     if args.trackDelayWhileTraining:
         plot_weights(delay_weights)
@@ -787,6 +840,7 @@ if __name__ == '__main__':
                 'epochs_completed': startingEpoch + args.epochs,
                 'module_state_dict': module.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
                 }, trained_folder + '/network.pt')
     print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
