@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 
 from lava.lib.dl import slayer
@@ -151,6 +151,31 @@ def crop_track_to_batch(mono_track, num_crops, segment_len):
     stems = crops[:, 1:, :]
     return mixture, stems
 
+class MusdbTrainCropDataset(Dataset):
+    '''Wraps a torchaudio MUSDB_HQ dataset so each __getitem__ call returns
+    ONE fixed-length random crop from ONE track (downsampled and mono-mixed
+    down), instead of a whole track. This lets a plain
+    DataLoader(batch_size=b, shuffle=True) collate crops from `b` different
+    tracks into a real training batch, rather than every batch being `b`
+    crops of the same track (what crop_track_to_batch alone gives you when
+    the DataLoader's batch_size is 1).'''
+    def __init__(self, musdb_dataset, segment_len, sample_rate):
+        self.musdb_dataset = musdb_dataset
+        self.segment_len = segment_len
+        # CPU-only: __getitem__ runs in DataLoader worker processes, which
+        # don't share the main process's CUDA context.
+        self.downsampler = torchaudio.transforms.Resample(44100, sample_rate, dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.musdb_dataset)
+
+    def __getitem__(self, idx):
+        waveform, sr, num_frames, name = self.musdb_dataset[idx]
+        mono = waveform.mean(dim=1)
+        mono = self.downsampler(mono)
+        mixture, stems = crop_track_to_batch(mono, 1, self.segment_len)
+        return mixture.squeeze(0), stems.squeeze(0), name
+
 def compute_loss_and_score(args, net, mixture, stems, return_waveforms=False):
     '''Shared forward/loss computation for one mini-batch of crops. `stems`
     has shape (b, NUM_STEMS, segment_len). The stem dimension is flattened
@@ -240,10 +265,9 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
     net.train()
     # Run a single mini-batch just to set the network dimensions (needed
     # before loading a checkpoint, same requirement as the DNS scripts).
-    for i, (waveform, sr, num_frames, name) in enumerate(train_loader):
-        mono = waveform.squeeze(0).to(device).mean(dim=1)
-        mono = downsampler(mono)
-        mixture, stems = crop_track_to_batch(mono, args.b, segment_len)
+    for i, (mixture, stems, name) in enumerate(train_loader):
+        mixture = mixture.to(device)
+        stems = stems.to(device)
 
         loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
 
@@ -262,11 +286,10 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
     for epoch in range(args.epochs):
         trainingLosses = []
         trainingScores = []
-        for i, (waveform, sr, num_frames, name) in enumerate(train_loader):
+        for i, (mixture, stems, name) in enumerate(train_loader):
             net.train()
-            mono = waveform.squeeze(0).to(device).mean(dim=1)
-            mono = downsampler(mono)
-            mixture, stems = crop_track_to_batch(mono, args.b, segment_len)
+            mixture = mixture.to(device)
+            stems = stems.to(device)
 
             loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
 
@@ -280,7 +303,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
             trainingScores.append(torch.mean(score_flat).item())
             if args.printOutputWhileTraining:
                 statString = "Train [" + str(epoch + startingEpoch + 1) + " | " + str(i) + "] ("
-                statString += name[0] + ") -> "
+                statString += name[0] + " +" + str(len(name) - 1) + " more tracks) -> "
                 statString += str(loss.item()) + " "
                 statString += str(torch.mean(score_flat).item()) + " SI-SNR dB ["
                 statString += stem_breakdown_string(score_per_stem) + "]"
@@ -414,8 +437,10 @@ if __name__ == '__main__':
                         help='which gpu(s) to use', nargs='+')
     parser.add_argument('-b',
                         type=int,
-                        default=32, #TODO increase batch size
-                        help='number of random crops taken from each track per training step')
+                        default=32,
+                        help='number of distinct tracks combined into each training batch '
+                             '(one random crop per track); also the number of crops averaged '
+                             'per track during validation/test')
     parser.add_argument('-lr',
                         type=float,
                         default=0.001,
@@ -596,8 +621,13 @@ if __name__ == '__main__':
     if args.training_samples < len(train_set.names):
         train_set.names = train_set.names[:args.training_samples]
 
-    train_loader = DataLoader(train_set,
-                          batch_size=1,
+    # MusdbTrainCropDataset takes one random fixed-length crop per track per
+    # __getitem__ call (see crop_track_to_batch), so batch_size=args.b here
+    # stacks crops from args.b *different* tracks into each training batch,
+    # instead of args.b crops of the same track.
+    train_crop_set = MusdbTrainCropDataset(train_set, segment_len, args.sample_rate)
+    train_loader = DataLoader(train_crop_set,
+                          batch_size=args.b,
                           shuffle=True,
                           num_workers=4,
                           pin_memory=True)
