@@ -36,16 +36,22 @@ def stft_splitter(audio, n_fft=512, method=None):
         spec = method(audio)
         return spec.abs(), spec.angle()
 
-def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None):
+def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None, length=None):
+    '''`length`, when given, is passed straight to the ISTFT so the
+    reconstructed waveform is forced to exactly that many samples. Without
+    it, torch.istft only approximately inverts the STFT: whenever the input
+    length isn't an exact multiple of the hop size, the round trip can land
+    a few dozen samples short or long of the original, which then fails to
+    broadcast against the target waveform in si_snr.'''
     spec = torch.complex(stft_abs * torch.cos(stft_angle),
                                         stft_abs * torch.sin(stft_angle))
     if (method == None):
-        return torch.istft(spec, n_fft=n_fft, onesided=True)
+        return torch.istft(spec, n_fft=n_fft, onesided=True, length=length)
     if (type(method) == int):
         print("Perform inver mel scale transform")
         sys.exit(0)
 
-    return method(spec)
+    return method(spec, length=length)
 
 class Network(torch.nn.Module):
     def __init__(self,
@@ -169,10 +175,11 @@ def compute_loss_and_score(args, net, mixture, stems, return_waveforms=False):
     stems_abs_delayed_flat = slayer.axon.delay(stems_abs_flat, out_delay)
     stems_waveform_delayed_flat = slayer.axon.delay(stems_flat, args.n_fft // 4 * out_delay)
 
+    target_len = stems_waveform_delayed_flat.size(-1)
     if (args.spectrogram == 0):
-        clean_rec_flat = stft_mixer(denoised_abs_flat, mixture_arg_delayed_flat, args.n_fft, None)
+        clean_rec_flat = stft_mixer(denoised_abs_flat, mixture_arg_delayed_flat, args.n_fft, None, length=target_len)
     elif (args.spectrogram == 1):
-        clean_rec_flat = stft_mixer(denoised_abs_flat, mixture_arg_delayed_flat, args.n_fft, inv_stft_transform)
+        clean_rec_flat = stft_mixer(denoised_abs_flat, mixture_arg_delayed_flat, args.n_fft, inv_stft_transform, length=target_len)
     else:
         clean_rec_flat = stft_mixer(denoised_abs_flat, mixture_arg_delayed_flat, args.n_fft, 2)
 
