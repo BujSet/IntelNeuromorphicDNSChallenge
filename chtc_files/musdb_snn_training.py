@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from lava.lib.dl import slayer
@@ -133,52 +133,9 @@ def plot_weights(data):
         plt.savefig(name + ".png", bbox_inches="tight")
         plt.close()
 
-def crop_track_to_batch(mono_track, num_crops, segment_len):
-    '''Turns one full-length (num_sources, num_frames) track into a
-    mini-batch of `num_crops` random fixed-length segments, mirroring the
-    role that a batched DataLoader plays for the DNS dataset. MUSDB tracks
-    are far too long, and too variable in length, to batch directly.'''
-    num_sources, total_len = mono_track.shape
-    if total_len < segment_len:
-        mono_track = F.pad(mono_track, (0, segment_len - total_len))
-        total_len = segment_len
-    max_start = total_len - segment_len
-    crops = torch.zeros(num_crops, num_sources, segment_len, device=mono_track.device)
-    for c in range(num_crops):
-        start = random.randint(0, max_start)
-        crops[c] = mono_track[:, start:start + segment_len]
-    mixture = crops[:, 0, :]
-    stems = crops[:, 1:, :]
-    return mixture, stems
-
-class MusdbTrainCropDataset(Dataset):
-    '''Wraps a torchaudio MUSDB_HQ dataset so each __getitem__ call returns
-    ONE fixed-length random crop from ONE track (downsampled and mono-mixed
-    down), instead of a whole track. This lets a plain
-    DataLoader(batch_size=b, shuffle=True) collate crops from `b` different
-    tracks into a real training batch, rather than every batch being `b`
-    crops of the same track (what crop_track_to_batch alone gives you when
-    the DataLoader's batch_size is 1).'''
-    def __init__(self, musdb_dataset, segment_len, sample_rate):
-        self.musdb_dataset = musdb_dataset
-        self.segment_len = segment_len
-        # CPU-only: __getitem__ runs in DataLoader worker processes, which
-        # don't share the main process's CUDA context.
-        self.downsampler = torchaudio.transforms.Resample(44100, sample_rate, dtype=torch.float32)
-
-    def __len__(self):
-        return len(self.musdb_dataset)
-
-    def __getitem__(self, idx):
-        waveform, sr, num_frames, name = self.musdb_dataset[idx]
-        mono = waveform.mean(dim=1)
-        mono = self.downsampler(mono)
-        mixture, stems = crop_track_to_batch(mono, 1, self.segment_len)
-        return mixture.squeeze(0), stems.squeeze(0), name
-
 def compute_loss_and_score(args, net, mixture, stems, return_waveforms=False):
-    '''Shared forward/loss computation for one mini-batch of crops. `stems`
-    has shape (b, NUM_STEMS, segment_len). The stem dimension is flattened
+    '''Shared forward/loss computation for one track (b=1). `stems`
+    has shape (b, NUM_STEMS, num_frames). The stem dimension is flattened
     into the batch dimension for the STFT/ISTFT/axon-delay calls, which are
     agnostic to leading dims, then reshaped back out to score each stem.
     Set return_waveforms=True to additionally get back the reconstructed
@@ -261,13 +218,34 @@ def compute_sdr_per_stem(clean_rec_flat, target_waveform_flat, b):
         sdr_per_stem.append(np.nanmean(crop_scores))
     return sdr_per_stem
 
-def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
+def iterate_track_chunks(total_len, chunk_len, overlap_frames):
+    '''Sequentially walks fixed-length, overlapping windows across a track's
+    time axis, mirroring hybrid_demucs' separate_sources chunking (see
+    chtc_files/hybrid_demucs_full_dataset.py) so a whole track is processed
+    piece by piece instead of in one giant forward pass.'''
+    if total_len <= chunk_len:
+        yield 0, total_len
+        return
+    start = 0
+    end = chunk_len
+    while start < total_len - overlap_frames:
+        yield start, min(end, total_len)
+        if start == 0:
+            start += chunk_len - overlap_frames
+        else:
+            start += chunk_len
+        end += chunk_len
+
+def run_warm_up_training(args, net, optimizer, train_loader):
     net.train()
     # Run a single mini-batch just to set the network dimensions (needed
     # before loading a checkpoint, same requirement as the DNS scripts).
-    for i, (mixture, stems, name) in enumerate(train_loader):
-        mixture = mixture.to(device)
-        stems = stems.to(device)
+    for i, (waveform, sr, num_frames, name) in enumerate(train_loader):
+        mono = waveform.squeeze(0).to(device).mean(dim=1)
+        mono = downsampler(mono)
+        start, end = next(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
+        mixture = mono[0:1, start:end]
+        stems = mono[1:, start:end].unsqueeze(0)
 
         loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
 
@@ -278,7 +256,15 @@ def run_warm_up_training(args, net, optimizer, scheduler, train_loader):
         optimizer.step()
         return
 
-def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
+def run_training_loop(args, net, optimizer, train_loader, startingEpoch=0):
+    '''Trains on whole tracks, but processes each one as a sequence of
+    overlapping chunks (see iterate_track_chunks, mirroring hybrid_demucs'
+    chunked inference) rather than one giant forward pass, since a full
+    track is too long to comfortably fit in memory at once. Tracks also
+    vary in length, so they can't be stacked into a real batch either:
+    args.b is instead implemented as gradient accumulation, with each
+    track's loss averaged over its own chunks first, then args.b tracks'
+    losses summed before each optimizer step.'''
     net.train()
     delay_weights = dict()
     averageTrainingLoss = 0
@@ -286,28 +272,54 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
     for epoch in range(args.epochs):
         trainingLosses = []
         trainingScores = []
-        for i, (mixture, stems, name) in enumerate(train_loader):
+        optimizer.zero_grad()
+        accumulated = 0
+        for i, (waveform, sr, num_frames, name) in enumerate(train_loader):
             net.train()
-            mixture = mixture.to(device)
-            stems = stems.to(device)
+            mono = waveform.squeeze(0).to(device).mean(dim=1)
+            mono = downsampler(mono)
 
-            loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
+            chunks = list(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
+            chunkLosses = []
+            chunkScores = []
+            chunkStemScores = []
+            for start, end in chunks:
+                mixture = mono[0:1, start:end]
+                stems = mono[1:, start:end].unsqueeze(0)
 
-            optimizer.zero_grad()
-            loss.backward()
+                loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
+                (loss / (len(chunks) * args.b)).backward()
+
+                chunkLosses.append(loss.item())
+                chunkScores.append(torch.mean(score_flat).item())
+                chunkStemScores.append(score_per_stem.detach())
+
+            trackLoss = sum(chunkLosses) / len(chunkLosses)
+            trackScore = sum(chunkScores) / len(chunkScores)
+            trackStemScore = torch.stack(chunkStemScores).mean(dim=0)
+
+            accumulated += 1
+            if accumulated == args.b:
+                module.validate_gradients()
+                torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
+                optimizer.step()
+                optimizer.zero_grad()
+                accumulated = 0
+
+            trainingLosses.append(trackLoss)
+            trainingScores.append(trackScore)
+            if args.printOutputWhileTraining:
+                statString = "Train [" + str(epoch + startingEpoch + 1) + " | " + str(i) + "] ("
+                statString += name[0] + ", " + str(len(chunks)) + " chunks) -> "
+                statString += str(trackLoss) + " "
+                statString += str(trackScore) + " SI-SNR dB ["
+                statString += stem_breakdown_string(trackStemScore) + "]"
+                print(statString)
+        if accumulated > 0:
             module.validate_gradients()
             torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
             optimizer.step()
-
-            trainingLosses.append(torch.mean(loss).item())
-            trainingScores.append(torch.mean(score_flat).item())
-            if args.printOutputWhileTraining:
-                statString = "Train [" + str(epoch + startingEpoch + 1) + " | " + str(i) + "] ("
-                statString += name[0] + " +" + str(len(name) - 1) + " more tracks) -> "
-                statString += str(loss.item()) + " "
-                statString += str(torch.mean(score_flat).item()) + " SI-SNR dB ["
-                statString += stem_breakdown_string(score_per_stem) + "]"
-                print(statString)
+            optimizer.zero_grad()
         if args.trackDelayWhileTraining:
             for param_tensor in net.state_dict():
                 if ("delay.delay" in param_tensor):
@@ -317,7 +329,6 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
         averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
-        scheduler.step(averageTrainingLoss)
     return delay_weights, averageTrainingLoss, averageTrainingScore
 
 def run_validation_loop(args, net, validation_loader, csv_path=None, subset_label='validation'):
@@ -335,23 +346,37 @@ def run_validation_loop(args, net, validation_loader, csv_path=None, subset_labe
         with torch.no_grad():
             mono = waveform.squeeze(0).to(device).mean(dim=1)
             mono = downsampler(mono)
-            mixture, stems = crop_track_to_batch(mono, args.b, segment_len)
 
-            loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
+            chunks = list(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
+            chunkLosses = []
+            chunkScores = []
+            chunkStemScores = []
+            for start, end in chunks:
+                mixture = mono[0:1, start:end]
+                stems = mono[1:, start:end].unsqueeze(0)
 
-            validationScores.append(torch.mean(score_flat).item())
-            validationLosses.append(torch.mean(loss).item())
+                loss, score_flat, score_per_stem = compute_loss_and_score(args, net, mixture, stems)
+                chunkLosses.append(loss.item())
+                chunkScores.append(torch.mean(score_flat).item())
+                chunkStemScores.append(score_per_stem)
+
+            trackLoss = sum(chunkLosses) / len(chunkLosses)
+            trackScore = sum(chunkScores) / len(chunkScores)
+            trackStemScore = torch.stack(chunkStemScores).mean(dim=0)
+
+            validationScores.append(trackScore)
+            validationLosses.append(trackLoss)
             for s in range(NUM_STEMS):
-                perStemScores[s].append(score_per_stem[s].item())
+                perStemScores[s].append(trackStemScore[s].item())
             if score_file is not None:
                 row = str(i) + ", " + subset_label + ", "
-                row += ", ".join(str(score_per_stem[s].item()) for s in range(NUM_STEMS))
+                row += ", ".join(str(trackStemScore[s].item()) for s in range(NUM_STEMS))
                 score_file.write("\n" + row)
             if args.printOutputWhileValidation:
-                statString = "Valid [" + str(i) + "] (" + name[0] + ") -> "
-                statString += str(loss.item()) + " "
-                statString += str(torch.mean(score_flat).item()) + " SI-SNR dB ["
-                statString += stem_breakdown_string(score_per_stem) + "]"
+                statString = "Valid [" + str(i) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks) -> "
+                statString += str(trackLoss) + " "
+                statString += str(trackScore) + " SI-SNR dB ["
+                statString += stem_breakdown_string(trackStemScore) + "]"
                 print(statString)
 
     if score_file is not None:
@@ -388,32 +413,50 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
         with torch.no_grad():
             mono = waveform.squeeze(0).to(device).mean(dim=1)
             mono = downsampler(mono)
-            mixture, stems = crop_track_to_batch(mono, args.b, segment_len)
 
-            loss, score_flat, score_per_stem, clean_rec_flat, target_waveform_flat = \
-                compute_loss_and_score(args, net, mixture, stems, return_waveforms=True)
-            sdr_per_stem = compute_sdr_per_stem(clean_rec_flat, target_waveform_flat, mixture.size(0))
+            chunks = list(iterate_track_chunks(mono.size(-1), chunk_len, overlap_frames))
+            chunkLosses = []
+            chunkScores = []
+            chunkStemScores = []
+            chunkSdrPerStem = []
+            for start, end in chunks:
+                mixture = mono[0:1, start:end]
+                stems = mono[1:, start:end].unsqueeze(0)
 
-            testLosses.append(torch.mean(loss).item())
-            testScores.append(torch.mean(score_flat).item())
+                loss, score_flat, score_per_stem, clean_rec_flat, target_waveform_flat = \
+                    compute_loss_and_score(args, net, mixture, stems, return_waveforms=True)
+                sdr_per_stem = compute_sdr_per_stem(clean_rec_flat, target_waveform_flat, mixture.size(0))
+
+                chunkLosses.append(loss.item())
+                chunkScores.append(torch.mean(score_flat).item())
+                chunkStemScores.append(score_per_stem)
+                chunkSdrPerStem.append(sdr_per_stem)
+
+            trackLoss = sum(chunkLosses) / len(chunkLosses)
+            trackScore = sum(chunkScores) / len(chunkScores)
+            trackStemScore = torch.stack(chunkStemScores).mean(dim=0)
+            trackSdrPerStem = [np.nanmean([c[s] for c in chunkSdrPerStem]) for s in range(NUM_STEMS)]
+
+            testLosses.append(trackLoss)
+            testScores.append(trackScore)
             for s in range(NUM_STEMS):
-                perStemSiSnr[s].append(score_per_stem[s].item())
-                perStemSdr[s].append(sdr_per_stem[s])
+                perStemSiSnr[s].append(trackStemScore[s].item())
+                perStemSdr[s].append(trackSdrPerStem[s])
 
             if score_file is not None:
                 row = str(i) + ", test, "
-                row += ", ".join(str(sdr_per_stem[s]) for s in range(NUM_STEMS))
+                row += ", ".join(str(trackSdrPerStem[s]) for s in range(NUM_STEMS))
                 score_file.write("\n" + row)
             if sisnr_score_file is not None:
                 row = str(i) + ", test, "
-                row += ", ".join(str(score_per_stem[s].item()) for s in range(NUM_STEMS))
+                row += ", ".join(str(trackStemScore[s].item()) for s in range(NUM_STEMS))
                 sisnr_score_file.write("\n" + row)
             if args.printOutputWhileTest:
-                statString = "Test [" + str(i) + "] (" + name[0] + ") -> "
-                statString += str(loss.item()) + " "
-                statString += str(torch.mean(score_flat).item()) + " SI-SNR dB, SDR ["
+                statString = "Test [" + str(i) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks) -> "
+                statString += str(trackLoss) + " "
+                statString += str(trackScore) + " SI-SNR dB, SDR ["
                 statString += ", ".join(
-                    "{}={:.2f}dB".format(TARGET_STEMS[s], sdr_per_stem[s])
+                    "{}={:.2f}dB".format(TARGET_STEMS[s], trackSdrPerStem[s])
                     for s in range(NUM_STEMS))
                 statString += "]"
                 print(statString)
@@ -438,13 +481,12 @@ if __name__ == '__main__':
     parser.add_argument('-b',
                         type=int,
                         default=32,
-                        help='number of distinct tracks combined into each training batch '
-                             '(one random crop per track); also the number of crops averaged '
-                             'per track during validation/test')
+                        help='number of whole tracks accumulated into each training batch '
+                             '(via gradient accumulation, since tracks vary in length)')
     parser.add_argument('-lr',
                         type=float,
-                        default=0.001,
-                        help='initial learning rate')
+                        default=0.0001,
+                        help='learning rate (fixed for the whole run, no scheduler)')
     parser.add_argument('-lam',
                         type=float,
                         default=0.001,
@@ -503,8 +545,14 @@ if __name__ == '__main__':
                         help='sample rate the network operates at; MUSDB18-HQ is downsampled from 44100 Hz to this')
     parser.add_argument('-segment_seconds',
                         type=float,
-                        default=4.0,
-                        help='length (in seconds) of each random crop taken from a track')
+                        default=10.0,
+                        help='base length (in seconds) of each sequential chunk a track is split '
+                             'into for train/validation/test, mirroring hybrid_demucs\' chunked '
+                             'inference (see chtc_files/hybrid_demucs_full_dataset.py)')
+    parser.add_argument('-overlap',
+                        type=float,
+                        default=0.1,
+                        help='fractional overlap between consecutive chunks, as in hybrid_demucs')
     parser.add_argument('-training_samples',
                         type=int,
                         default=60000,
@@ -573,7 +621,12 @@ if __name__ == '__main__':
     device = torch.device('cuda:{}'.format(args.gpu[0]))
 
     out_delay = args.out_delay
-    segment_len = int(args.segment_seconds * args.sample_rate)
+    # As in hybrid_demucs' chunked inference (chtc_files/hybrid_demucs_full_dataset.py):
+    # chunk_len is the base segment plus its overlap margin, and consecutive
+    # chunks advance by chunk_len after the first step overlaps by
+    # overlap_frames with the chunk before it.
+    chunk_len = int(args.sample_rate * args.segment_seconds * (1 + args.overlap))
+    overlap_frames = int(args.overlap * args.sample_rate)
     net = torch.nn.DataParallel(Network(
                 args.threshold,
                 args.tau_grad,
@@ -608,11 +661,6 @@ if __name__ == '__main__':
                                   lr=args.lr,
                                   weight_decay=1e-5)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min')
-
-    # Full tracks vary in length, so the DataLoader must use batch_size=1;
-    # each training step instead draws args.b random crops out of the one
-    # track it receives (see crop_track_to_batch).
     train_set = torchaudio.datasets.MUSDB_HQ(args.path,
             subset="train",
             sources=SOURCES,
@@ -621,13 +669,13 @@ if __name__ == '__main__':
     if args.training_samples < len(train_set.names):
         train_set.names = train_set.names[:args.training_samples]
 
-    # MusdbTrainCropDataset takes one random fixed-length crop per track per
-    # __getitem__ call (see crop_track_to_batch), so batch_size=args.b here
-    # stacks crops from args.b *different* tracks into each training batch,
-    # instead of args.b crops of the same track.
-    train_crop_set = MusdbTrainCropDataset(train_set, segment_len, args.sample_rate)
-    train_loader = DataLoader(train_crop_set,
-                          batch_size=args.b,
+    # Train on whole, uncropped tracks: batch_size=1 loads one full track per
+    # DataLoader item (tracks vary in length, so they can't be stacked into a
+    # real batch), and run_training_loop accumulates gradients over args.b
+    # tracks before each optimizer step, so args.b is still the effective
+    # training batch size.
+    train_loader = DataLoader(train_set,
+                          batch_size=1,
                           shuffle=True,
                           num_workers=4,
                           pin_memory=True)
@@ -635,11 +683,10 @@ if __name__ == '__main__':
     startingEpoch = 0
     trackingInfo = dict()
     if args.useCheckpoint != "":
-        run_warm_up_training(args, net, optimizer, scheduler, train_loader)
+        run_warm_up_training(args, net, optimizer, train_loader)
         checkpoint = torch.load(args.useCheckpoint, weights_only=True)
         module.load_state_dict(checkpoint['module_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         startingEpoch = checkpoint['epochs_completed']
         trackingInfo = checkpoint['tracking_info']
         print("Current Tracking info:")
@@ -666,7 +713,7 @@ if __name__ == '__main__':
         statusString += str(startingValidationScore) + "]"
         print(statusString)
 
-    delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch)
+    delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop(args, net, optimizer, train_loader, startingEpoch)
 
     if args.trackDelayWhileTraining:
         plot_weights(delay_weights)
@@ -733,7 +780,6 @@ if __name__ == '__main__':
                 'epochs_completed': startingEpoch + args.epochs,
                 'module_state_dict': module.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
                 }, trained_folder + '/network.pt')
     print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")

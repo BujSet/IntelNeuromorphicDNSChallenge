@@ -3,21 +3,24 @@
 docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
 universe = docker
 
-arguments = -exp musdb_snn_baseline -epochs 50 -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
+# exp is per-queued-job (see `queue epochs from` below) so that jobs with
+# different epoch counts don't all transfer their output back to the same
+# Logs.../Trained... folder names and clobber each other.
+exp = musdb_snn_baseline_epochs$(epochs)
+arguments = -exp $(exp) -epochs $(epochs) -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
 executable = musdb_hq_snn_training.sh
-log = musdb_hq_snn_training_$(Cluster)_$(Process).log
-error = musdb_hq_snn_training_$(Cluster)_$(Process).err
-output = musdb_hq_snn_training_$(Cluster)_$(Process).out
+log = musdb_hq_snn_training_$(Cluster)_$(Process)_epochs$(epochs).log
+error = musdb_hq_snn_training_$(Cluster)_$(Process)_epochs$(epochs).err
+output = musdb_hq_snn_training_$(Cluster)_$(Process)_epochs$(epochs).out
 
 transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT_OR_EVICT
 # Without this, HTCondor's default "transfer back everything new" would also
 # re-upload the freshly cloned repo and the unzipped musdb18hq dataset.
-# NOTE: these paths encode -exp musdb_snn_baseline (Trained/Logs + that
-# identifier, no separator, per musdb_snn_training.py); update them if the
-# -exp value in `arguments` above changes.
-transfer_output_files = IntelNeuromorphicDNSChallenge/Logsmusdb_snn_baseline, IntelNeuromorphicDNSChallenge/Trainedmusdb_snn_baseline
+# NOTE: these paths encode -exp $(exp) (Trained/Logs + that identifier, no
+# separator, per musdb_snn_training.py); update them if `exp` above changes.
+transfer_output_files = IntelNeuromorphicDNSChallenge/Logs$(exp), IntelNeuromorphicDNSChallenge/Trained$(exp)
 max_idle = 10
 want_io_proxy = true
 priority = 10
@@ -39,4 +42,11 @@ requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
 notify_user = elise.song@wisc.edu
 notification = always
 
-queue 1
+# Submits one job per value below, each with its own $(epochs)/$(exp) and
+# its own Logs.../Trained.../log-error-output files. Edit the list to change
+# which epoch counts get run.
+queue epochs from (
+    50
+    75
+    100
+)
