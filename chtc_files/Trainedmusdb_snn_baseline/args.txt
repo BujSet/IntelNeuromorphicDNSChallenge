@@ -1,4 +1,4 @@
-b : 16
+b : 32
 clip : 10
 dmax : 64
 epochs : 50

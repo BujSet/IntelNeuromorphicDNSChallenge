@@ -285,7 +285,6 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
                 statString += str(torch.mean(score_flat).item()) + " SI-SNR dB ["
                 statString += stem_breakdown_string(score_per_stem) + "]"
                 print(statString)
-        scheduler.step()
         if args.trackDelayWhileTraining:
             for param_tensor in net.state_dict():
                 if ("delay.delay" in param_tensor):
@@ -295,6 +294,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
         averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
+        scheduler.step(averageTrainingLoss)
     return delay_weights, averageTrainingLoss, averageTrainingScore
 
 def run_validation_loop(args, net, validation_loader, csv_path=None, subset_label='validation'):
@@ -583,7 +583,7 @@ if __name__ == '__main__':
                                   lr=args.lr,
                                   weight_decay=1e-5)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=500) #TODO increase T_max
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min')
 
     # Full tracks vary in length, so the DataLoader must use batch_size=1;
     # each training step instead draws args.b random crops out of the one
