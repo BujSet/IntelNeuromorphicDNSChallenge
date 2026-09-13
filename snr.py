@@ -40,7 +40,7 @@ def si_snr(target: Union[torch.tensor, np.ndarray],
 
     # <s, s'> / ||s||**2 * s
     pair_wise_dot = torch.sum(s_target * s_estimate, dim=-1, keepdim=True)
-    s_target_norm = torch.sum(s_target ** 2, dim=-1, keepdim=True)
+    s_target_norm = torch.sum(s_target ** 2, dim=-1, keepdim=True) + EPS
     pair_wise_proj = pair_wise_dot * s_target / s_target_norm
 
     e_noise = s_estimate - pair_wise_proj
