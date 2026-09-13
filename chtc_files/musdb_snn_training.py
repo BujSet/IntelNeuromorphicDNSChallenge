@@ -192,6 +192,7 @@ class Network(torch.nn.Module):
                 if not valid_gradients:
                     break
         if not valid_gradients:
+            print("Not valid gradients, resetting to zero")
             self.zero_grad()
 
 def plot_weights(data):
