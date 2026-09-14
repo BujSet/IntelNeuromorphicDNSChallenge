@@ -56,16 +56,18 @@ def stft_mixer(stft_abs, stft_angle, n_fft=512, method=None, length=None):
 
 EPS = 2.220446049250313e-16
 
-def segmental_snr_mixer(vocals, accompaniment, snr,
+# mixer function (hard)
+def segmental_snr_mixer(vocals, accompaniment,
                         target_level,
                         target_level_lower,
                         target_level_higher,
                         clipping_threshold=0.99):
-    '''Remixes a track's vocals and accompaniment (mixture minus vocals) at a
-    randomized vocal-to-accompaniment SNR and overall level, so training can
-    see mix ratios beyond MUSDB18-HQ's own fixed mixdown. This is the same
-    segmental-SNR mixing recipe other_models/ssns_randomized.py uses for
-    speech+noise (_segmental_snr_mixer), translated to vocals+accompaniment.'''
+    '''Remixes a track's vocals and accompaniment (mixture minus vocals),
+    each independently leveled to target_level (so vocals and accompaniment
+    end up RMS-balanced), and the mixture then randomized to an overall
+    output level, so training can see mix levels beyond MUSDB18-HQ's own
+    fixed mixdown. Adapted from other_models/ssns_randomized.py's
+    _segmental_snr_mixer, with the SNR re-balancing step removed.'''
     vocals_div = torch.max(torch.abs(vocals)) + EPS
     accompaniment_div = torch.max(torch.abs(accompaniment)) + EPS
     ssl_vocals = torch.div(vocals, vocals_div.item())
@@ -77,9 +79,6 @@ def segmental_snr_mixer(vocals, accompaniment, snr,
     vocals_scalar = 10 ** (target_level / 20) / (vocals_rms + EPS)
     accompaniment_scalar = 10 ** (target_level / 20) / (accompaniment_rms + EPS)
     ssl_vocals = torch.mul(ssl_vocals, vocals_scalar)
-    ssl_accompaniment = torch.mul(ssl_accompaniment, accompaniment_scalar)
-    # Adjust accompaniment to the target vocal SNR level
-    accompaniment_scalar = vocals_rms / (10 ** (snr / 20)) / (accompaniment_rms + EPS)
     ssl_accompaniment = torch.mul(ssl_accompaniment, accompaniment_scalar)
     ssl_mixture = torch.add(ssl_vocals, ssl_accompaniment)
     mixture_rms_level = torch.randint(
@@ -101,8 +100,8 @@ def segmental_snr_mixer(vocals, accompaniment, snr,
         mixture_rms_level = int(20 * np.log10(mixture_scalar/mixture_maxamplevel * (mixture_rms + EPS)))
     return ssl_vocals, ssl_accompaniment, ssl_mixture, mixture_rms_level
 
+# synthesize function
 def synthesize_random_mixture(vocals, accompaniment, batch_size, num_samples,
-        snr,
         target_level,
         target_level_lower,
         target_level_higher):
@@ -117,7 +116,6 @@ def synthesize_random_mixture(vocals, accompaniment, batch_size, num_samples,
     for i in range(batch_size):
         ssl_vocals[i, :], ssl_accompaniment[i, :], ssl_mixture[i, :], rms = segmental_snr_mixer(
             vocals[i, :], accompaniment[i, :],
-            snr[i].item(),
             target_level[i].item(),
             target_level_lower,
             target_level_higher)
@@ -441,31 +439,34 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
         averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
     return delay_weights, averageTrainingLoss, averageTrainingScore
 
-def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, orientList, startingEpoch=0):
+def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     '''Same as run_training_loop, but each track is first re-spatialized and
     remixed before training on it: the vocals and accompaniment (mixture
-    minus vocals) are each convolved with a CIPIC HRIR from an orientation
-    pair drawn from orientList, then recombined at a randomly sampled
-    vocal/accompaniment SNR and level via segmental_snr_mixer. Translated
-    from other_models/ssns_randomized.py's run_training_loop_with_cipic
+    minus vocals) are each convolved with a CIPIC HRIR from a fixed
+    orientation pair (vocals pinned to the right hemisphere at 316,
+    accompaniment pinned to the left hemisphere at 916), then leveled and
+    recombined at a randomly sampled overall level via segmental_snr_mixer
+    (no SNR re-balancing between vocals/accompaniment). Translated from
+    other_models/ssns_randomized.py's run_training_loop_with_cipic
     (speech+noise+HRTF -> vocals+accompaniment+HRTF).
 
-    orientList is set up in __main__ to pin vocals to the right hemisphere
-    (316) and accompaniment to the left hemisphere (916) rather than
-    sampling from a broader set of orientation pairs, unlike
-    ssns_randomized.py's random/fixedOrients modes.
-
-    MUSDB18-HQ tracks have no per-track SNR/target-level metadata the way
-    DNS's synthesized clips do (train_set._get_filenames(idx)['snr'/
-    'target_level'] in the original), so those are instead sampled uniformly
-    from args.snr_lower/upper and args.target_level_lower/upper once per
-    track.
+    MUSDB18-HQ tracks have no per-track target-level metadata the way DNS's
+    synthesized clips do (train_set._get_filenames(idx)['target_level'] in
+    the original), so it's instead sampled uniformly from
+    args.target_level_lower/upper once per track.
 
     Only supports NUM_STEMS == 1 (a single 'vocals' target stem), since
     segmental_snr_mixer mixes one target against one interferer.'''
     assert args.useCipic
     assert NUM_STEMS == 1
-    net.train()
+    vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
+    # Input audio is at args.sample_rate, but CIPIC HRTFs are 44.1 kHz. The
+    # orientation pair is fixed for the whole run, so the filters are built
+    # once here rather than being recomputed for every track.
+    vocalsFilter = downsampler(torch.from_numpy(
+        CIPICSubject.getHRIRFromIndex(vocalsFilterOrient, args.filterChannel)).float().to(device))
+    accompanimentFilter = downsampler(torch.from_numpy(
+        CIPICSubject.getHRIRFromIndex(accompanimentFilterOrient, args.filterChannel)).float().to(device))
     delay_weights = dict()
     averageTrainingLoss = 0
     averageTrainingScore = 0
@@ -481,20 +482,18 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
             vocals_full = mono[1, :]
             accompaniment_full = mono[0, :] - mono[1, :]
 
-            vocalsFilterOrient, accompanimentFilterOrient = random.choice(orientList)
-            # Input audio is at args.sample_rate, but CIPIC HRTFs are 44.1 kHz.
-            vocalsFilter = downsampler(torch.from_numpy(
-                CIPICSubject.getHRIRFromIndex(vocalsFilterOrient, args.filterChannel)).float().to(device))
-            accompanimentFilter = downsampler(torch.from_numpy(
-                CIPICSubject.getHRIRFromIndex(accompanimentFilterOrient, args.filterChannel)).float().to(device))
             vocals_spatial = conv_transform(vocals_full, vocalsFilter)
             accompaniment_spatial = conv_transform(accompaniment_full, accompanimentFilter)
 
-            snr = random.uniform(args.snr_lower, args.snr_upper)
             target_level = random.uniform(args.target_level_lower, args.target_level_upper)
-            ssl_vocals, ssl_accompaniment, ssl_mixture, _ = segmental_snr_mixer(
-                vocals_spatial, accompaniment_spatial, snr, target_level,
+            num_samples = vocals_spatial.size(-1)
+            ssl_mixture, ssl_vocals, ssl_accompaniment = synthesize_random_mixture(
+                vocals_spatial.unsqueeze(0), accompaniment_spatial.unsqueeze(0), 1, num_samples,
+                torch.tensor([target_level]),
                 args.target_level_lower, args.target_level_upper)
+            ssl_mixture = ssl_mixture[0]
+            ssl_vocals = ssl_vocals[0]
+            ssl_accompaniment = ssl_accompaniment[0]
 
             # Reassemble a (mixture, stems)-shaped track from the
             # spatialized/remixed signal and reuse run_training_loop's exact
@@ -627,7 +626,7 @@ def run_validation_loop(args, net, validation_loader, csv_path=None, subset_labe
     averagePerStemScore = [sum(scores) / (1.0 * len(scores)) for scores in perStemScores]
     return averageValidationLoss, averageValidationScore, averagePerStemScore
 
-def run_validation_loop_with_cipic(args, net, validation_loader, orientList, csv_path=None, subset_label='validation'):
+def run_validation_loop_with_cipic(args, net, validation_loader, csv_path=None, subset_label='validation'):
     '''Same as run_validation_loop, but each track is first re-spatialized
     and remixed exactly like run_training_loop_with_cipic does, so
     validation exercises the same CIPIC-augmented vocals/accompaniment mixes
@@ -635,6 +634,13 @@ def run_validation_loop_with_cipic(args, net, validation_loader, orientList, csv
     run_validation_loop_with_cipic.'''
     assert args.useCipic
     assert NUM_STEMS == 1
+    vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
+    # Orientation pair is fixed for the whole run, so the filters are built
+    # once here rather than being recomputed for every track.
+    vocalsFilter = downsampler(torch.from_numpy(
+        CIPICSubject.getHRIRFromIndex(vocalsFilterOrient, args.filterChannel)).float().to(device))
+    accompanimentFilter = downsampler(torch.from_numpy(
+        CIPICSubject.getHRIRFromIndex(accompanimentFilterOrient, args.filterChannel)).float().to(device))
     validationScores = []
     validationLosses = []
     perStemScores = [[] for _ in range(NUM_STEMS)]
@@ -652,19 +658,18 @@ def run_validation_loop_with_cipic(args, net, validation_loader, orientList, csv
             vocals_full = mono[1, :]
             accompaniment_full = mono[0, :] - mono[1, :]
 
-            vocalsFilterOrient, accompanimentFilterOrient = random.choice(orientList)
-            vocalsFilter = downsampler(torch.from_numpy(
-                CIPICSubject.getHRIRFromIndex(vocalsFilterOrient, args.filterChannel)).float().to(device))
-            accompanimentFilter = downsampler(torch.from_numpy(
-                CIPICSubject.getHRIRFromIndex(accompanimentFilterOrient, args.filterChannel)).float().to(device))
             vocals_spatial = conv_transform(vocals_full, vocalsFilter)
             accompaniment_spatial = conv_transform(accompaniment_full, accompanimentFilter)
 
-            snr = random.uniform(args.snr_lower, args.snr_upper)
             target_level = random.uniform(args.target_level_lower, args.target_level_upper)
-            ssl_vocals, ssl_accompaniment, ssl_mixture, _ = segmental_snr_mixer(
-                vocals_spatial, accompaniment_spatial, snr, target_level,
+            num_samples = vocals_spatial.size(-1)
+            ssl_mixture, ssl_vocals, ssl_accompaniment = synthesize_random_mixture(
+                vocals_spatial.unsqueeze(0), accompaniment_spatial.unsqueeze(0), 1, num_samples,
+                torch.tensor([target_level]),
                 args.target_level_lower, args.target_level_upper)
+            ssl_mixture = ssl_mixture[0]
+            ssl_vocals = ssl_vocals[0]
+            ssl_accompaniment = ssl_accompaniment[0]
 
             # Reassemble a (mixture, stems)-shaped track from the
             # spatialized/remixed signal and reuse run_validation_loop's
@@ -790,6 +795,126 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
                 sisnr_score_file.write("\n" + row)
             if args.printOutputWhileTest:
                 statString = "Test [" + str(i) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks) -> "
+                statString += str(trackLoss) + " "
+                statString += str(trackScore) + " SI-SNR dB, SDR ["
+                statString += ", ".join(
+                    "{}={:.2f}dB".format(TARGET_STEMS[s], trackSdrPerStem[s])
+                    for s in range(NUM_STEMS))
+                statString += "]"
+                print(statString)
+
+    if score_file is not None:
+        score_file.close()
+    if sisnr_score_file is not None:
+        sisnr_score_file.close()
+
+    averageTestLoss = sum(testLosses) / (1.0 * len(testLosses))
+    averageTestScore = sum(testScores) / (1.0 * len(testScores))
+    averagePerStemSiSnr = [sum(scores) / (1.0 * len(scores)) for scores in perStemSiSnr]
+    averagePerStemSdr = [np.nanmean(scores) for scores in perStemSdr]
+    return averageTestLoss, averageTestScore, averagePerStemSiSnr, averagePerStemSdr
+
+def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
+    '''Same as run_test_loop, but each track is first re-spatialized and
+    remixed exactly like run_training_loop_with_cipic/run_validation_loop_with_cipic
+    do, before the same chunk/stitch/SI-SNR/SDR scoring pipeline runs on it.
+
+    Only supports NUM_STEMS == 1 (a single 'vocals' target stem), since
+    segmental_snr_mixer mixes one target against one interferer.'''
+    assert args.useCipic
+    assert NUM_STEMS == 1
+    vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
+    # Orientation pair is fixed for the whole run, so the filters are built
+    # once here rather than being recomputed for every track.
+    vocalsFilter = downsampler(torch.from_numpy(
+        CIPICSubject.getHRIRFromIndex(vocalsFilterOrient, args.filterChannel)).float().to(device))
+    accompanimentFilter = downsampler(torch.from_numpy(
+        CIPICSubject.getHRIRFromIndex(accompanimentFilterOrient, args.filterChannel)).float().to(device))
+    net.eval()
+    testLosses = []
+    testScores = []
+    perStemSiSnr = [[] for _ in range(NUM_STEMS)]
+    perStemSdr = [[] for _ in range(NUM_STEMS)]
+
+    score_file = None
+    if csv_path is not None:
+        score_file = open(csv_path, "w")
+        score_file.write("track ID, train/test set, " + ", ".join(TARGET_STEMS))
+
+    sisnr_score_file = None
+    if sisnr_csv_path is not None:
+        sisnr_score_file = open(sisnr_csv_path, "w")
+        sisnr_score_file.write("track ID, train/test set, " + ", ".join(TARGET_STEMS))
+
+    for i, (waveform, sr, num_frames, name) in enumerate(test_loader):
+        with torch.no_grad():
+            mono = waveform.squeeze(0).to(device).mean(dim=1)
+            mono = downsampler(mono)
+            vocals_full = mono[1, :]
+            accompaniment_full = mono[0, :] - mono[1, :]
+
+            vocals_spatial = conv_transform(vocals_full, vocalsFilter)
+            accompaniment_spatial = conv_transform(accompaniment_full, accompanimentFilter)
+
+            target_level = random.uniform(args.target_level_lower, args.target_level_upper)
+            num_samples = vocals_spatial.size(-1)
+            ssl_mixture, ssl_vocals, ssl_accompaniment = synthesize_random_mixture(
+                vocals_spatial.unsqueeze(0), accompaniment_spatial.unsqueeze(0), 1, num_samples,
+                torch.tensor([target_level]),
+                args.target_level_lower, args.target_level_upper)
+            ssl_mixture = ssl_mixture[0]
+            ssl_vocals = ssl_vocals[0]
+            ssl_accompaniment = ssl_accompaniment[0]
+
+            # Reassemble a (mixture, stems)-shaped track from the
+            # spatialized/remixed signal and reuse run_test_loop's exact
+            # per-chunk forward/loss/stitch-and-score pipeline on it.
+            synthetic_mono = torch.stack([ssl_mixture, ssl_vocals], dim=0)
+
+            chunks = list(iterate_track_chunks(synthetic_mono.size(-1), chunk_len, overlap_frames))
+            chunkLosses = []
+            chunkEstimates = []
+            chunkTargets = []
+            for start, end in chunks:
+                mixture = synthetic_mono[0:1, start:end]
+                stems = synthetic_mono[1:, start:end].unsqueeze(0)
+
+                loss, score_flat, score_per_stem, clean_rec_flat, target_waveform_flat = \
+                    compute_loss_and_score(args, net, mixture, stems, return_waveforms=True)
+
+                chunkLosses.append(loss.item())
+                chunkEstimates.append(clean_rec_flat.reshape(NUM_STEMS, -1))
+                chunkTargets.append(target_waveform_flat.reshape(NUM_STEMS, -1))
+
+            trackLoss = sum(chunkLosses) / len(chunkLosses)
+            # Stitch the chunk-level estimate/target waveforms into full
+            # tracks and score once (both SI-SNR and SDR), same as run_test_loop.
+            stitched_estimate = stitch_chunks(chunkEstimates, chunks, synthetic_mono.size(-1), overlap_frames, device)
+            stitched_target = stitch_chunks(chunkTargets, chunks, synthetic_mono.size(-1), overlap_frames, device)
+            trackStemScore = si_snr(stitched_target, stitched_estimate)
+            if torch.isnan(trackStemScore).any() or torch.isinf(trackStemScore).any():
+                trackStemScore[torch.isnan(trackStemScore) | torch.isinf(trackStemScore)] = 0
+            trackScore = trackStemScore.mean().item()
+            trackSdrPerStem = compute_sdr_per_stem(
+                stitched_estimate.unsqueeze(0), stitched_target.unsqueeze(0), 1)
+
+            testLosses.append(trackLoss)
+            testScores.append(trackScore)
+            for s in range(NUM_STEMS):
+                perStemSiSnr[s].append(trackStemScore[s].item())
+                perStemSdr[s].append(trackSdrPerStem[s])
+
+            if score_file is not None:
+                row = str(i) + ", test, "
+                row += ", ".join(str(trackSdrPerStem[s]) for s in range(NUM_STEMS))
+                score_file.write("\n" + row)
+            if sisnr_score_file is not None:
+                row = str(i) + ", test, "
+                row += ", ".join(str(trackStemScore[s].item()) for s in range(NUM_STEMS))
+                sisnr_score_file.write("\n" + row)
+            if args.printOutputWhileTest:
+                statString = "Test [" + str(i) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks, (vocals,accompaniment)=("
+                statString += str(vocalsFilterOrient) + "," + str(accompanimentFilterOrient) + ")) -> "
                 statString += str(trackLoss) + " "
                 statString += str(trackScore) + " SI-SNR dB, SDR ["
                 statString += ", ".join(
@@ -947,14 +1072,6 @@ if __name__ == '__main__':
                         type=int,
                         default=0,
                         help='Channel used for vocals/accompaniment separation')
-    parser.add_argument('-snr_lower',
-                        type=float,
-                        default=-5,
-                        help='lower bound of the randomly sampled vocal/accompaniment SNR (dB), used only with -useCipic')
-    parser.add_argument('-snr_upper',
-                        type=float,
-                        default=20,
-                        help='upper bound of the randomly sampled vocal/accompaniment SNR (dB), used only with -useCipic')
     parser.add_argument('-target_level_lower',
                         type=int,
                         default=-35,
@@ -1046,7 +1163,6 @@ if __name__ == '__main__':
     # reuses this same resampler on the HRIR filters it loads.
     downsampler = torchaudio.transforms.Resample(44100, args.sample_rate, dtype=torch.float32).to(device)
 
-    orientList = []
     if args.useCipic:
         # Imported lazily (rather than at module load) since hrtfs.cipic_db
         # eagerly opens all 45 CIPIC .sofa files at import time; runs that
@@ -1054,13 +1170,8 @@ if __name__ == '__main__':
         from hrtfs.cipic_db import CipicDatabase
         CIPICSubject = CipicDatabase.subjects[args.cipicSubject]
         print("Using CIPIC subject " + str(args.cipicSubject) + " for spatial sound separation...")
-        # Vocals pinned to the right hemisphere (316), accompaniment pinned
-        # to the left hemisphere (916), rather than sampling random
-        # orientation pairs.
-        orientList = [(316, 916)]
     else:
         print("NOT using CIPIC subject to preprocess audio")
-    print("Orient list contains " + str(len(orientList)) + " orientation pairs")
 
     # Define optimizer module.
     optimizer = torch.optim.RAdam(net.parameters(),
@@ -1126,7 +1237,7 @@ if __name__ == '__main__':
 
     if args.useCipic:
         delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop_with_cipic(
-            args, net, optimizer, scheduler, train_loader, orientList, startingEpoch)
+            args, net, optimizer, scheduler, train_loader, startingEpoch)
     else:
         delay_weights, lastTrainingLoss, lastTrainingScore = run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpoch)
 
@@ -1151,7 +1262,7 @@ if __name__ == '__main__':
     csv_path = os.path.join(logs_folder, 'si_snr_scores.csv')
     if args.useCipic:
         finalValidationLoss, finalValidationScore, finalPerStemScore = run_validation_loop_with_cipic(
-            args, net, validation_loader, orientList, csv_path=csv_path, subset_label='validation')
+            args, net, validation_loader, csv_path=csv_path, subset_label='validation')
     else:
         finalValidationLoss, finalValidationScore, finalPerStemScore = run_validation_loop(
             args, net, validation_loader, csv_path=csv_path, subset_label='validation')
@@ -1182,8 +1293,12 @@ if __name__ == '__main__':
                           pin_memory=True)
     test_csv_path = os.path.join(logs_folder, 'musdb_snn_test_sdr_scores.csv')
     test_sisnr_csv_path = os.path.join(logs_folder, 'musdb_snn_test_sisnr_scores.csv')
-    finalTestLoss, finalTestScore, finalPerStemSiSnr, finalPerStemSdr = run_test_loop(
-        args, net, test_loader, csv_path=test_csv_path, sisnr_csv_path=test_sisnr_csv_path)
+    if args.useCipic:
+        finalTestLoss, finalTestScore, finalPerStemSiSnr, finalPerStemSdr = run_test_loop_with_cipic(
+            args, net, test_loader, csv_path=test_csv_path, sisnr_csv_path=test_sisnr_csv_path)
+    else:
+        finalTestLoss, finalTestScore, finalPerStemSiSnr, finalPerStemSdr = run_test_loop(
+            args, net, test_loader, csv_path=test_csv_path, sisnr_csv_path=test_sisnr_csv_path)
 
     if (args.saveCheckpoint):
         trackingInfo[startingEpoch+args.epochs] = dict()
