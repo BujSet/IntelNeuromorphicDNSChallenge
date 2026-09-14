@@ -11,9 +11,10 @@ use_cipic = true
 # Logs.../Trained... folder names and clobber each other. $(Cluster) (the
 # job/submission number) is included too, so resubmitting doesn't clobber
 # a previous run's output either.
-exp = musdb_snn_baseline_epochs$(epochs)
 if $(use_cipic)
-    exp = $(exp)_cipic
+    exp = musdb_snn_cipic_epochs$(epochs)
+else
+    exp = musdb_snn_baseline_epochs$(epochs)
 endif
 exp = $(exp)_$(Cluster)
 
