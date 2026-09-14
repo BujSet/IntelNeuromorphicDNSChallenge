@@ -1007,6 +1007,21 @@ if __name__ == '__main__':
                 args.n_fft).to(device),
                     device_ids=args.gpu)
     module = net.module
+
+    total_params = sum(p.numel() for p in module.parameters())
+    trainable_params = sum(p.numel() for p in module.parameters() if p.requires_grad)
+    param_bytes = sum(p.numel() * p.element_size() for p in module.parameters())
+    buffer_bytes = sum(b.numel() * b.element_size() for b in module.buffers())
+    with open(trained_folder + '/model_size.txt', 'wt') as f:
+        f.write('total_params : {}\n'.format(total_params))
+        f.write('trainable_params : {}\n'.format(trainable_params))
+        f.write('param_bytes : {}\n'.format(param_bytes))
+        f.write('buffer_bytes : {}\n'.format(buffer_bytes))
+        f.write('total_bytes : {}\n'.format(param_bytes + buffer_bytes))
+        f.write('total_MB : {:.4f}\n'.format((param_bytes + buffer_bytes) / 1e6))
+    print('Model size: {:,} total params ({:,} trainable), {:.4f} MB'.format(
+        total_params, trainable_params, (param_bytes + buffer_bytes) / 1e6))
+
     stft_transform = torchaudio.transforms.Spectrogram(
                 n_fft=args.n_fft,
                 onesided=True,
