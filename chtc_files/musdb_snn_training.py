@@ -974,8 +974,8 @@ if __name__ == '__main__':
         identifier += '_seed{}'.format(args.seed)
 
     assert(args.spectrogram == 0 or args.spectrogram == 1 or args.spectrogram == 2)
-    trained_folder = 'Trained' + identifier
-    logs_folder = 'Logs' + identifier
+    trained_folder = 'Trained/' + identifier
+    logs_folder = 'Logs/' + identifier
     writer = SummaryWriter('runs/' + identifier)
 
     os.makedirs(trained_folder, exist_ok=True)
