@@ -4,7 +4,7 @@ docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
 universe = docker
 
 # Toggle CIPIC-spatialized training on/off for all queued jobs below.
-use_cipic = true
+use_cipic = false
 
 # exp is per-queued-job (see `queue epochs from` below) so that jobs with
 # different epoch counts don't all transfer their output back to the same
@@ -66,8 +66,6 @@ notification = always
 # its own Logs.../Trained.../log-error-output files. Edit the list to change
 # which epoch counts get run.
 queue epochs from (
-    5
-    10
-    25
-    50
+    100
+    200
 )
