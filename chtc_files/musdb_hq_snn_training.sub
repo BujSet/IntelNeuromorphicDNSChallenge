@@ -12,11 +12,10 @@ use_cipic = true
 # job/submission number) is included too, so resubmitting doesn't clobber
 # a previous run's output either.
 if $(use_cipic)
-    exp = musdb_snn_cipic_epochs$(epochs)
+    exp = musdb_snn_cipic_$(Cluster)_$(Process)_epochs$(epochs)
 else
-    exp = musdb_snn_baseline_epochs$(epochs)
+    exp = musdb_snn_baseline_$(Cluster)_$(Process)_epochs$(epochs)
 endif
-exp = $(exp)_$(Cluster)
 
 arguments = -exp $(exp) -epochs $(epochs) -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
 if $(use_cipic)
@@ -24,9 +23,9 @@ if $(use_cipic)
 endif
 
 executable = musdb_hq_snn_training.sh
-log = musdb_hq_snn_training_$(Cluster)_$(Process)_epochs$(epochs).log
-error = musdb_hq_snn_training_$(Cluster)_$(Process)_epochs$(epochs).err
-output = musdb_hq_snn_training_$(Cluster)_$(Process)_epochs$(epochs).out
+log = $(exp).log
+error = $(exp).err
+output = $(exp).out
 
 transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip
 if $(use_cipic)
