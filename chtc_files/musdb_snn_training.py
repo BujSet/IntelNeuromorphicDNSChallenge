@@ -722,12 +722,31 @@ def run_validation_loop_with_cipic(args, net, validation_loader, csv_path=None, 
     averagePerStemScore = [sum(scores) / (1.0 * len(scores)) for scores in perStemScores]
     return averageValidationLoss, averageValidationScore, averagePerStemScore
 
+def save_track_audio(save_audio_dir, track_name, sample_rate,
+        mixture, estimated_vocals, target_vocals):
+    '''Writes the mixture, the network's separated vocals estimate, the
+    derived accompaniment estimate (mixture minus estimated vocals), and the
+    ground-truth vocals to <save_audio_dir>/<track_name>/*.wav, so a track's
+    separation can be listened to rather than only scored numerically.'''
+    track_dir = os.path.join(save_audio_dir, track_name)
+    os.makedirs(track_dir, exist_ok=True)
+    mixture = mixture.detach().cpu()
+    estimated_vocals = estimated_vocals.detach().cpu()
+    torchaudio.save(os.path.join(track_dir, 'mixture.wav'), mixture, sample_rate)
+    torchaudio.save(os.path.join(track_dir, 'vocals_estimate.wav'), estimated_vocals, sample_rate)
+    torchaudio.save(os.path.join(track_dir, 'accompaniment_estimate.wav'),
+        mixture - estimated_vocals, sample_rate)
+    torchaudio.save(os.path.join(track_dir, 'vocals_target.wav'),
+        target_vocals.detach().cpu(), sample_rate)
+
 def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
     '''Evaluates on MUSDB18-HQ's real held-out "test" subset -- the same 50
     tracks hybrid_demucs_test.txt was generated from -- and writes a CSV in
     that file's exact format, reporting SDR (via mir_eval) rather than
     SI-SNR so the two are a direct, same-metric baseline comparison. Also
-    writes a second CSV in the same format with the SI-SNR scores.'''
+    writes a second CSV in the same format with the SI-SNR scores. When
+    args.save_audio_dir is set, also writes each track's separated audio
+    (see save_track_audio) so results can be listened to, not just scored.'''
     net.eval()
     testLosses = []
     testScores = []
@@ -778,6 +797,12 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
             trackScore = trackStemScore.mean().item()
             trackSdrPerStem = compute_sdr_per_stem(
                 stitched_estimate.unsqueeze(0), stitched_target.unsqueeze(0), 1)
+
+            if args.save_audio_dir:
+                # NUM_STEMS == 1 ('vocals'), so stitched_estimate/target's
+                # single stem row is passed straight through.
+                save_track_audio(args.save_audio_dir, name[0], args.sample_rate,
+                    mono[0:1, :], stitched_estimate[0:1, :], stitched_target[0:1, :])
 
             testLosses.append(trackLoss)
             testScores.append(trackScore)
@@ -897,6 +922,13 @@ def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_pa
             trackScore = trackStemScore.mean().item()
             trackSdrPerStem = compute_sdr_per_stem(
                 stitched_estimate.unsqueeze(0), stitched_target.unsqueeze(0), 1)
+
+            if args.save_audio_dir:
+                # NUM_STEMS == 1 ('vocals'), so stitched_estimate/target's
+                # single stem row is passed straight through. synthetic_mono[0]
+                # is the CIPIC-spatialized/remixed mixture, not the raw track.
+                save_track_audio(args.save_audio_dir, name[0], args.sample_rate,
+                    synthetic_mono[0:1, :], stitched_estimate[0:1, :], stitched_target[0:1, :])
 
             testLosses.append(trackLoss)
             testScores.append(trackScore)
@@ -1055,6 +1087,11 @@ if __name__ == '__main__':
                         type=int,
                         default=512,
                         help='# of nuerons in hidden layers')
+    parser.add_argument('-save_audio_dir',
+                        type=str,
+                        default='',
+                        help='if set, write each test-set track\'s mixture, separated vocals/accompaniment '
+                             'estimate, and target vocals as .wav files under this directory')
 
     # CIPIC filter parameters (see run_training_loop_with_cipic)
     # ID:21 ==> Mannequin with large pinna

@@ -1,0 +1,6 @@
+total_params : 525322
+trainable_params : 525314
+param_bytes : 2101288
+buffer_bytes : 64
+total_bytes : 2101352
+total_MB : 2.1014

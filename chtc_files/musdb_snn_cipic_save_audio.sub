@@ -1,0 +1,56 @@
+# musdb_snn_cipic_save_audio.sub
+# My HTCondor submit file
+#
+# One-off inference job: loads the network.pt checkpoint that
+# musdb_snn_cipic_10465856_2_epochs50 already trained (see
+# musdb_snn_cipic_10465856_2_epochs50/args.txt), runs 0 further epochs, and
+# writes the test-set's separated vocals/accompaniment/mixture/target-vocals
+# audio via -save_audio_dir instead of only scoring it.
+docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
+universe = docker
+
+# $(Cluster) keeps a resubmit from clobbering a previous attempt's output.
+exp = musdb_snn_cipic_audio_$(Cluster)
+save_audio_dir = separated_audio
+
+arguments = -exp $(exp) -epochs 0 -useCheckpoint network.pt -useCipic -cipicSubject 12 -save_audio_dir $(save_audio_dir) -print_output_while_test
+
+executable = musdb_snn_cipic_save_audio.sh
+log = $(exp).log
+error = $(exp).err
+output = $(exp).out
+
+# The trained checkpoint from the original run lives locally alongside this
+# .sub file; it's transferred as a plain input file (basename only, landing
+# at the job's scratch root) rather than via /staging like the two datasets.
+transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip, file:///staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz, musdb_snn_cipic_10465856_2_epochs50/network.pt
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT_OR_EVICT
+# NOTE: these paths encode -exp $(exp) and -save_audio_dir $(save_audio_dir)
+# above; update them if either changes.
+transfer_output_files = IntelNeuromorphicDNSChallenge/Logs/$(exp), IntelNeuromorphicDNSChallenge/Trained/$(exp), IntelNeuromorphicDNSChallenge/$(save_audio_dir)
+max_idle = 10
+want_io_proxy = true
+priority = 10
+batch_name = "musdb_snn_save_audio"
+
++WantGPULab = true
++GPUJobLength = "long"
+
+# Tell HTCondor requirements (e.g., operating system) your job needs,
+# what amount of compute resources each job will need on the computer where it runs.
+request_gpus = 1
+request_cpus = 1
+request_memory = 36GB
+request_disk = 180GB
+# Capability < 9.0 excludes Hopper (H100/H200) GPUs: this container's
+# PyTorch build has no compiled CUDA kernels for compute capability 9.0,
+# so landing on one crashes with "no kernel image is available".
+require_gpus = (Capability >= 8.0) && (Capability < 9.0) && (DriverVersion >= 12.4)
+requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
+
+
+notify_user = elise.song@wisc.edu
+notification = always
+
+queue 1
