@@ -160,6 +160,24 @@ def separate_sources(
     return final
 
 
+def si_snr(estimate, reference, eps=1e-8):
+    """
+    Compute scale-invariant SNR (dB) between estimate and reference.
+
+    Args:
+        estimate, reference: torch tensors of shape (..., channels, frames)
+    """
+    reference = reference - reference.mean(dim=-1, keepdim=True)
+    estimate = estimate - estimate.mean(dim=-1, keepdim=True)
+    s_target = (
+        (estimate * reference).sum(dim=-1, keepdim=True)
+        / (reference.pow(2).sum(dim=-1, keepdim=True) + eps)
+    ) * reference
+    e_noise = estimate - s_target
+    ratio = (s_target.pow(2).sum(dim=-1) + eps) / (e_noise.pow(2).sum(dim=-1) + eps)
+    return (10 * torch.log10(ratio)).mean().item()
+
+
 def plot_spectrogram(stft, title="Spectrogram", savefile="spectogram"):
     magnitude = stft.abs()
     spectrogram = 20 * torch.log10(magnitude + 1e-8).numpy()
@@ -256,7 +274,7 @@ overlap = 0.1
 header = "track ID, train/test set"
 
 for i in range(len(model.sources)):
-    header += ", " + model.sources[i]
+    header += ", " + model.sources[i] + " sdr, " + model.sources[i] + " si_snr"
 
 print(header)
 
@@ -282,8 +300,11 @@ for i, sample in enumerate(data_loader):
     line = str(i) + ", " + test_or_train
     for j in range(len(model.sources)):
         # print(model.sources[j])
-        sdr_score = separation.bss_eval_sources(waveform[0,j+1,:,:].cpu().detach().numpy(), sources[j,:,:].cpu().detach().numpy())[0].mean()
-        #write sdr score
-        line += ", "+str(sdr_score)
+        reference = waveform[0,j+1,:,:]
+        estimate = sources[j,:,:]
+        sdr_score = separation.bss_eval_sources(reference.cpu().detach().numpy(), estimate.cpu().detach().numpy())[0].mean()
+        si_snr_score = si_snr(estimate, reference)
+        #write sdr and si_snr scores
+        line += ", "+str(sdr_score)+", "+str(si_snr_score)
     print(line)
 
