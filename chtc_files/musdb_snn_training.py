@@ -459,7 +459,10 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
     segmental_snr_mixer mixes one target against one interferer.'''
     assert args.useCipic
     assert NUM_STEMS == 1
-    vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
+    if args.filterChannel == 1:
+        vocalsFilterOrient, accompanimentFilterOrient = (916, 316)
+    else:
+        vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
     # Input audio is at args.sample_rate, but CIPIC HRTFs are 44.1 kHz. The
     # orientation pair is fixed for the whole run, so the filters are built
     # once here rather than being recomputed for every track.
@@ -634,7 +637,10 @@ def run_validation_loop_with_cipic(args, net, validation_loader, csv_path=None, 
     run_validation_loop_with_cipic.'''
     assert args.useCipic
     assert NUM_STEMS == 1
-    vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
+    if args.filterChannel == 1:
+        vocalsFilterOrient, accompanimentFilterOrient = (916, 316)
+    else:
+        vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
     # Orientation pair is fixed for the whole run, so the filters are built
     # once here rather than being recomputed for every track.
     vocalsFilter = downsampler(torch.from_numpy(
@@ -856,7 +862,10 @@ def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_pa
     segmental_snr_mixer mixes one target against one interferer.'''
     assert args.useCipic
     assert NUM_STEMS == 1
-    vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
+    if args.filterChannel == 1:
+        vocalsFilterOrient, accompanimentFilterOrient = (916, 316)
+    else:
+        vocalsFilterOrient, accompanimentFilterOrient = (316, 916)
     # Orientation pair is fixed for the whole run, so the filters are built
     # once here rather than being recomputed for every track.
     vocalsFilter = downsampler(torch.from_numpy(
