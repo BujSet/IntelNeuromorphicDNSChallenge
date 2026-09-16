@@ -2,8 +2,8 @@
 # My HTCondor submit file
 #
 # One-off inference job: loads the network.pt checkpoint that
-# musdb_snn_cipic_10465856_2_epochs50 already trained (see
-# musdb_snn_cipic_10465856_2_epochs50/args.txt), runs 0 further epochs, and
+# musdb_snn_cipic_10465856_3_epochs100 already trained (see
+# musdb_snn_cipic_10465856_3_epochs100/args.txt), runs 0 further epochs, and
 # writes the test-set's separated vocals/accompaniment/mixture/target-vocals
 # audio via -save_audio_dir instead of only scoring it.
 docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
@@ -23,7 +23,7 @@ output = $(exp).out
 # The trained checkpoint from the original run lives locally alongside this
 # .sub file; it's transferred as a plain input file (basename only, landing
 # at the job's scratch root) rather than via /staging like the two datasets.
-transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip, file:///staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz, musdb_snn_cipic_10465856_2_epochs50/network.pt
+transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip, file:///staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz, data/musdb_snn_cipic_10465856_3_epochs100/network.pt
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT_OR_EVICT
 # NOTE: these paths encode -exp $(exp) and -save_audio_dir $(save_audio_dir)

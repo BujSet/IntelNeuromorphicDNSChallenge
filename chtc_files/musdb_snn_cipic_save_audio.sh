@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# musdb_snn_cipic_10465856_2_save_audio.sh
+# musdb_snn_cipic_save_audio.sh
 # My CHTC job
 #
 # Loads the network.pt checkpoint that musdb_snn_cipic_10465856_2_epochs50

@@ -1,0 +1,19 @@
+Folder,Validation SI-SNR avg,Test SI-SNR avg,
+musdb_snn_baseline_epochs5_eps,-2.2434,-2.8961,
+musdb_snn_baseline_epochs10_eps,-0.8886,-1.3876,
+musdb_snn_baseline_epochs25_eps,0.2544,-0.2253,
+musdb_snn_baseline_epochs50_eps,0.8519,0.3425,
+musdb_snn_cipic_10465856_0_epochs5,0.6444,0.7229,
+musdb_snn_cipic_10465856_1_epochs25,3.7222,3.9968,
+musdb_snn_cipic_10465856_2_epochs50,4.753,4.6532,
+musdb_snn_cipic_10465856_3_epochs100,5.2967,5.354,
+hybrid demucs,,9.0685,
+,,,
+,,,
+epochs,hybrid demucs,baseline SNN,cipic + SNN
+,9.0685,,
+5,,-2.8961,0.7229
+10,,-1.3876,
+25,,-0.2253,3.9968
+50,,0.3425,4.6532
+100,,,5.354
