@@ -842,10 +842,10 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
         sisnr_score_file.close()
 
     averageTestLoss = sum(testLosses) / (1.0 * len(testLosses))
-    averageTestScore = sum(testScores) / (1.0 * len(testScores))
-    averagePerStemSiSnr = [sum(scores) / (1.0 * len(scores)) for scores in perStemSiSnr]
-    averagePerStemSdr = [np.nanmean(scores) for scores in perStemSdr]
-    return averageTestLoss, averageTestScore, averagePerStemSiSnr, averagePerStemSdr
+    medianTestScore = np.median(testScores)
+    medianPerStemSiSnr = [np.median(scores) for scores in perStemSiSnr]
+    medianPerStemSdr = [np.nanmedian(scores) for scores in perStemSdr]
+    return averageTestLoss, medianTestScore, medianPerStemSiSnr, medianPerStemSdr
 
 def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
     '''Same as run_test_loop, but each track is first re-spatialized and
@@ -971,10 +971,10 @@ def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_pa
         sisnr_score_file.close()
 
     averageTestLoss = sum(testLosses) / (1.0 * len(testLosses))
-    averageTestScore = sum(testScores) / (1.0 * len(testScores))
-    averagePerStemSiSnr = [sum(scores) / (1.0 * len(scores)) for scores in perStemSiSnr]
-    averagePerStemSdr = [np.nanmean(scores) for scores in perStemSdr]
-    return averageTestLoss, averageTestScore, averagePerStemSiSnr, averagePerStemSdr
+    medianTestScore = np.median(testScores)
+    medianPerStemSiSnr = [np.median(scores) for scores in perStemSiSnr]
+    medianPerStemSdr = [np.nanmedian(scores) for scores in perStemSdr]
+    return averageTestLoss, medianTestScore, medianPerStemSiSnr, medianPerStemSdr
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
