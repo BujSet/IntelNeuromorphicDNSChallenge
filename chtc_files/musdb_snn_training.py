@@ -366,7 +366,7 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
     net.train()
     delay_weights = dict()
     averageTrainingLoss = 0
-    averageTrainingScore = 0
+    medianTrainingScore = 0
     for epoch in range(args.epochs):
         trainingLosses = []
         trainingScores = []
@@ -436,8 +436,8 @@ def run_training_loop(args, net, optimizer, scheduler, train_loader, startingEpo
                     delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
         # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
-        averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
-    return delay_weights, averageTrainingLoss, averageTrainingScore
+        medianTrainingScore = np.median(trainingScores)
+    return delay_weights, averageTrainingLoss, medianTrainingScore
 
 def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, startingEpoch=0):
     '''Same as run_training_loop, but each track is first re-spatialized and
@@ -469,7 +469,7 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
         CIPICSubject.getHRIRFromIndex(accompanimentFilterOrient, args.filterChannel)).float().to(device))
     delay_weights = dict()
     averageTrainingLoss = 0
-    averageTrainingScore = 0
+    medianTrainingScore = 0
     for epoch in range(args.epochs):
         trainingLosses = []
         trainingScores = []
@@ -558,8 +558,8 @@ def run_training_loop_with_cipic(args, net, optimizer, scheduler, train_loader, 
                     delay_weights[param_tensor][epoch] = net.state_dict()[param_tensor].clone().detach().cpu()
         # Updates only the last training epoch's loss is kept
         averageTrainingLoss = sum(trainingLosses) / (1.0 * len(trainingLosses))
-        averageTrainingScore = sum(trainingScores) / (1.0 * len(trainingScores))
-    return delay_weights, averageTrainingLoss, averageTrainingScore
+        medianTrainingScore = np.median(trainingScores)
+    return delay_weights, averageTrainingLoss, medianTrainingScore
 
 def run_validation_loop(args, net, validation_loader, csv_path=None, subset_label='validation'):
     validationScores = []
@@ -622,9 +622,9 @@ def run_validation_loop(args, net, validation_loader, csv_path=None, subset_labe
         score_file.close()
 
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
-    averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
-    averagePerStemScore = [sum(scores) / (1.0 * len(scores)) for scores in perStemScores]
-    return averageValidationLoss, averageValidationScore, averagePerStemScore
+    medianValidationScore = np.median(validationScores)
+    medianPerStemScore = [np.median(scores) for scores in perStemScores]
+    return averageValidationLoss, medianValidationScore, medianPerStemScore
 
 def run_validation_loop_with_cipic(args, net, validation_loader, csv_path=None, subset_label='validation'):
     '''Same as run_validation_loop, but each track is first re-spatialized
@@ -718,9 +718,9 @@ def run_validation_loop_with_cipic(args, net, validation_loader, csv_path=None, 
         score_file.close()
 
     averageValidationLoss = sum(validationLosses) / (1.0 * len(validationLosses))
-    averageValidationScore = sum(validationScores) / (1.0 * len(validationScores))
-    averagePerStemScore = [sum(scores) / (1.0 * len(scores)) for scores in perStemScores]
-    return averageValidationLoss, averageValidationScore, averagePerStemScore
+    medianValidationScore = np.median(validationScores)
+    medianPerStemScore = [np.median(scores) for scores in perStemScores]
+    return averageValidationLoss, medianValidationScore, medianPerStemScore
 
 def save_track_audio(save_audio_dir, track_name, sample_rate,
         mixture, estimated_vocals, target_vocals, si_snr_score, sdr_score):
