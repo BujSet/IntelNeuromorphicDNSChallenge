@@ -723,11 +723,14 @@ def run_validation_loop_with_cipic(args, net, validation_loader, csv_path=None, 
     return averageValidationLoss, averageValidationScore, averagePerStemScore
 
 def save_track_audio(save_audio_dir, track_name, sample_rate,
-        mixture, estimated_vocals, target_vocals):
+        mixture, estimated_vocals, target_vocals, si_snr_score, sdr_score):
     '''Writes the mixture, the network's separated vocals estimate, the
     derived accompaniment estimate (mixture minus estimated vocals), and the
     ground-truth vocals to <save_audio_dir>/<track_name>/*.wav, so a track's
-    separation can be listened to rather than only scored numerically.'''
+    separation can be listened to rather than only scored numerically. Also
+    writes that track's vocals SI-SNR/SDR to scores.txt in the same folder,
+    so a listener has the numeric score alongside the audio without having
+    to cross-reference the run's CSV by track ID.'''
     track_dir = os.path.join(save_audio_dir, track_name)
     os.makedirs(track_dir, exist_ok=True)
     mixture = mixture.detach().cpu()
@@ -738,6 +741,9 @@ def save_track_audio(save_audio_dir, track_name, sample_rate,
         mixture - estimated_vocals, sample_rate)
     torchaudio.save(os.path.join(track_dir, 'vocals_target.wav'),
         target_vocals.detach().cpu(), sample_rate)
+    with open(os.path.join(track_dir, 'scores.txt'), 'w') as scores_file:
+        scores_file.write("si_snr_db: {}\n".format(si_snr_score))
+        scores_file.write("sdr_db: {}\n".format(sdr_score))
 
 def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
     '''Evaluates on MUSDB18-HQ's real held-out "test" subset -- the same 50
@@ -802,7 +808,8 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
                 # NUM_STEMS == 1 ('vocals'), so stitched_estimate/target's
                 # single stem row is passed straight through.
                 save_track_audio(args.save_audio_dir, name[0], args.sample_rate,
-                    mono[0:1, :], stitched_estimate[0:1, :], stitched_target[0:1, :])
+                    mono[0:1, :], stitched_estimate[0:1, :], stitched_target[0:1, :],
+                    trackStemScore[0].item(), trackSdrPerStem[0])
 
             testLosses.append(trackLoss)
             testScores.append(trackScore)
@@ -810,16 +817,17 @@ def run_test_loop(args, net, test_loader, csv_path=None, sisnr_csv_path=None):
                 perStemSiSnr[s].append(trackStemScore[s].item())
                 perStemSdr[s].append(trackSdrPerStem[s])
 
+            trackId = i + args.test_offset
             if score_file is not None:
-                row = str(i) + ", test, "
+                row = str(trackId) + ", test, "
                 row += ", ".join(str(trackSdrPerStem[s]) for s in range(NUM_STEMS))
                 score_file.write("\n" + row)
             if sisnr_score_file is not None:
-                row = str(i) + ", test, "
+                row = str(trackId) + ", test, "
                 row += ", ".join(str(trackStemScore[s].item()) for s in range(NUM_STEMS))
                 sisnr_score_file.write("\n" + row)
             if args.printOutputWhileTest:
-                statString = "Test [" + str(i) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks) -> "
+                statString = "Test [" + str(trackId) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks) -> "
                 statString += str(trackLoss) + " "
                 statString += str(trackScore) + " SI-SNR dB, SDR ["
                 statString += ", ".join(
@@ -928,7 +936,8 @@ def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_pa
                 # single stem row is passed straight through. synthetic_mono[0]
                 # is the CIPIC-spatialized/remixed mixture, not the raw track.
                 save_track_audio(args.save_audio_dir, name[0], args.sample_rate,
-                    synthetic_mono[0:1, :], stitched_estimate[0:1, :], stitched_target[0:1, :])
+                    synthetic_mono[0:1, :], stitched_estimate[0:1, :], stitched_target[0:1, :],
+                    trackStemScore[0].item(), trackSdrPerStem[0])
 
             testLosses.append(trackLoss)
             testScores.append(trackScore)
@@ -936,16 +945,17 @@ def run_test_loop_with_cipic(args, net, test_loader, csv_path=None, sisnr_csv_pa
                 perStemSiSnr[s].append(trackStemScore[s].item())
                 perStemSdr[s].append(trackSdrPerStem[s])
 
+            trackId = i + args.test_offset
             if score_file is not None:
-                row = str(i) + ", test, "
+                row = str(trackId) + ", test, "
                 row += ", ".join(str(trackSdrPerStem[s]) for s in range(NUM_STEMS))
                 score_file.write("\n" + row)
             if sisnr_score_file is not None:
-                row = str(i) + ", test, "
+                row = str(trackId) + ", test, "
                 row += ", ".join(str(trackStemScore[s].item()) for s in range(NUM_STEMS))
                 sisnr_score_file.write("\n" + row)
             if args.printOutputWhileTest:
-                statString = "Test [" + str(i) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks, (vocals,accompaniment)=("
+                statString = "Test [" + str(trackId) + "] (" + name[0] + ", " + str(len(chunks)) + " chunks, (vocals,accompaniment)=("
                 statString += str(vocalsFilterOrient) + "," + str(accompanimentFilterOrient) + ")) -> "
                 statString += str(trackLoss) + " "
                 statString += str(trackScore) + " SI-SNR dB, SDR ["
@@ -1067,6 +1077,10 @@ if __name__ == '__main__':
                         type=int,
                         default=60000,
                         help='Number of tracks the held-out MUSDB18-HQ test-subset eval should use, supports small dataset subset')
+    parser.add_argument('-test_offset',
+                        type=int,
+                        default=0,
+                        help='Index of the first held-out MUSDB18-HQ test-subset track to evaluate, so -test_samples can select a slice (e.g. for splitting the test set into parallel batches) instead of always starting at track 0')
     parser.add_argument('-print_output_while_test',
                         dest='printOutputWhileTest',
                         action='store_true',
@@ -1320,8 +1334,7 @@ if __name__ == '__main__':
             subset="test",
             sources=SOURCES,
             download=False)
-    if args.test_samples < len(test_set.names):
-        test_set.names = test_set.names[:args.test_samples]
+    test_set.names = test_set.names[args.test_offset:args.test_offset + args.test_samples]
 
     test_loader = DataLoader(test_set,
                           batch_size=1,
