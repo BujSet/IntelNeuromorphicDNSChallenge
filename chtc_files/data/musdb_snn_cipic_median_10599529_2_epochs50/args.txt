@@ -1,0 +1,36 @@
+b : 32
+cipicSubject : 12
+clip : 10
+dmax : 64
+epochs : 50
+exp : musdb_snn_cipic_median_10599529_2_epochs50
+filterChannel : 0
+gpu : [0]
+hiddenLayerWidths : 512
+lam : 0.001
+lr : 0.001
+n_fft : 512
+out_delay : 0
+overlap : 0.1
+path : .
+printOutputWhileTest : True
+printOutputWhileTraining : True
+printOutputWhileValidation : True
+sample_rate : 16000
+saveCheckpoint : True
+save_audio_dir : 
+scale_grad : 0.8
+seed : None
+segment_seconds : 10.0
+spectrogram : 0
+target_level_lower : -35
+target_level_upper : -15
+tau_grad : 0.1
+test_offset : 0
+test_samples : 60000
+threshold : 0.1
+trackDelayWhileTraining : False
+training_samples : 60000
+useCheckpoint : 
+useCipic : True
+validation_samples : 60000

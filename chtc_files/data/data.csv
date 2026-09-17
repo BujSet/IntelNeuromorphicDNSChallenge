@@ -1,19 +1,21 @@
-Folder,Validation SI-SNR avg,Test SI-SNR avg,
-musdb_snn_baseline_epochs5_eps,-2.2434,-2.8961,
-musdb_snn_baseline_epochs10_eps,-0.8886,-1.3876,
-musdb_snn_baseline_epochs25_eps,0.2544,-0.2253,
-musdb_snn_baseline_epochs50_eps,0.8519,0.3425,
-musdb_snn_cipic_10465856_0_epochs5,0.6444,0.7229,
-musdb_snn_cipic_10465856_1_epochs25,3.7222,3.9968,
-musdb_snn_cipic_10465856_2_epochs50,4.753,4.6532,
-musdb_snn_cipic_10465856_3_epochs100,5.2967,5.354,
-hybrid demucs,,9.0685,
-,,,
-,,,
-epochs,hybrid demucs,baseline SNN,cipic + SNN
-,9.0685,,
-5,,-2.8961,0.7229
-10,,-1.3876,
-25,,-0.2253,3.9968
-50,,0.3425,4.6532
-100,,,5.354
+Folder,Validation SI-SNR avg,Test SI-SNR avg,Test SDR avg,Test SI-SNR median,Test SDR median
+musdb_snn_baseline_epochs5_eps,-2.2434,-2.8961,-2.5599,-2.6882,-2.3199
+musdb_snn_baseline_epochs10_eps,-0.8886,-1.3876,-0.9339,-0.9306,-0.4774
+musdb_snn_baseline_epochs25_eps,0.2544,-0.2253,0.3761,0.3458,0.8582
+musdb_snn_baseline_epochs50_eps,0.8519,0.3425,1.0629,1.1570,1.5712
+musdb_snn_cipic_10465856_0_epochs5,0.6444,0.7229,0.7883,0.5833,0.6184
+musdb_snn_cipic_10465856_1_epochs25,3.7222,3.9968,4.559,4.0133,4.339
+musdb_snn_cipic_10465856_2_epochs50,4.753,4.6532,5.3142,4.7612,5.3055
+musdb_snn_cipic_10465856_3_epochs100,5.2967,5.354,5.9995,5.3868,6.0313
+hybrid demucs,,8.7395,9.0685,9.3703,9.4901
+
+musdb_snn_cipic_retest_median_10599356 (100 epochs),5.3465,5.4104,6.0501,5.7238,6.2154
+
+musdb_snn_cipic_median_10599529_0_epochs5,0.7036,0.6768,0.7879,0.6205,0.6993
+musdb_snn_cipic_median_10599529_1_epochs25,3.8396,3.9156,4.5260,3.9234,4.2778
+musdb_snn_cipic_median_10599529_2_epochs50,4.6421,4.6907,5.3804,4.8238,5.4973
+musdb_snn_cipic_median_10599529_3_epochs100,5.3465,5.4104,6.0501,5.7238,6.2154
+musdb_snn_baseline_median_10772783_0_epochs5,-3.4386,-3.9575,-3.7582,-3.1794,-2.9778
+musdb_snn_baseline_median_10772783_1_epochs25,0.3854,-0.1778,0.4636,0.4304,1.1268
+musdb_snn_baseline_median_10772783_2_epochs50,0.8193,0.2878,0.9224,1.2061,1.6886
+musdb_snn_baseline_median_10772783_3_epochs100,1.2109,0.4900,1.2047,1.4259,1.8414

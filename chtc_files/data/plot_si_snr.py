@@ -6,6 +6,9 @@ baseline_sisnr = [-2.8961, -1.3876, -0.2253, 0.3425]
 cipic_epochs = [5, 25, 50, 100]
 cipic_sisnr = [0.7229, 3.9968, 4.6532, 5.354]
 
+cipic_median_epochs = [5, 25, 50]
+cipic_median_sisnr = [0.6768, 3.9156, 4.6907]
+
 hybrid_demucs_sisnr = 9.0685
 
 fig, ax = plt.subplots(figsize=(7, 5), dpi=150)
@@ -24,10 +27,16 @@ ax.scatter(
     s=70, color="#2a78d6", edgecolor="#fcfcfb", linewidth=1.5,
     label="Baseline SNN", zorder=3,
 )
+dodge = 1.5
 ax.scatter(
-    cipic_epochs, cipic_sisnr,
-    s=70, color="#eb6834", edgecolor="#fcfcfb", linewidth=1.5,
-    label="CIPIC + SNN", zorder=3,
+    [e - dodge for e in cipic_epochs], cipic_sisnr,
+    s=70, marker="^", color="#eb6834", edgecolor="#fcfcfb", linewidth=1.5,
+    label="CIPIC average + SNN", zorder=3,
+)
+ax.scatter(
+    [e + dodge for e in cipic_median_epochs], cipic_median_sisnr,
+    s=70, marker="s", color="#3ba05a", edgecolor="#fcfcfb", linewidth=1.5,
+    label="CIPIC median + SNN", zorder=3,
 )
 
 ax.set_xlabel("Epochs")
