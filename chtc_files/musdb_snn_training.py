@@ -129,6 +129,7 @@ class Network(torch.nn.Module):
             scale_grad=0.8,
             max_delay=64,
             out_delay=0,
+            numHiddens=2,
             hiddenLayerWidths=512,
             n_fft=512,
             num_stems=NUM_STEMS):
@@ -138,6 +139,7 @@ class Network(torch.nn.Module):
         self.stft_max = 140
         self.out_delay = out_delay
         self.EPS = 2.220446049250313e-16
+        self.numHiddenLayers = numHiddenLayers
         self.hiddenLayerWidths = hiddenLayerWidths
         self.num_stems = num_stems
         self.freq_bins = n_fft // 2 + 1
@@ -156,19 +158,39 @@ class Network(torch.nn.Module):
 
         self.input_quantizer = lambda x: slayer.utils.quantize(x, step=1 / 64)
 
-        self.blocks = torch.nn.ModuleList([
-            slayer.block.sigma_delta.Input(sdnn_params),
-            slayer.block.sigma_delta.Dense(sdnn_params, self.freq_bins, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
-            # Output is widened to num_stems masks (one per target stem)
-            # stacked along the feature dimension: [stem0_freqs, stem1_freqs, ...]
+#        self.blocks = torch.nn.ModuleList([
+#            slayer.block.sigma_delta.Input(sdnn_params),
+#            slayer.block.sigma_delta.Dense(sdnn_params, self.freq_bins, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+#            slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+#            # Output is widened to num_stems masks (one per target stem)
+#            # stacked along the feature dimension: [stem0_freqs, stem1_freqs, ...]
+#            slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, num_stems * self.freq_bins, weight_norm=False),
+#        ])
+
+        ordered_blocks = []
+        ordered_blocks.append(slayer.block.sigma_delta.Input(sdnn_params))
+        if numHiddenLayers >= 1:
+            ordered_blocks.append(
+
+                    slayer.block.sigma_delta.Dense(sdnn_params, self.freq_bins, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True)
+                )
+
+        for i in range(numHiddenLayers - 1):
+            ordered_blocks.append(
+                    
+                slayer.block.sigma_delta.Dense(sdnn_params, hiddenLayerWidths, hiddenLayerWidths, weight_norm=False, delay=True, delay_shift=True),
+                    )
+        ordered_blocks.append(
             slayer.block.sigma_delta.Output(sdnn_params, hiddenLayerWidths, num_stems * self.freq_bins, weight_norm=False),
-        ])
+            )
+        self.blocks = torch.nn.ModuleList(ordered_blocks)
 
         self.blocks[0].pre_hook_fx = self.input_quantizer
 
-        self.blocks[1].delay.max_delay = max_delay
-        self.blocks[2].delay.max_delay = max_delay
+        for i in range(numHiddenLayers):
+            self.blocks[i+1].delay.max_delay = max_delay
+#        self.blocks[1].delay.max_delay = max_delay
+#        self.blocks[2].delay.max_delay = max_delay
 
     def forward(self, mixture_abs):
         x = mixture_abs - self.stft_mean
@@ -1106,6 +1128,10 @@ if __name__ == '__main__':
                         dest='saveCheckpoint',
                         action='store_true',
                         help='Switch flag to enable saving a chekpoint after training')
+    parser.add_argument('-numHiddenLayers',
+                        type=int,
+                        default=2,
+                        help='# of layers layers')
     parser.add_argument('-hiddenLayerWidths',
                         type=int,
                         default=512,
