@@ -129,7 +129,7 @@ class Network(torch.nn.Module):
             scale_grad=0.8,
             max_delay=64,
             out_delay=0,
-            numHiddens=2,
+            numHiddenLayers=2,
             hiddenLayerWidths=512,
             n_fft=512,
             num_stems=NUM_STEMS):
