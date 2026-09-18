@@ -1201,13 +1201,14 @@ if __name__ == '__main__':
     chunk_len = int(args.sample_rate * args.segment_seconds * (1 + args.overlap))
     overlap_frames = int(args.overlap * args.sample_rate)
     net = torch.nn.DataParallel(Network(
-                args.threshold,
-                args.tau_grad,
-                args.scale_grad,
-                args.dmax,
-                args.out_delay,
-                args.hiddenLayerWidths,
-                args.n_fft).to(device),
+                threshold=args.threshold,
+                tau_grad=args.tau_grad,
+                scale_grad=args.scale_grad,
+                max_delay=args.dmax,
+                out_delay=args.out_delay,
+                numHiddenLayers=args.numHiddenLayers,
+                hiddenLayerWidths=args.hiddenLayerWidths,
+                n_fft=args.n_fft).to(device),
                     device_ids=args.gpu)
     module = net.module
 
