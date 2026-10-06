@@ -4,7 +4,7 @@ docker_image = rselagam/ndns:v54_cuda12.4.0_esong32
 universe = docker
 
 # Toggle CIPIC-spatialized training on/off for all queued jobs below.
-use_cipic = false
+use_cipic = true
 
 # exp is per-queued-job (see `queue epochs from` below) so that jobs with
 # different epoch counts don't all transfer their output back to the same
@@ -12,14 +12,14 @@ use_cipic = false
 # job/submission number) is included too, so resubmitting doesn't clobber
 # a previous run's output either.
 if $(use_cipic)
-    exp = musdb_snn_cipic_$(Cluster)_$(Process)_epochs$(epochs)
+    exp = musdb_snn_cipic_$(Cluster)_$(Process)_$(epochs)_$(subject)_$(channel)_$(depth)_$(width)
 else
-    exp = musdb_snn_baseline_$(Cluster)_$(Process)_epochs$(epochs)
+    exp = musdb_snn_baseline_$(Cluster)_$(Process)_$(epochs)_$(depth)_$(width)
 endif
 
-arguments = -exp $(exp) -epochs $(epochs) -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
+arguments = -exp $(exp) -epochs $(epochs) -numHiddenLayers $(depth) -hiddenLayerWidths $(width) -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
 if $(use_cipic)
-    arguments = $(arguments) -useCipic -cipicSubject 12
+    arguments = $(arguments) -useCipic -cipicSubject $(subject) -filterChannel $(channel) 
 endif
 
 executable = musdb_hq_snn_training.sh
@@ -27,9 +27,11 @@ log = $(exp).log
 error = $(exp).err
 output = $(exp).out
 
-transfer_input_files = file:///staging/groups/san_miguel_stacs_group/musdb_hq_dataset/musdb18hq.zip
+# TODO use ResearchDrive
+ResearchDrive = pelican://chtc.wisc.edu/researchdrive/jsanmiguel/CHTC
+transfer_input_files = $(ResearchDrive)/musdb_hq_dataset/musdb18hq.zip
 if $(use_cipic)
-    transfer_input_files = $(transfer_input_files), file:///staging/groups/san_miguel_stacs_group/cipic_dataset/cipic_dataset.tar.gz
+    transfer_input_files = $(transfer_input_files), $(ResearchDrive)/cipic_dataset/cipic_dataset.tar.gz
 endif
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT_OR_EVICT
@@ -41,10 +43,10 @@ transfer_output_files = IntelNeuromorphicDNSChallenge/Logs/$(exp), IntelNeuromor
 max_idle = 10
 want_io_proxy = true
 priority = 10
-batch_name = "musdb_snn_train"
+batch_name = "musdb_snn_train_medium"
 
 +WantGPULab = true
-+GPUJobLength = "long"
++GPUJobLength = "medium"
 
 # Tell HTCondor requirements (e.g., operating system) your job needs,
 # what amount of compute resources each job will need on the computer where it runs.
@@ -56,16 +58,28 @@ request_disk = 180GB
 # PyTorch build has no compiled CUDA kernels for compute capability 9.0,
 # so landing on one crashes with "no kernel image is available".
 require_gpus = (Capability >= 8.0) && (Capability < 9.0) && (DriverVersion >= 12.4)
-requirements = (HasCHTCStaging == True) && (BackfillSlot =!= true)
+requirements = (BackfillSlot =!= true)
 
 
-notify_user = elise.song@wisc.edu
+notify_user = selagamsetty@wisc.edu
 notification = always
 
 # Submits one job per value below, each with its own $(epochs)/$(exp) and
 # its own Logs.../Trained.../log-error-output files. Edit the list to change
 # which epoch counts get run.
-queue epochs from (
-    100
-    200
+queue epochs,subject,channel,depth,width from (
+    50,12,0,2,512
+    50,12,1,2,512
+    50,3,1,2,512
+    50,3,0,2,512
+    50,59,0,2,512
+    50,59,1,2,512
+    50,165,0,2,512
+    50,165,1,2,512
+    50,12,0,3,512
+    50,12,1,3,512
+    50,12,0,4,512
+    50,12,1,4,512
+    50,12,0,5,512
+    50,12,1,5,512
 )
