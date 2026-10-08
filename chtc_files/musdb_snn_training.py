@@ -1128,6 +1128,10 @@ if __name__ == '__main__':
                         dest='saveCheckpoint',
                         action='store_true',
                         help='Switch flag to enable saving a chekpoint after training')
+    parser.add_argument('-saveCheckpointName',
+                        type=str,
+                        default='',
+                        help='Filename for model checkpoint')
     parser.add_argument('-numHiddenLayers',
                         type=int,
                         default=2,
@@ -1387,6 +1391,17 @@ if __name__ == '__main__':
             args, net, test_loader, csv_path=test_csv_path, sisnr_csv_path=test_sisnr_csv_path)
 
     if (args.saveCheckpoint):
+        if len(args.saveCheckpointName) == 0:
+            args.saveCheckpointName = ""
+            if args.useCipic:
+                args.saveCheckpointName += "sub"+str(args.cipicSubject) + "_"
+                args.saveCheckpointName += "chan"+str(args.filterChannel) + "_"
+            args.saveCheckpointName += "b"+str(args.b) + "_"
+            args.saveCheckpointName += "depth"+str(args.numHiddenLayers) + "_"
+            args.saveCheckpointName += "width"+str(args.hiddenlayerwidths) + "_"
+            args.saveCheckpointName += "nfft"+str(args.n_fft) + "_"
+            args.saveCheckpointName += "epochs"+str(startingEpoch + args.epochs) + ".pt"
+
         trackingInfo[startingEpoch+args.epochs] = dict()
         currEpochStats = trackingInfo[startingEpoch+args.epochs]
         currEpochStats['training_loss'] = lastTrainingLoss
@@ -1402,7 +1417,7 @@ if __name__ == '__main__':
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'tracking_info': trackingInfo,
-                }, trained_folder + '/network.pt')
+                }, trained_folder + '/' + args.saveCheckpointName)
     print("Final validation score: " + str(finalValidationScore) + " SI-SNR (dB)")
     for i in range(NUM_STEMS):
         print("  " + TARGET_STEMS[i] + ": " + str(finalPerStemScore[i]) + " SI-SNR (dB)")
