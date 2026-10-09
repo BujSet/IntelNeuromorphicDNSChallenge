@@ -6,15 +6,18 @@ universe = docker
 # Toggle CIPIC-spatialized training on/off for all queued jobs below.
 use_cipic = true
 
+# Can be set to cnn or snn
+network_model = cnn
+
 # exp is per-queued-job (see `queue epochs from` below) so that jobs with
 # different epoch counts don't all transfer their output back to the same
 # Logs.../Trained... folder names and clobber each other. $(Cluster) (the
 # job/submission number) is included too, so resubmitting doesn't clobber
 # a previous run's output either.
 if $(use_cipic)
-    exp = musdb_snn_cipic_$(Cluster)_$(Process)_$(epochs)_$(subject)_$(channel)_$(depth)_$(width)
+    exp = musdb_$(network_model)_cipic_$(Cluster)_$(Process)_$(epochs)_$(subject)_$(channel)_$(depth)_$(width)
 else
-    exp = musdb_snn_baseline_$(Cluster)_$(Process)_$(epochs)_$(depth)_$(width)
+    exp = musdb_$(network_model)_baseline_$(Cluster)_$(Process)_$(epochs)_$(depth)_$(width)
 endif
 
 arguments = -exp $(exp) -epochs $(epochs) -numHiddenLayers $(depth) -hiddenLayerWidths $(width) -saveCheckpoint -print_output_while_training -print_output_while_validation -print_output_while_test
@@ -22,7 +25,7 @@ if $(use_cipic)
     arguments = $(arguments) -useCipic -cipicSubject $(subject) -filterChannel $(channel) 
 endif
 
-executable = musdb_hq_snn_training.sh
+executable = musdb_hq_$(network_model)_training.sh
 log = $(exp).log
 error = $(exp).err
 output = $(exp).out
@@ -38,15 +41,15 @@ when_to_transfer_output = ON_EXIT_OR_EVICT
 # Without this, HTCondor's default "transfer back everything new" would also
 # re-upload the freshly cloned repo and the unzipped musdb18hq dataset.
 # NOTE: these paths encode -exp $(exp) as a subdirectory of Trained/ and
-# Logs/, per musdb_snn_training.py; update them if `exp` above changes.
+# Logs/, per musdb_$(network_model)_training.py; update them if `exp` above changes.
 transfer_output_files = IntelNeuromorphicDNSChallenge/Logs/$(exp), IntelNeuromorphicDNSChallenge/Trained/$(exp)
 max_idle = 10
 want_io_proxy = true
 priority = 10
-batch_name = "musdb_snn_train_medium"
+batch_name = "musdb_$(network_model)_train_short"
 
 +WantGPULab = true
-+GPUJobLength = "medium"
++GPUJobLength = "short"
 
 # Tell HTCondor requirements (e.g., operating system) your job needs,
 # what amount of compute resources each job will need on the computer where it runs.
@@ -60,26 +63,9 @@ request_disk = 180GB
 require_gpus = (Capability >= 8.0) && (Capability < 9.0) && (DriverVersion >= 12.4)
 requirements = (BackfillSlot =!= true)
 
-
-notify_user = selagamsetty@wisc.edu
-notification = always
-
 # Submits one job per value below, each with its own $(epochs)/$(exp) and
 # its own Logs.../Trained.../log-error-output files. Edit the list to change
 # which epoch counts get run.
 queue epochs,subject,channel,depth,width from (
     50,12,0,2,512
-    50,12,1,2,512
-    50,3,1,2,512
-    50,3,0,2,512
-    50,59,0,2,512
-    50,59,1,2,512
-    50,165,0,2,512
-    50,165,1,2,512
-    50,12,0,3,512
-    50,12,1,3,512
-    50,12,0,4,512
-    50,12,1,4,512
-    50,12,0,5,512
-    50,12,1,5,512
 )
